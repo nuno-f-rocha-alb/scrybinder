@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { IconCamera, IconFolder, IconPhoto, IconSearch } from "@tabler/icons-react";
 import { api, CONDITIONS, eur, FINISH, LANGS, Print, qs } from "../api";
-import { Badge, CardImg, ExtLinks, useToast } from "../components/ui";
+import { Badge, CardImg, ExtLinks, Modal, useToast } from "../components/ui";
 
 type Cand = Pick<Print, "id" | "name" | "set_code" | "set_name" | "collector_number" | "released_at" | "finishes" | "eur" | "eur_foil" | "eur_etched"> & { score?: number };
 type Pending = {
@@ -292,7 +292,8 @@ function ReadsList({ reads, location, onChange, toast }: { reads: Read[]; locati
     } catch (e) { toast((e as Error).message, true); }
     finally { setCommitting(false); onChange(); }
   };
-  const clear = async () => { if (confirm(`Delete all ${reads.length} entries from the list? (Your collection is not touched.)`)) { for (const r of reads) await del(r.id); } };
+  const [confirmClear, setConfirmClear] = useState(false);
+  const clear = async () => { setConfirmClear(false); for (const r of reads) await del(r.id); };
 
   if (!reads.length) return <div className="flex h-72 items-center justify-center rounded-2xl border border-dashed border-line text-sm text-mute">Scanned cards appear here. Edit whatever you need and press Add when you are done.</div>;
   return (
@@ -302,7 +303,7 @@ function ReadsList({ reads, location, onChange, toast }: { reads: Read[]; locati
           <span className="ml-2 text-gold">≈ {eur(worth)}{noPrice > 0 && <span className="text-xs text-mute"> ({noPrice} without price)</span>}</span>
           <span className="ml-2 text-xs text-mute">Location: {location || "— (no location)"}</span></div>
         <div className="flex gap-2">
-          <button className="btn-ghost" onClick={clear}>Clear list</button>
+          <button className="btn-ghost" onClick={() => setConfirmClear(true)}>Clear list</button>
           <button className="btn-primary" disabled={committing} onClick={commit}>Add {total} to collection</button>
         </div>
       </div>
@@ -342,6 +343,16 @@ function ReadsList({ reads, location, onChange, toast }: { reads: Read[]; locati
           );
         })}
       </ul>
+      {confirmClear && (
+        <Modal onClose={() => setConfirmClear(false)} title="Clear list">
+          <h2 className="text-xl font-semibold text-danger">Delete all {reads.length} entries from the list?</h2>
+          <p className="mt-2 text-sm text-mute">Your collection is not touched.</p>
+          <div className="mt-5 flex justify-end gap-2">
+            <button className="btn-ghost" autoFocus onClick={() => setConfirmClear(false)}>Cancel</button>
+            <button className="btn-danger" onClick={clear}>Yes, delete {reads.length}</button>
+          </div>
+        </Modal>
+      )}
     </div>
   );
 }
