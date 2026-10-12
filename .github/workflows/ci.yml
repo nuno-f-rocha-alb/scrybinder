@@ -1,0 +1,32 @@
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - name: Install Tesseract
+        shell: bash
+        run: |
+          case "$RUNNER_OS" in
+            Windows) choco install tesseract -y --no-progress ;;
+            Linux) sudo apt-get update && sudo apt-get install -y tesseract-ocr ;;
+            macOS) brew install tesseract ;;
+          esac
+      - run: uv sync --group dev
+      - run: uv run pytest
+      - run: npm ci && npm run build
+        working-directory: ui

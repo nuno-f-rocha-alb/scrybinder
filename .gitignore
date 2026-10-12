@@ -1,0 +1,12 @@
+data/
+.venv/
+__pycache__/
+node_modules/
+ui/dist/
+*.pyc
+.pytest_cache/
+/Scrybinder.exe
+/dist/
+/build/
+*.spec
+!/packaging/scrybinder.spec

@@ -1,0 +1,62 @@
+[project]
+name = "scrybinder"
+version = "0.1.0"
+description = "Scan, identify and catalogue your Magic: The Gathering collection locally"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn>=0.30",
+    "httpx>=0.27",
+    "ijson>=3.3",
+    "pywebview>=5.3",
+    "opencv-python-headless>=5.0.0.93",
+    "numpy>=2.5.4",
+    "pytesseract>=0.3.13",
+    "rapidfuzz>=3.14.6",
+]
+
+[project.optional-dependencies]
+# Visual identification (PyTorch + DINOv2). `vision` installs the CPU build; `vision-cuda` an NVIDIA GPU build.
+vision = ["torch>=2.11", "torchvision>=0.26", "transformers>=4.50"]
+vision-cuda = ["torch>=2.11", "torchvision>=0.26", "transformers>=4.50"]
+
+[tool.uv]
+conflicts = [[{ extra = "vision" }, { extra = "vision-cuda" }]]
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu", extra = "vision" },
+    { index = "pytorch-cu128", extra = "vision-cuda", marker = "sys_platform == 'win32' or sys_platform == 'linux'" },
+]
+torchvision = [
+    { index = "pytorch-cpu", extra = "vision" },
+    { index = "pytorch-cu128", extra = "vision-cuda", marker = "sys_platform == 'win32' or sys_platform == 'linux'" },
+]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[[tool.uv.index]]
+name = "pytorch-cu128"
+url = "https://download.pytorch.org/whl/cu128"
+explicit = true
+
+[dependency-groups]
+dev = ["pytest>=8", "pillow>=10"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["scrybinder"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[project.scripts]
+scrybinder = "scrybinder.app:main"
+scrybinder-index = "scrybinder.cli:index_main"
+scrybinder-eval = "scrybinder.evalcli:main"

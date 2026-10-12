@@ -1,0 +1,128 @@
+[
+ {
+  "id": "760b6703-ac92-45f6-8c32-60f760eba866",
+  "name": "Malignant Growth",
+  "set_code": "mir",
+  "collector_number": "272",
+  "frame": "1997",
+  "full_art": 0,
+  "layout": "normal"
+ },
+ {
+  "id": "fcddbea7-3025-47b1-a597-2d2b2711fb81",
+  "name": "Squandered Resources",
+  "set_code": "vis",
+  "collector_number": "137",
+  "frame": "1997",
+  "full_art": 0,
+  "layout": "normal"
+ },
+ {
+  "id": "2905f6ac-d054-454b-8e1a-9c32db13a581",
+  "name": "Quicksilver Elemental",
+  "set_code": "mrd",
+  "collector_number": "47",
+  "frame": "2003",
+  "full_art": 0,
+  "layout": "normal"
+ },
+ {
+  "id": "2de9a046-3db1-436e-b666-ba96e2e8c5db",
+  "name": "Shizo, Death's Storehouse",
+  "set_code": "chk",
+  "collector_number": "283",
+  "frame": "2003",
+  "full_art": 0,
+  "layout": "normal"
+ },
+ {
+  "id": "33a8e5b9-6bfb-4ff2-a16d-3168a5412807",
+  "name": "Jushi Apprentice // Tomoya the Revealer",
+  "set_code": "chk",
+  "collector_number": "70",
+  "frame": "2003",
+  "full_art": 0,
+  "layout": "flip"
+ },
+ {
+  "id": "548d78bc-3968-4877-92f7-0c418238279c",
+  "name": "Reins of Power",
+  "set_code": "c15",
+  "collector_number": "103",
+  "frame": "2015",
+  "full_art": 0,
+  "layout": "normal"
+ },
+ {
+  "id": "96b6b2e1-c3e6-464c-8a13-b15deb34e862",
+  "name": "Aetherflux Reservoir",
+  "set_code": "kld",
+  "collector_number": "192",
+  "frame": "2015",
+  "full_art": 0,
+  "layout": "normal"
+ },
+ {
+  "id": "78ba24c2-73c3-4630-bb8e-7431e5b3aebd",
+  "name": "Thrill of Possibility",
+  "set_code": "sta",
+  "collector_number": "46",
+  "frame": "2015",
+  "full_art": 0,
+  "layout": "normal"
+ },
+ {
+  "id": "b429172f-2182-49dd-b6f6-e5e09493628d",
+  "name": "Faithless Looting",
+  "set_code": "sta",
+  "collector_number": "38",
+  "frame": "2015",
+  "full_art": 0,
+  "layout": "normal"
+ },
+ {
+  "id": "09278e95-eaae-4cd4-a0d8-a2d15b0abb58",
+  "name": "Druid Class",
+  "set_code": "afr",
+  "collector_number": "180",
+  "frame": "2015",
+  "full_art": 0,
+  "layout": "class"
+ },
+ {
+  "id": "fb11c04f-6f17-4da4-bbf6-0bd09de6e544",
+  "name": "The Bath Song",
+  "set_code": "ltr",
+  "collector_number": "40",
+  "frame": "2015",
+  "full_art": 0,
+  "layout": "saga"
+ },
+ {
+  "id": "0929a1bd-e35c-4ca5-8c8c-dd304cf4b830",
+  "name": "Case of the Locked Hothouse",
+  "set_code": "mkm",
+  "collector_number": "155",
+  "frame": "2015",
+  "full_art": 0,
+  "layout": "case"
+ },
+ {
+  "id": "060f9675-4921-4cbb-bae2-54c85c679fd4",
+  "name": "Waterlogged Teachings // Inundated Archive",
+  "set_code": "mh3",
+  "collector_number": "261",
+  "frame": "2015",
+  "full_art": 0,
+  "layout": "modal_dfc"
+ },
+ {
+  "id": "8689ecd7-e9a6-458b-99d2-6dbaca527f00",
+  "name": "Hydroelectric Specimen // Hydroelectric Laboratory",
+  "set_code": "mh3",
+  "collector_number": "240",
+  "frame": "2015",
+  "full_art": 0,
+  "layout": "modal_dfc"
+ }
+]

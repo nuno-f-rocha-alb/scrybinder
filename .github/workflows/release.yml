@@ -1,0 +1,88 @@
+name: Release
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:  # build only (no release): to check bundle sizes
+permissions:
+  contents: write
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - {os: windows-latest, name: windows}
+          - {os: ubuntu-latest, name: linux}
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - name: Build UI
+        run: cd ui && npm ci && npm run build
+      - name: Install dependencies (CPU PyTorch)
+        run: |
+          uv sync --extra vision
+      - name: Bundle DINOv2 weights (offline use)
+        run: uv run --extra vision python -c "from huggingface_hub import snapshot_download; snapshot_download('facebook/dinov2-base', cache_dir='packaging/hf', allow_patterns=['*.json', 'model.safetensors'])"
+      - name: Bundle Tesseract (Windows)
+        if: matrix.name == 'windows'
+        run: |
+          choco install tesseract -y --no-progress
+          cp -r "/c/Program Files/Tesseract-OCR" packaging/tesseract
+      - name: Linux system libraries (native window, Tesseract)
+        if: matrix.name == 'linux'
+        run: sudo apt-get update && sudo apt-get install -y libgirepository1.0-dev libcairo2-dev tesseract-ocr
+      - name: Package
+        run: uv run --extra vision --with pyinstaller pyinstaller packaging/scrybinder.spec --noconfirm
+      - name: Smoke test the packaged app (OCR + artwork index, offline)
+        run: |
+          EXE=dist/Scrybinder/Scrybinder; [ "${{ matrix.name }}" = windows ] && EXE=$EXE.exe
+          mkdir -p smoke
+          uv run --extra vision python tests/smoke_packaged.py "$EXE" smoke
+      - name: Archive
+        run: |
+          V="${GITHUB_REF_NAME#v}"
+          [ "${GITHUB_REF_TYPE}" = tag ] || V=0.0.0
+          mkdir -p out
+          case "${{ matrix.name }}" in
+            windows)
+              choco install innosetup -y --no-progress
+              "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" "//DAppVersion=$V" packaging/scrybinder.iss
+              mv "dist/Scrybinder-$V-windows-setup.exe" out/
+              touch dist/Scrybinder/portable.txt
+              (cd dist && 7z a "../out/Scrybinder-$V-windows-portable.zip" Scrybinder) ;;
+            linux)
+              tar -czf "out/Scrybinder-$V-linux-x64.tar.gz" -C dist Scrybinder ;;
+          esac
+      - name: Report sizes
+        run: |
+          ls -lh out
+          du -sh dist/Scrybinder* | cat
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.name }}
+          path: out/*
+          retention-days: 7
+  publish:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: windows  # Linux is built to check that it works, but only Windows is released
+          path: out
+      - run: cd out && sha256sum * > SHA256SUMS
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: out/*
+          generate_release_notes: true
+          prerelease: ${{ contains(github.ref_name, '-') }}

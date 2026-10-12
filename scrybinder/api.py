@@ -1,0 +1,376 @@
+"""Local FastAPI backend. Bound to 127.0.0.1 only; SameSite=Strict session cookie + Host header check."""
+import importlib.util
+import os
+import secrets
+import sqlite3
+import threading
+import webbrowser
+from urllib.parse import urlparse
+from pathlib import Path
+
+from fastapi import Body, FastAPI, HTTPException, Request
+from fastapi.concurrency import run_in_threadpool
+from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from fastapi.staticfiles import StaticFiles
+
+import time
+
+from . import __version__, collection, db as dbmod, formats, scryfall
+from .scan.session import Scanner, decode
+
+UI_DIST = Path(__file__).resolve().parent.parent / "ui" / "dist"
+COOKIE = "scrybinder_session"
+CRLF = b"\r\n"
+
+
+def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None = None, auto_bulk: bool = False) -> FastAPI:
+    db = db or dbmod.connect()
+    token = token or os.environ.get("SCRYBINDER_TOKEN") or secrets.token_urlsafe(24)
+    app = FastAPI(title="Scrybinder", docs_url=None, redoc_url=None, openapi_url=None)
+    app.state.token = token
+    app.state.allowed_hosts = allowed_hosts if allowed_hosts is not None else set()
+    job = {"state": "idle", "done": 0, "total": 0, "error": None, "cards": 0}
+    sets_tried = []  # list used as a mutable flag: one /sets attempt per start-up
+
+    @app.middleware("http")
+    async def guard(request: Request, call_next):
+        host = request.headers.get("host", "").split(":")[0]
+        if host not in {"127.0.0.1", "localhost"} | app.state.allowed_hosts:  # anti DNS-rebinding
+            return JSONResponse({"detail": "invalid host"}, status_code=403)
+        if request.url.path.startswith("/api"):
+            if request.query_params.get("t") == token:
+                pass
+            elif request.cookies.get(COOKIE) != token:
+                return JSONResponse({"detail": "no session"}, status_code=401)
+            elif request.method != "GET" and request.headers.get("sec-fetch-site", "same-origin") not in (
+                    "same-origin", "none"):  # CSRF extra em escritas
+                return JSONResponse({"detail": "invalid origin"}, status_code=403)
+        resp = await call_next(request)
+        if request.query_params.get("t") == token:
+            resp.set_cookie(COOKIE, token, httponly=True, samesite="strict")
+        return resp
+
+    _ix_cache: dict = {"t": 0.0, "v": None}
+
+    def _index_status():
+        """Visual index: faces indexed / eligible. Does not import torch. Cached for 15 s because /api/status is polled."""
+        from .scan import index as ixmod
+        from .scan.embed import Embedder
+        if _ix_cache["v"] is not None and time.monotonic() - _ix_cache["t"] < 15:
+            return _ix_cache["v"]
+        st = ixmod.status(ixmod.index_dir(Embedder()))
+        st["eligible"] = db.execute("SELECT COUNT(*) FROM card_faces f JOIN cards c ON c.id=f.card_id WHERE " + ixmod.SCOPE
+                                    + " AND f.image_normal IS NOT NULL").fetchone()[0]
+        _ix_cache.update(t=time.monotonic(), v=st)
+        return st
+
+    # --- estado / bulk ---
+    @app.get("/api/status")
+    def status():
+        n = db.execute("SELECT COUNT(*) FROM cards").fetchone()[0]
+        age = scryfall.bulk_age_days(db)
+        return {"cards_in_db": n, "bulk_age_days": age,
+                "bulk_stale": age is None or age > scryfall.BULK_STALE_DAYS, "job": job, "index": _index_status(), "index_job": ixjob,
+                "credit": "Card data and images © Scryfall — scryfall.com", "version": __version__}
+
+    def _run_bulk():
+        try:
+            job.update(state="download", done=0, total=0, error=None)
+            path = scryfall.download_bulk(progress=lambda d, t: job.update(done=d, total=t))
+            job.update(state="import", done=0, total=0)
+            conn = dbmod.connect(db.execute("PRAGMA database_list").fetchone()[2])  # own connection for this thread
+            job["cards"] = scryfall.import_bulk(conn, path, progress=lambda n: job.update(done=n))
+            conn.close()
+            try:
+                scryfall.fetch_sets(db)
+            except Exception:  # set icons are optional
+                pass
+            job["state"] = "done"
+        except Exception as e:  # ponytail: mostra o erro na UI em vez de o perder na thread
+            job.update(state="error", error=str(e))
+
+    @app.post("/api/bulk/update")
+    def bulk_update():
+        if job["state"] in ("download", "import"):
+            raise HTTPException(409, "an update is already running")
+        threading.Thread(target=_run_bulk, daemon=True).start()
+        return {"started": True}
+
+    # --- visual index: build from Settings (same work as `scrybinder-index`) ---
+    ixjob = {"state": "idle", "mode": None, "done": 0, "total": 0, "error": None, "failed": 0}
+    ix_stop = threading.Event()
+    ix_lock = threading.Lock()  # check-and-set of the state: a double click must not start two builds on the same shards
+
+    def _run_index(mode: str):
+        from .cli import pilot_where
+        from .scan import index as ixmod
+        from .scan.embed import Embedder
+        conn = None
+        try:
+            ixjob.update(state="prepare", mode=mode, done=0, total=0, error=None, failed=0)
+            conn = dbmod.connect(db.execute("PRAGMA database_list").fetchone()[2])  # own connection for this thread
+            emb = Embedder()
+            d = ixmod.index_dir(emb)
+            ixmod.add_rows(conn, d, *(pilot_where() if mode == "pilot" else ("1", ())))
+            ixjob["state"] = "build"
+            res = ixmod.build(emb, d, progress=lambda i, t: ixjob.update(done=i, total=t), should_stop=ix_stop.is_set)
+            ixjob.update(state="stopped" if res.get("stopped") else "done", failed=res["failed_downloads"])
+            if res["indexed"]:
+                scanner.ident.reset_vis()
+        except Exception as e:  # ponytail: show the error in the UI instead of losing it in the thread
+            ixjob.update(state="error", error=str(e))
+        finally:
+            if conn:
+                conn.close()
+            _ix_cache["v"] = None
+
+    @app.get("/api/index/estimate")
+    def index_estimate():
+        from .scan import index as ixmod
+        from .scan.embed import Embedder
+        n = ixmod.add_rows(db, ixmod.index_dir(Embedder()), dry_run=True)
+        return {"printings": n, "hours": round(n * 0.1 / 3600, 1), "gb": round(n * 97 / 1e6)}
+
+    @app.post("/api/index/build")
+    def index_build(body: dict = Body(...)):
+        mode = body.get("mode")
+        if mode not in ("pilot", "all"):
+            raise HTTPException(422, "mode must be 'pilot' or 'all'")
+        if importlib.util.find_spec("torch") is None:
+            raise HTTPException(400, "PyTorch is not installed: run `uv sync --extra vision` (the released builds include it)")
+        if db.execute("SELECT COUNT(*) FROM cards").fetchone()[0] == 0:
+            raise HTTPException(400, "update the card database first")
+        with ix_lock:
+            if ixjob["state"] in ("prepare", "build"):
+                raise HTTPException(409, "the index is already being built")
+            ix_stop.clear()
+            ixjob["state"] = "prepare"
+        threading.Thread(target=_run_index, args=(mode,), daemon=True).start()
+        return {"started": True}
+
+    @app.post("/api/index/stop")
+    def index_stop():
+        ix_stop.set()
+        return {"stopping": ixjob["state"] in ("prepare", "build")}
+
+    age = scryfall.bulk_age_days(db)
+    if auto_bulk and age is not None and age > scryfall.AUTO_BULK_DAYS:  # daily prices: refresh on start-up when older than 24 h
+        threading.Thread(target=_run_bulk, daemon=True).start()  # first run (no bulk yet) stays manual: it is ~80 MB
+
+    # --- cartas ---
+    @app.get("/api/cards/search")
+    def card_search(q: str = "", limit: int = 20):
+        if not collection._fts(q):
+            return []
+        rows = db.execute(
+            "SELECT k.oracle_id, k.name, COUNT(*) AS prints, MIN(k.id) AS sample_id FROM cards k WHERE k.rowid IN "
+            "(SELECT rowid FROM cards_fts WHERE cards_fts MATCH ?) AND k.digital=0 "
+            "GROUP BY COALESCE(k.oracle_id,k.id) ORDER BY k.name LIMIT ?", (collection._fts(q), min(limit, 50)))
+        return [dict(r) for r in rows]
+
+    @app.get("/api/cards/prints")
+    def prints(oracle_id: str = "", name: str = ""):
+        where, arg = ("oracle_id=?", oracle_id) if oracle_id else ("UPPER(name)=UPPER(?)", name)  # uses the cards_name_upper index
+        rows = db.execute(f"SELECT id, name, set_code, set_name, collector_number, released_at, rarity, finishes,"
+                          f" frame, full_art, border_color, promo_types, eur, eur_foil, eur_etched, lang, cardmarket_id FROM cards"
+                          f" WHERE {where} AND digital=0 ORDER BY released_at DESC", (arg,))
+        return [dict(r) for r in rows]
+
+    @app.get("/api/image/{card_id}")
+    def image(card_id: str, size: str = "normal"):
+        p = scryfall.image_path(db, card_id, size)
+        if not p:
+            raise HTTPException(404)
+        return FileResponse(p, headers={"Cache-Control": "max-age=31536000, immutable"})
+
+    @app.post("/api/open-url")
+    def open_url(body: dict = Body(...)):
+        """Open a link in the system browser (the app window must not navigate away). Scryfall and Cardmarket only."""
+        u = urlparse(str(body.get("url", "")))
+        if u.scheme != "https" or u.hostname not in ("scryfall.com", "www.cardmarket.com"):
+            raise HTTPException(422, "link not allowed")
+        webbrowser.open(u.geturl())
+        return {"ok": True}
+
+    # --- scan ---
+    scanner = Scanner(db)
+    app.state.scanner = scanner
+    MAX_UPLOAD = 25 * 1024 * 1024
+
+    @app.get("/api/scan/state")
+    def scan_state():
+        return scanner.state()
+
+    @app.post("/api/scan/photo")
+    async def scan_photo(request: Request, name: str = ""):
+        if int(request.headers.get("content-length") or 0) > MAX_UPLOAD:
+            raise HTTPException(413, "file larger than 25 MB")
+        data = await request.body()
+        if not data or len(data) > MAX_UPLOAD:
+            raise HTTPException(413 if data else 400, "file empty or larger than 25 MB")
+        img = await run_in_threadpool(decode, data)
+        if img is None:
+            raise HTTPException(415, "not a valid image")
+        return await run_in_threadpool(scanner.process, img, name[:80])
+
+    @app.post("/api/scan/mode")
+    def scan_mode(body: dict = Body(...)):
+        scanner.list_mode = bool(body.get("list"))
+        return {"list_mode": scanner.list_mode}
+
+    @app.get("/api/scan/reads/{rid}/candidates")
+    def read_candidates(rid: int):
+        r = next((x for x in scanner.reads if x["id"] == rid), None)
+        if r is None:
+            raise HTTPException(404)
+        return r["candidates"]
+
+    @app.patch("/api/scan/reads/{rid}")
+    def read_edit(rid: int, body: dict = Body(...)):
+        return _wrap(scanner.read_edit, rid, **body)
+
+    @app.delete("/api/scan/reads/{rid}")
+    def read_delete(rid: int):
+        scanner.read_delete(rid)
+        return {"ok": True}
+
+    @app.post("/api/scan/reads/commit")
+    def read_commit(body: dict = Body(...)):
+        return scanner.commit_reads(str(body.get("location", "")).strip())
+
+    @app.post("/api/scan/split-next")
+    def scan_split_next(body: dict = Body(...)):
+        scanner.split_next = bool(body.get("on"))
+        return {"split_next": scanner.split_next}
+
+    @app.post("/api/scan/start")
+    def scan_start(body: dict = Body(...)):
+        try:
+            scanner.start(str(body.get("kind", "")), str(body.get("target", "0")))
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        return {"ok": True}
+
+    @app.post("/api/scan/stop")
+    def scan_stop():
+        scanner.stop()
+        return {"ok": True}
+
+    @app.get("/api/scan/preview")
+    def scan_preview():
+        def gen():
+            while scanner.state()["running"]:
+                jpg = scanner.preview_jpeg()
+                if jpg:
+                    yield b"--f" + CRLF + b"Content-Type: image/jpeg" + CRLF + CRLF + jpg + CRLF
+                time.sleep(0.1)
+        return StreamingResponse(gen(), media_type="multipart/x-mixed-replace; boundary=f")
+
+    @app.get("/api/scan/capture/{pid}")
+    def scan_capture(pid: int):
+        p = scanner.dir / f"{pid}.jpg"
+        if not p.exists():
+            raise HTTPException(404)
+        return FileResponse(p, headers={"Cache-Control": "no-store"})
+
+    @app.post("/api/scan/{pid}/confirm")
+    def scan_confirm(pid: int, body: dict = Body(...)):
+        f = {k: body[k] for k in ("finish", "quantity", "condition", "language") if k in body}
+        return {"id": _wrap(scanner.confirm, pid, body.get("scryfall_id", ""), body.get("location", ""), **f)}
+
+    @app.post("/api/scan/{pid}/discard")
+    def scan_discard(pid: int):
+        _wrap(scanner.discard, pid)
+        return {"ok": True}
+
+    # --- sets ---
+    @app.get("/api/sets")
+    def sets(location: str | None = None, q: str = "", hide_empty: bool = True, group: bool = False):
+        if not sets_tried and db.execute("SELECT 1 FROM sets LIMIT 1").fetchone() is None:
+            sets_tried.append(1)  # being offline must not block every page load
+            try:
+                scryfall.fetch_sets(db)
+            except Exception:  # the view works without icons
+                pass
+        return collection.set_progress(db, location, q, hide_empty, group)
+
+    @app.get("/api/seticon/{code}")
+    def seticon(code: str):
+        p = scryfall.icon_path(db, code)
+        if not p:
+            raise HTTPException(404)
+        return FileResponse(p, media_type="image/svg+xml", headers={
+            "Cache-Control": "max-age=31536000, immutable",
+            "Content-Security-Policy": "sandbox; default-src 'none'"})  # remote SVG never runs scripts in our origin
+
+    # --- collection ---
+    @app.get("/api/collection")
+    def coll(q: str = "", set: str = "", location: str | None = None, finish: str = "", language: str = "",
+             sort: str = "name", limit: int = 100, offset: int = 0):
+        return collection.search(db, q, set, location, finish, language, sort, min(limit, 500), offset)
+
+    @app.get("/api/locations")
+    def locs():
+        return collection.locations(db)
+
+    def _wrap(fn, *a, **k):
+        try:
+            return fn(*a, **k)
+        except KeyError:
+            raise HTTPException(404)
+        except (ValueError, sqlite3.IntegrityError) as e:  # invalid input; other errors are bugs and should be 500
+            raise HTTPException(422, str(e))
+
+    @app.post("/api/collection")
+    def coll_add(body: dict = Body(...)):
+        return {"id": _wrap(collection.add, db, **{k: v for k, v in body.items() if k in collection.EDITABLE
+                                                   or k == "scryfall_id"})}
+
+    @app.patch("/api/collection/{row_id}")
+    def coll_edit(row_id: int, body: dict = Body(...)):
+        return {"id": _wrap(collection.update, db, row_id, **body)}
+
+    @app.delete("/api/collection/{row_id}")
+    def coll_del(row_id: int):
+        collection.delete(db, row_id)
+        return {"ok": True}
+
+    @app.get("/api/collection/ids")
+    def coll_ids(q: str = "", set: str = "", location: str | None = None, finish: str = "", language: str = ""):
+        return {"ids": collection.matching_ids(db, q, set, location, finish, language)}
+
+    @app.post("/api/collection/bulk")
+    def coll_bulk(body: dict = Body(...)):
+        ids = body.get("ids")
+        if not isinstance(ids, list) or not 1 <= len(ids) <= 20000 or not all(isinstance(i, int) and not isinstance(i, bool) for i in ids):
+            raise HTTPException(422, "ids: lista de 1 a 20000 inteiros")
+        action = body.get("action")
+        if action == "delete":
+            return {"deleted": collection.bulk_delete(db, ids, dbmod.DATA_DIR / "trash")}
+        if action == "update":
+            fields = body.get("fields")
+            if not isinstance(fields, dict):
+                raise HTTPException(422, "fields: objeto")
+            return _wrap(collection.bulk_update, db, ids, **fields)
+        raise HTTPException(422, "action: delete ou update")
+
+    @app.post("/api/collection/{row_id}/move")
+    def coll_move(row_id: int, body: dict = Body(...)):
+        return {"id": _wrap(collection.move, db, row_id, body.get("location", ""), body.get("quantity"))}
+
+    # --- import / export ---
+    @app.post("/api/import/manabox")
+    async def imp(request: Request, location: str = ""):
+        text = (await request.body()).decode("utf-8-sig", errors="replace")
+        return _wrap(formats.import_manabox, db, text, location)
+
+    @app.get("/api/export/{fmt}")
+    def exp(fmt: str, location: str | None = None):
+        if fmt not in formats.EXPORTERS:
+            raise HTTPException(404)
+        return Response(formats.EXPORTERS[fmt](db, location), media_type="text/csv; charset=utf-8",
+                        headers={"Content-Disposition": f'attachment; filename="scrybinder-{fmt}.csv"'})
+
+    if UI_DIST.exists():
+        app.mount("/", StaticFiles(directory=UI_DIST, html=True), name="ui")
+    return app
