@@ -2,6 +2,11 @@
 
 All notable changes are documented here. The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/) and the project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+- Scan a whole binder page (up to 3×3 cards) from one photo: *Binder page (3×3)* option on the Scan page, `POST /api/scan/page`, one review-list entry per card (#1).
+
 ## [0.1.0] — unreleased
 
 First public release.

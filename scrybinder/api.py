@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 import time
 
 from . import __version__, collection, db as dbmod, formats, scryfall
-from .scan.session import Scanner, decode
+from .scan.session import MAX_SIDE, MAX_SIDE_PAGE, Scanner, decode
 
 UI_DIST = Path(__file__).resolve().parent.parent / "ui" / "dist"
 COOKIE = "scrybinder_session"
@@ -201,22 +201,32 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
     def scan_state():
         return scanner.state()
 
-    @app.post("/api/scan/photo")
-    async def scan_photo(request: Request, name: str = ""):
+    async def _upload_image(request: Request, max_side: int):
         if int(request.headers.get("content-length") or 0) > MAX_UPLOAD:
             raise HTTPException(413, "file larger than 25 MB")
         data = await request.body()
         if not data or len(data) > MAX_UPLOAD:
             raise HTTPException(413 if data else 400, "file empty or larger than 25 MB")
-        img = await run_in_threadpool(decode, data)
+        img = await run_in_threadpool(decode, data, max_side)
         if img is None:
             raise HTTPException(415, "not a valid image")
-        return await run_in_threadpool(scanner.process, img, name[:80])
+        return img
+
+    @app.post("/api/scan/photo")
+    async def scan_photo(request: Request, name: str = ""):
+        return await run_in_threadpool(scanner.process, await _upload_image(request, MAX_SIDE), name[:80])
+
+    @app.post("/api/scan/page")
+    async def scan_page(request: Request, name: str = ""):
+        return await run_in_threadpool(scanner.process_page, await _upload_image(request, MAX_SIDE_PAGE), name[:80])
 
     @app.post("/api/scan/mode")
     def scan_mode(body: dict = Body(...)):
-        scanner.list_mode = bool(body.get("list"))
-        return {"list_mode": scanner.list_mode}
+        if "list" in body:
+            scanner.list_mode = bool(body["list"])
+        if "page" in body:
+            scanner.page_mode = bool(body["page"])
+        return {"list_mode": scanner.list_mode, "page_mode": scanner.page_mode}
 
     @app.get("/api/scan/reads/{rid}/candidates")
     def read_candidates(rid: int):

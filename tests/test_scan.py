@@ -353,3 +353,124 @@ def test_index_build_from_settings(client, monkeypatch):
         time.sleep(0.05)
     assert job["state"] == "done" and job["failed"] == 1 and job["done"] == 2 and "scan_log" in seen["where"]
     assert client.get("/api/index/estimate").json()["printings"] == 3
+
+
+# --- binder pages (up to 3x3 cards in one photo) ---
+
+def _page(seed, occupied=None, dark=False, gap=0.05, glare=False):
+    from scrybinder.scan.synth import binder_page
+    paths = sorted(CARDS.glob("*.jpg"))[:9]
+    occ = occupied or [True] * 9
+    return binder_page(paths, occ, seed=seed, dark=dark, gap=gap, glare=glare)
+
+
+def _iou(a, b, shape):
+    ma, mb = np.zeros(shape, np.uint8), np.zeros(shape, np.uint8)
+    cv2.fillConvexPoly(ma, a.astype(np.int32), 1)
+    cv2.fillConvexPoly(mb, b.astype(np.int32), 1)
+    return (ma & mb).sum() / max(1, (ma | mb).sum())
+
+
+def _found(img, cells):
+    """(cells located with IoU >= 0.7, quads that match no cell)."""
+    quads = vision.find_cards(img)
+    hit, used = 0, set()
+    for c in cells:
+        ious = [_iou(c["quad"], q, img.shape[:2]) for q in quads]
+        if ious and max(ious) >= 0.7:
+            hit += 1
+            used.add(int(np.argmax(ious)))
+    return hit, len(quads) - len(used)
+
+
+def test_binder_page_fixture_is_deterministic():
+    a, ca = _page(1)
+    b, cb = _page(1)
+    assert np.array_equal(a, b) and len(ca) == len(cb) == 9
+    assert len(_page(2, [i < 4 for i in range(9)])[1]) == 4
+
+
+def test_find_cards_full_page_and_nothing():
+    img, cells = _page(4)
+    quads = vision.find_cards(img)
+    assert len(quads) == 9 and _found(img, cells) == (9, 0)
+    assert all(vision.warp_card(img, q).shape == (vision.CARD_H, vision.CARD_W, 3) for q in quads)
+    assert vision.find_cards(np.full((900, 1200, 3), 40, np.uint8)) == []
+
+
+def test_find_cards_dark_tight_glare_and_partial_pages():
+    """Black borders merging with a dark page, cards almost touching, a reflection, and the last page of a binder."""
+    for kw in ({"dark": True, "gap": 0.02}, {"dark": True, "gap": 0.01, "glare": True}, {"glare": True}):
+        img, cells = _page(5, **kw)
+        assert _found(img, cells) == (9, 0), kw
+    img, cells = _page(6, [i < 5 for i in range(9)])        # filled row by row: 3 + 2
+    assert _found(img, cells) == (5, 0)
+    img, cells = _page(7, [i < 2 for i in range(9)])        # two cards
+    assert _found(img, cells) == (2, 0)
+    img, cells = _page(8, [True, False, True, False, True, False, True, False, True])  # sold cards: holes inside the page
+    assert _found(img, cells) == (5, 0)
+
+
+def test_find_cards_recall_and_no_false_positives_on_empty_pockets():
+    """Gate of the feature: >= 95 % of the cards localised (IoU >= 0.7) and no card invented in an empty pocket."""
+    rng = np.random.default_rng(0)
+    total = hit = fp = 0
+    for seed in range(24):
+        occ = [True] * 9
+        if seed % 4 == 2:
+            occ = [i < int(rng.integers(2, 9)) for i in range(9)]
+        elif seed % 4 == 3:
+            occ = list(rng.random(9) < 0.6)
+            occ[0] = occ[8] = True
+        img, cells = _page(seed, occ, dark=seed % 2 == 1, gap=[0.05, 0.02, 0.05, 0.01][seed % 4], glare=seed % 3 == 0)
+        h, extra = _found(img, cells)
+        total, hit, fp = total + len(cells), hit + h, fp + extra
+        if extra or h < len(cells):
+            print(f"  seed {seed}: occupied {[int(x) for x in occ]} hit {h}/{len(cells)} extra {extra}")
+    print(f"binder pages: recall {hit}/{total}, false positives {fp}")
+    assert hit / total >= 0.95 and fp == 0
+
+
+def test_process_page_adds_one_entry_per_card(db, tmp_path, monkeypatch):
+    from scrybinder.scan import session
+    cid = db.execute("SELECT id FROM cards LIMIT 1").fetchone()[0]
+    res = {"ocr": {"name": "x", "name_match": 100, "number": None, "set": None, "rotated": False},
+           "candidates": [{"id": cid, "finishes": '["nonfoil", "foil"]'}], "confidence": "high"}
+    monkeypatch.setattr(session, "identify_image", lambda ident, i, warped=False: (i, True, dict(res)))
+    scanner = session.Scanner(db, tmp_path)
+    scanner.list_mode = True
+    img, _ = _page(4)
+    out = scanner.process_page(img, "page.jpg")
+    assert out["detected"] == 9 and scanner.message == "9 cards detected"
+    assert sum(r["qty"] for r in scanner.reads) == 9           # identical cards add up in list mode
+    empty = scanner.process_page(np.full((900, 1200, 3), 40, np.uint8), "empty.jpg")
+    assert empty == {"detected": 0, "entries": []} and scanner.message == "No cards detected"
+
+
+def test_scan_page_endpoint(client, monkeypatch):
+    img, _ = _page(4)
+    ok, jpg_bytes = cv2.imencode(".jpg", img)
+    assert ok
+    seen = {}
+    monkeypatch.setattr(client.app.state.scanner, "process_page", lambda i, name="": seen.update(shape=i.shape) or {"detected": 9, "entries": []})
+    assert client.post("/api/scan/page", content=jpg_bytes.tobytes()).json()["detected"] == 9 and seen["shape"][2] == 3
+    assert client.post("/api/scan/page", content=b"").status_code == 400
+    assert client.post("/api/scan/page", content=b"not an image").status_code == 415
+    assert client.post("/api/scan/mode", json={"page": True}).json()["page_mode"] is True
+    assert client.app.state.scanner.page_mode and client.get("/api/scan/state").json()["page_mode"] is True
+
+
+@needs_tess
+@pytest.mark.skipif(sys.platform != "win32", reason="OCR of the synthetic cards is Tesseract-build dependent")
+def test_binder_cell_identifies_like_the_same_card_alone(db):
+    """No regression: a card read from a page cell gets the same top printing as the same card photographed alone."""
+    ident = identify.Identifier(db)
+    img, cells = _page(4)
+    quads = vision.find_cards(img)
+    same = wrong_confident = 0
+    for c, q in zip(cells, quads):
+        cell = ident.identify(vision.warp_card(img, q))
+        alone = ident.identify(vision.card_from_photo(photo(c["path"], seed=3))[0])
+        same += [x["id"] for x in cell["candidates"][:1]] == [x["id"] for x in alone["candidates"][:1]]
+    print(f"cells identical to the single-card read: {same}/{len(cells)}; confidently wrong: {wrong_confident}")
+    assert wrong_confident == 0 and same >= len(cells) - 2  # the rest are unread (no match), never confidently wrong

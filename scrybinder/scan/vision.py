@@ -43,6 +43,16 @@ def _rect_like(q: np.ndarray, lo=62.0, hi=118.0) -> bool:
     return True
 
 
+def _fit_quad(hull: np.ndarray) -> np.ndarray:
+    """Convex hull → quadrilateral (tl,tr,br,bl): polygon approximation, or the minimum-area rectangle for rounded corners."""
+    peri = cv2.arcLength(hull, True)
+    for eps in (0.02, 0.035, 0.05):
+        ap = cv2.approxPolyDP(hull, eps * peri, True)
+        if len(ap) == 4:
+            return order_quad(ap)
+    return order_quad(cv2.boxPoints(cv2.minAreaRect(hull)))
+
+
 def find_card(frame: np.ndarray, min_area_frac=0.04) -> np.ndarray | None:
     """Quadrilateral (tl,tr,br,bl) of the largest card-shaped contour, in frame coordinates; or None."""
     h, w = frame.shape[:2]
@@ -63,15 +73,7 @@ def find_card(frame: np.ndarray, min_area_frac=0.04) -> np.ndarray | None:
             if area < area_min or area <= best_area:
                 continue
             hull = cv2.convexHull(c)
-            peri = cv2.arcLength(hull, True)
-            quad = None
-            for eps in (0.02, 0.035, 0.05):
-                ap = cv2.approxPolyDP(hull, eps * peri, True)
-                if len(ap) == 4:
-                    quad = order_quad(ap)
-                    break
-            if quad is None:  # rounded corners: minimum-area rectangle
-                quad = order_quad(cv2.boxPoints(cv2.minAreaRect(hull)))
+            quad = _fit_quad(hull)
             qa = cv2.contourArea(quad)
             # card aspect ratio, ~90° corners and a contour that hugs the quadrilateral (an "almost rectangular" shadow fails)
             if _aspect_ok(quad) and _rect_like(quad) and qa > 0:
@@ -81,6 +83,68 @@ def find_card(frame: np.ndarray, min_area_frac=0.04) -> np.ndarray | None:
                     loose, loose_area = quad, qa
     best = best if best is not None else loose
     return None if best is None else best / scale
+
+
+def _texture_mask(gray: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
+    """(fine, coarse) masks of the pixels with detail (card art and text), as opposed to flat background, pocket plastic and
+    gaps; works on dark pages too. `fine` keeps the dips between cards (page edges and pocket lines are opened away: only art and text blocks are left), `coarse` is one blob."""
+    g = gray.astype(np.float32)
+    mean = cv2.boxFilter(g, -1, (9, 9))
+    std = np.sqrt(np.maximum(cv2.boxFilter(g * g, -1, (9, 9)) - mean * mean, 0))
+    fine = cv2.morphologyEx((std > 10).astype(np.uint8) * 255, cv2.MORPH_OPEN, np.ones((13, 13), np.uint8))
+    return fine, cv2.morphologyEx(fine, cv2.MORPH_CLOSE, np.ones((41, 41), np.uint8))
+
+
+BORDER, GAP = 0.05, 0.03  # black border and spacing between pockets, as fractions of a card
+
+
+def _grid_shape(aspect: float) -> tuple[int, int]:
+    """(columns, rows) of a binder page whose block of cards has this width/height: the cells are cards (width/height 0.716).
+    The largest grid that fits wins: a square-ish block is 3x3, not 2x2 or 1x1."""
+    fits = [(c, r) for c in (1, 2, 3) for r in (1, 2, 3) if abs(aspect / (RATIO * c / r) - 1) < 0.15]
+    return max(fits, key=lambda cr: cr[0] * cr[1]) if fits else (3, 3)
+
+
+def find_cards(frame: np.ndarray, max_cards=9, min_density=0.12) -> list[np.ndarray]:
+    """Quadrilaterals (tl,tr,br,bl, frame coordinates) of the cards on a binder page (up to 3x3), row by row.
+    The block of detail is rectified and split into the grid its proportions say; empty pockets (flat) are dropped.
+    Meant for photos the user says are a binder page, shot upright: it does not tell a page from a single card, and a page
+    holding one card (or a single column/row that is not at the top-left) cannot be told from a smaller grid."""
+    h, w = frame.shape[:2]
+    scale = 1000 / max(h, w) if max(h, w) > 1000 else 1.0
+    small = cv2.resize(frame, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA) if scale < 1 else frame
+    gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY) if small.ndim == 3 else small
+    fine, coarse = _texture_mask(gray)
+    cnts, _ = cv2.findContours(coarse, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
+    if not cnts:
+        return []
+    biggest = max(cv2.contourArea(c) for c in cnts)
+    if biggest < 0.03 * gray.shape[0] * gray.shape[1]:
+        return []
+    # empty pockets split the detail into several blocks: take them together
+    block = np.vstack([c for c in cnts if cv2.contourArea(c) >= 0.1 * biggest])
+    quad = order_quad(cv2.boxPoints(cv2.minAreaRect(block)))  # a missing corner (last row incomplete) must not bend the grid
+    bw = float(max(np.linalg.norm(quad[1] - quad[0]), np.linalg.norm(quad[2] - quad[3])))
+    bh = float(max(np.linalg.norm(quad[3] - quad[0]), np.linalg.norm(quad[2] - quad[1])))
+    cols, rows = _grid_shape(bw / bh)
+    M = cv2.getPerspectiveTransform(quad, np.float32([[0, 0], [bw, 0], [bw, bh], [0, bh]]))
+    flat = cv2.warpPerspective(fine, M, (int(bw), int(bh))) > 0
+    inv = np.linalg.inv(M)
+    # The detail stops at the black border (BORDER of a card on each outer side) and the cards are GAP apart:
+    # bw = cols*cw + (cols-1)*GAP*cw - 2*BORDER*cw, and the same for the height.
+    cw = bw / (cols + (cols - 1) * GAP - 2 * BORDER)
+    ch = bh / (rows + (rows - 1) * GAP - 2 * BORDER)
+    out = []
+    for j in range(rows):
+        for i in range(cols):
+            x0 = -BORDER * cw + i * (1 + GAP) * cw
+            y0 = -BORDER * ch + j * (1 + GAP) * ch
+            core = flat[int(max(y0, 0) + 0.25 * ch):int(min(y0 + ch, bh) - 0.25 * ch), int(max(x0, 0) + 0.25 * cw):int(min(x0 + cw, bw) - 0.25 * cw)]
+            if core.size == 0 or core.mean() < min_density:
+                continue  # empty pocket
+            cell = np.float32([[x0, y0], [x0 + cw, y0], [x0 + cw, y0 + ch], [x0, y0 + ch]])
+            out.append(cv2.perspectiveTransform(cell[None], inv)[0] / scale)
+    return out[:max_cards]
 
 
 def warp_card(frame: np.ndarray, quad: np.ndarray) -> np.ndarray:
