@@ -126,11 +126,13 @@ def test_removal_waits_for_a_restart_when_windows_keeps_the_files(data, monkeypa
     (root / "torch").mkdir(parents=True)
     (root / "torch" / "__init__.py").write_text("")
     (root / "installed.json").write_text("{}")
-    real = shutil.rmtree
-    monkeypatch.setattr(gpu.shutil, "rmtree", lambda *a, **k: (_ for _ in ()).throw(OSError("in use")) if not k.get("ignore_errors") else real(*a, **k))
-    assert gpu.remove() is True and (root / "remove-on-start").exists()
-    monkeypatch.setattr(gpu.shutil, "rmtree", real)
-    assert gpu.activate() is False and not root.exists()             # the next start deletes it before loading anything
+    monkeypatch.setattr(gpu, "ACTIVE", True)                         # PyTorch is loaded from it in this session
+    assert gpu.remove() is True and (root / "remove-on-start").exists() and (root / "torch" / "__init__.py").exists()  # nothing deleted yet
+    monkeypatch.setattr(gpu, "ACTIVE", False)                        # the next start
+    assert gpu.activate() is False and not root.exists()             # deleted before anything is loaded
+    (root / "torch").mkdir(parents=True)
+    (root / "installed.json").write_text("{}")
+    assert gpu.remove() is False and not root.exists()               # installed this session, not loaded: deleted at once
 
 
 def test_self_test_fails_cleanly_on_an_empty_folder(tmp_path):

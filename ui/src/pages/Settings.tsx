@@ -51,7 +51,7 @@ function GpuSection() {
       )}
       {g.installed && (
         <>
-          <p className="mt-2 text-sm">{g.active ? <span className="text-ok">In use.</span> : "Installed. Restart Scrybinder to use it."} <span className="text-xs text-mute">PyTorch {g.installed.torch} ({g.installed.tag})</span></p>
+          <p className="mt-2 text-sm">{g.active ? (g.device?.startsWith("GPU") ? <span className="text-ok">In use.</span> : g.device === "CPU" ? <span className="text-danger">Installed, but PyTorch fell back to the CPU: check your NVIDIA driver (or remove it).</span> : "Installed. It is used when the visual model loads.") : "Installed. Restart Scrybinder to use it."} <span className="text-xs text-mute">PyTorch {g.installed.torch} ({g.installed.tag})</span></p>
           <button className="btn-ghost mt-3" disabled={busy} onClick={remove}>Remove GPU support</button>
         </>
       )}

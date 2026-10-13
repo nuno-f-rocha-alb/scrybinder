@@ -230,13 +230,16 @@ def remove() -> bool:
     root = gpu_dir()
     if not root.exists():
         return False
-    try:
-        shutil.rmtree(root)
-        return False
-    except OSError:
-        root.mkdir(parents=True, exist_ok=True)
-        (root / "remove-on-start").write_text("1", encoding="utf-8")
-        return True
+    if not ACTIVE:  # nothing was loaded from it in this session
+        try:
+            shutil.rmtree(root)
+            return False
+        except OSError:
+            pass
+    # in use: deleting now would also take the submodules PyTorch has not imported yet; the next start does it before loading anything
+    root.mkdir(parents=True, exist_ok=True)
+    (root / "remove-on-start").write_text("1", encoding="utf-8")
+    return True
 
 
 def status(job: dict) -> dict:
