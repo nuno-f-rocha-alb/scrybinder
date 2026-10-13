@@ -13,7 +13,8 @@ export type DeckCard = {
   elsewhere: { deck_id: number; name: string; quantity: number }[]; assignments: { collection_id: number; quantity: number }[];
 };
 export type DeckSummary = { cards: number; assigned: number; available: number; missing: number; proxies: number; cost_to_complete: number };
-export type DeckInfo = { id: number; name: string; format: Format; description: string; summary: DeckSummary; cover?: string | null };
+export type DeckInfo = { id: number; name: string; format: Format; description: string; folder_id: number | null; summary: DeckSummary; cover?: string | null };
+export type Folder = { id: number; name: string; decks: number };
 export type Deck = DeckInfo & { cards: DeckCard[] };
 export type Problem = { severity: "error" | "warning"; card: string | null; rule: string; message: string };
 export type Legality = { problems: Problem[]; counts: { main: number; side: number; commander: number }; game_changers: number; legal: boolean };
