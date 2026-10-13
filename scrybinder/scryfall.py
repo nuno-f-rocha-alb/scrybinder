@@ -55,17 +55,68 @@ def face_rows(c: dict) -> list[tuple]:
             for i, f in enumerate(faces) if f.get("image_uris")]
 
 
+_NO_ORACLE = {"token", "double_faced_token", "emblem", "art_series"}  # no rules text worth a deck slot
+_ORACLE = ("oracle_id name mana_cost cmc type_line colors color_identity oracle_text keywords produced_mana "
+           "legalities game_changer edhrec_rank layout released_at").split()
+_ORACLE_INSERT = f"INSERT OR REPLACE INTO oracle_cards ({','.join(_ORACLE)}) VALUES ({','.join('?' * len(_ORACLE))})"
+
+
+def oracle_row(c: dict) -> tuple | None:
+    """Rules data of a printing, or None for tokens/emblems/art cards and entries without an oracle_id."""
+    if not c.get("oracle_id") or c.get("layout") in _NO_ORACLE:
+        return None
+    faces = c.get("card_faces") or []
+    f0 = faces[0] if faces else {}
+    text = c.get("oracle_text") or " // ".join(f["oracle_text"] for f in faces if f.get("oracle_text"))
+    return (c["oracle_id"], c["name"], c.get("mana_cost") or f0.get("mana_cost") or "",
+            c.get("cmc") or 0, c.get("type_line") or f0.get("type_line"),
+            json.dumps(c.get("colors") or f0.get("colors") or []), json.dumps(c.get("color_identity") or []),
+            text, json.dumps(c.get("keywords") or []), json.dumps(c.get("produced_mana") or []),
+            json.dumps(c.get("legalities") or {}), int(bool(c.get("game_changer"))), c.get("edhrec_rank"),
+            c.get("layout"), c.get("released_at") or "")
+
+
+def _iter_cards(path: Path):
+    with (gzip.open(path, "rb") if path.suffix == ".gz" else open(path, "rb")) as f:
+        # .jsonl.gz (formato atual do Scryfall: um objeto por linha) ou .json (array, formato antigo)
+        yield from ((json.loads(line) for line in f if line.strip()) if ".jsonl" in path.name else ijson.items(f, "item", use_float=True))
+
+
+def _keep_newest(rows: dict, r: tuple | None):
+    if r and (r[0] not in rows or r[-1] >= rows[r[0]][-1]):
+        rows[r[0]] = r
+
+
+def _store_oracle(db, rows: dict):
+    """Replace the oracle rows with `rows` (newest printing per oracle_id) and rebuild the FTS."""
+    db.executemany(_ORACLE_INSERT, rows.values())
+    db.execute("INSERT INTO oracle_fts(oracle_fts) VALUES('rebuild')")
+
+
+def backfill_oracle(db, path: Path | str, progress=None) -> int:
+    """Fill oracle_cards from a bulk file already on disk (databases created before decks existed)."""
+    rows, n = {}, 0
+    for c in _iter_cards(Path(path)):
+        _keep_newest(rows, oracle_row(c) if "name" in c else None)
+        n += 1
+        if progress and n % 2000 == 0:
+            progress(n)
+    with db:
+        _store_oracle(db, rows)
+    return len(rows)
+
+
 def import_bulk(db, path: Path | str, progress=None) -> int:
     """Stream-import the bulk JSON. Upserts: never deletes cards (the collection references them)."""
     n = 0
     path = Path(path)
-    with (gzip.open(path, "rb") if path.suffix == ".gz" else open(path, "rb")) as f, db:
+    oracle = {}
+    with db:
         batch, faces = [], []
-        # .jsonl.gz (formato atual do Scryfall: um objeto por linha) ou .json (array, formato antigo)
-        cards = (json.loads(line) for line in f if line.strip()) if ".jsonl" in path.name else ijson.items(f, "item", use_float=True)
-        for c in cards:
+        for c in _iter_cards(path):
             if "id" not in c or "name" not in c:  # ponytail: skip entries without id/name instead of failing the whole import
                 continue
+            _keep_newest(oracle, oracle_row(c))
             batch.append(card_row(c))
             faces += face_rows(c)
             if len(batch) >= 2000:
@@ -79,6 +130,7 @@ def import_bulk(db, path: Path | str, progress=None) -> int:
         db.executemany(_INSERT, batch)
         db.executemany(_FACE, faces)
         n += len(batch)
+        _store_oracle(db, oracle)
         db.execute("INSERT INTO cards_fts(cards_fts) VALUES('rebuild')")
         db.execute("INSERT OR REPLACE INTO meta VALUES ('bulk_updated', ?)",
                    (datetime.now(timezone.utc).isoformat(),))

@@ -69,7 +69,7 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
     def status():
         n = db.execute("SELECT COUNT(*) FROM cards").fetchone()[0]
         age = scryfall.bulk_age_days(db)
-        return {"cards_in_db": n, "bulk_age_days": age,
+        return {"cards_in_db": n, "oracle_cards": db.execute("SELECT COUNT(*) FROM oracle_cards").fetchone()[0], "bulk_age_days": age,
                 "bulk_stale": age is None or age > scryfall.BULK_STALE_DAYS, "job": job, "index": _index_status(), "index_job": ixjob,
                 "credit": "Card data and images © Scryfall — scryfall.com", "version": __version__,
                 "update_available": (updstate["plan"] or {}).get("latest") if not (updstate["plan"] or {}).get("up_to_date", True) else None}
@@ -254,6 +254,22 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
     age = scryfall.bulk_age_days(db)
     if auto_bulk and age is not None and age > scryfall.AUTO_BULK_DAYS:  # daily prices: refresh on start-up when older than 24 h
         threading.Thread(target=_run_bulk, daemon=True).start()  # first run (no bulk yet) stays manual: it is ~80 MB
+
+    def _backfill_oracle():  # databases from before decks: fill oracle_cards from the cached bulk file (no download)
+        files = [f for f in (dbmod.DATA_DIR / "bulk").glob("default-cards.json*") if f.suffix != ".part"]
+        if files and db.execute("SELECT COUNT(*) FROM cards").fetchone()[0] and not db.execute("SELECT 1 FROM oracle_cards").fetchone():
+            def run():
+                conn = dbmod.connect(db.execute("PRAGMA database_list").fetchone()[2])
+                try:
+                    scryfall.backfill_oracle(conn, max(files, key=lambda f: f.stat().st_mtime))
+                except Exception:  # ponytail: the Decks page falls back to "Update bulk data"
+                    pass
+                finally:
+                    conn.close()
+            threading.Thread(target=run, daemon=True).start()
+
+    if auto_bulk and not (age is not None and age > scryfall.AUTO_BULK_DAYS):  # a refresh above fills oracle_cards itself
+        _backfill_oracle()  # real app only: tests must not read the user's bulk file
 
     # --- cartas ---
     @app.get("/api/cards/search")
