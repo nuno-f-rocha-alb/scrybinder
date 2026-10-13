@@ -25,6 +25,17 @@ export default function ImportExport() {
     setFile(f); setRes(null);
     if (f && !loc) setLoc(f.name.replace(/\.csv$/i, "").replace(/\b\w/g, (c) => c.toUpperCase()));
   };
+  // In the app window a native Save dialog (pywebview bridge); in a plain browser the normal download.
+  const exportCsv = async (id: string) => {
+    const bridge = (window as { pywebview?: { api?: { save_csv?: (n: string, t: string) => Promise<string | null> } } }).pywebview?.api;
+    if (!bridge?.save_csv) { window.location.assign(`/api/export/${id}?${qs({ location: exportLoc })}`); return; }
+    try {
+      const r = await fetch(`/api/export/${id}?${qs({ location: exportLoc })}`);
+      if (!r.ok) throw new Error(r.statusText);
+      const path = await bridge.save_csv(`scrybinder-${id}.csv`, await r.text());
+      if (path) toast(`Saved to ${path}`);
+    } catch (e) { toast((e as Error).message, true); }
+  };
   const run = async () => {
     if (!file) return;
     setBusy(true);
@@ -70,11 +81,11 @@ export default function ImportExport() {
           </select></div>
         <div className="grid max-w-4xl gap-4 sm:grid-cols-3">
           {FORMATS.map((f) => (
-            <a key={f.id} href={`/api/export/${f.id}?${qs({ location: exportLoc })}`} download
-              className="group flex cursor-pointer flex-col gap-2 rounded-2xl border border-line bg-surface p-4 transition hover:border-accent hover:bg-raised">
+            <button key={f.id} type="button" onClick={() => exportCsv(f.id)}
+              className="group flex cursor-pointer flex-col gap-2 rounded-2xl border border-line bg-surface p-4 text-left transition hover:border-accent hover:bg-raised">
               <span className="flex items-center justify-between text-lg font-semibold">{f.name}<IconDownload className="size-5 text-mute group-hover:text-accent" /></span>
               <span className="text-xs text-mute">{f.note}</span>
-            </a>
+            </button>
           ))}
         </div>
       </section>

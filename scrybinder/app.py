@@ -24,6 +24,20 @@ def _icon() -> str | None:
     return str(icon) if icon.exists() else None
 
 
+class Bridge:
+    """Exposed to the page as `window.pywebview.api`: a native Save dialog for CSV exports."""
+
+    def save_csv(self, name: str, text: str) -> str | None:
+        """Ask where to save, write the file, return its path (None if the dialog was cancelled)."""
+        import webview
+        got = webview.windows[0].create_file_dialog(webview.FileDialog.SAVE, save_filename=Path(name).name, file_types=("CSV files (*.csv)",))
+        if not got:
+            return None
+        path = Path(got if isinstance(got, str) else got[0])
+        path.write_text(text, encoding="utf-8", newline="")
+        return str(path)
+
+
 def _redirect_output_to_log():
     """pythonw / packaged app without a console: uvicorn needs a stderr, so send it to a file."""
     from .db import DATA_DIR
@@ -70,8 +84,7 @@ def main():
     if "--browser" not in sys.argv:
         try:
             import webview  # late import: tests and --serve mode do not need it
-            webview.settings["ALLOW_DOWNLOADS"] = True  # CSV exports
-            webview.create_window("Scrybinder", url, width=1400, height=900, background_color="#0f1115")
+            webview.create_window("Scrybinder", url, width=1400, height=900, background_color="#0f1115", js_api=Bridge())
             webview.start(icon=_icon())
             return
         except Exception as e:  # noqa: BLE001 — no native web view available: use the browser instead
