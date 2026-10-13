@@ -98,6 +98,8 @@ def test_decks_api(db):
     got = c.get(f"/api/decks/{did}").json()
     assert got["cards"][0]["quantity"] == 3 and got["summary"]["cards"] == 3
     assert c.get("/api/decks").json()[0]["summary"]["cards"] == 3
+    listed = c.get("/api/decks").json()[0]
+    assert listed["cover"] == got["cards"][0]["image_id"] and listed["cover"]  # the card whose image the app shows
     assert c.patch(f"/api/decks/{did}", json={"format": "nope"}).status_code == 422
     assert c.post("/api/decks", json={"name": 5}).status_code == 422
     assert c.patch(f"/api/decks/{did}", json={"name": 5}).status_code == 422

@@ -134,7 +134,9 @@ def connect(path: Path | str | None = None) -> sqlite3.Connection:
     if default:
         _adopt_legacy_db(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    db = sqlite3.connect(path, check_same_thread=False, timeout=60)  # a bulk update holds the writer for ~1 min: wait instead of failing
+    # a bulk update holds the writer for ~1 min: wait instead of failing. The API shares this connection between threads, so no
+    # statement cache: a cached statement used by two threads at once raises "API misuse" (tests/test_threads.py)
+    db = sqlite3.connect(path, check_same_thread=False, timeout=60, cached_statements=0)
     db.row_factory = sqlite3.Row
     db.execute("PRAGMA foreign_keys=ON")
     db.execute("PRAGMA journal_mode=WAL")
