@@ -3,6 +3,7 @@ Cards can be assigned physical copies of the collection (reserved for that deck)
 it is assigned, free to assign, held by other decks, or has to be bought."""
 import json
 import re
+import sqlite3
 
 from . import deckrules, deckstats
 
@@ -127,14 +128,22 @@ def summary(cs: list[dict]) -> dict:
             "cost_to_complete": round(sum(c["missing"] * (c["price"] or 0) for c in real), 2)}
 
 
-def create(db, name: str, format: str = "casual", description: str = "") -> int:
+def _folder_ok(db, folder_id):
+    if isinstance(folder_id, bool) or not isinstance(folder_id, (int, type(None))):
+        raise ValueError("folder_id must be a folder id or null")
+    if folder_id is not None and not db.execute("SELECT 1 FROM deck_folders WHERE id=?", (folder_id,)).fetchone():
+        raise ValueError("that folder does not exist")
+
+
+def create(db, name: str, format: str = "casual", description: str = "", folder_id: int | None = None) -> int:
     name = name.strip() if isinstance(name, str) else ""
     if not name:
         raise ValueError("a deck needs a name")
     _check(format=format)
+    _folder_ok(db, folder_id)
     with db:
-        return db.execute("INSERT INTO decks (name, format, description) VALUES (?,?,?)",
-                          (name, format, description or "")).lastrowid
+        return db.execute("INSERT INTO decks (name, format, description, folder_id) VALUES (?,?,?,?)",
+                          (name, format, description or "", folder_id)).lastrowid
 
 
 def get(db, deck_id: int) -> dict:
@@ -157,8 +166,12 @@ def listing(db) -> list[dict]:
 
 def update(db, deck_id: int, **fields) -> None:
     _deck(db, deck_id)
+    folder = {"folder_id": fields["folder_id"]} if "folder_id" in fields else {}  # None puts the deck outside every folder
     fields = {k: v for k, v in fields.items() if k in ("name", "format", "description") and v is not None}
     _check(format=fields.get("format"))
+    if folder:
+        _folder_ok(db, folder["folder_id"])
+        fields.update(folder)
     if "name" in fields and not (isinstance(fields["name"], str) and fields["name"].strip()):
         raise ValueError("a deck needs a name")
     if fields:
@@ -424,3 +437,45 @@ def stats(db, deck_id: int) -> dict:
     _deck(db, deck_id)
     cs = cards(db, deck_id)
     return {**deckstats.compute(cs), "cost_to_complete": summary([c for c in cs if c["board"] in deckstats.BOARDS])["cost_to_complete"]}
+
+
+FOLDER_NAME_MAX = 60
+
+
+def _folder_name(name) -> str:
+    name = re.sub(r"\s+", " ", name.strip()) if isinstance(name, str) else ""
+    if not name or len(name) > FOLDER_NAME_MAX:
+        raise ValueError(f"a folder name has 1 to {FOLDER_NAME_MAX} characters")
+    return name
+
+
+def folders(db) -> list[dict]:
+    return [dict(r) for r in db.execute(
+        "SELECT f.id, f.name, (SELECT COUNT(*) FROM decks d WHERE d.folder_id = f.id) AS decks FROM deck_folders f ORDER BY f.name")]
+
+
+def create_folder(db, name: str) -> int:
+    name = _folder_name(name)
+    try:
+        with db:
+            return db.execute("INSERT INTO deck_folders (name) VALUES (?)", (name,)).lastrowid
+    except sqlite3.IntegrityError:
+        raise ValueError(f"there is already a folder called {name}") from None
+
+
+def rename_folder(db, folder_id: int, name: str) -> None:
+    name = _folder_name(name)
+    if not db.execute("SELECT 1 FROM deck_folders WHERE id=?", (folder_id,)).fetchone():
+        raise KeyError(folder_id)
+    try:
+        with db:
+            db.execute("UPDATE deck_folders SET name=? WHERE id=?", (name, folder_id))
+    except sqlite3.IntegrityError:
+        raise ValueError(f"there is already a folder called {name}") from None
+
+
+def delete_folder(db, folder_id: int) -> None:
+    """Delete a folder; its decks stay, outside every folder (ON DELETE SET NULL)."""
+    with db:
+        if not db.execute("DELETE FROM deck_folders WHERE id=?", (folder_id,)).rowcount:
+            raise KeyError(folder_id)

@@ -460,7 +460,25 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
 
     @app.post("/api/decks")
     def decks_create(body: dict = Body(...)):
-        return {"id": _wrap(decks.create, db, body.get("name"), body.get("format") or "casual", body.get("description") or "")}
+        return {"id": _wrap(decks.create, db, body.get("name"), body.get("format") or "casual", body.get("description") or "", body.get("folder_id"))}
+
+    @app.get("/api/deck-folders")
+    def deck_folders():
+        return decks.folders(db)
+
+    @app.post("/api/deck-folders")
+    def deck_folder_create(body: dict = Body(...)):
+        return {"id": _wrap(decks.create_folder, db, body.get("name"))}
+
+    @app.patch("/api/deck-folders/{folder_id}")
+    def deck_folder_rename(folder_id: int, body: dict = Body(...)):
+        _wrap(decks.rename_folder, db, folder_id, body.get("name"))
+        return {"ok": True}
+
+    @app.delete("/api/deck-folders/{folder_id}")
+    def deck_folder_delete(folder_id: int):
+        _wrap(decks.delete_folder, db, folder_id)
+        return {"ok": True}
 
     @app.get("/api/decks/{deck_id}")
     def decks_get(deck_id: int):

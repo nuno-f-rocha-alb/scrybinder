@@ -86,8 +86,13 @@ CREATE TABLE IF NOT EXISTS oracle_cards (  -- one row per oracle_id: the rules d
 CREATE VIRTUAL TABLE IF NOT EXISTS oracle_fts USING fts5(
     name, oracle_text, content='oracle_cards', content_rowid='rowid', tokenize='unicode61 remove_diacritics 2');
 
+CREATE TABLE IF NOT EXISTS deck_folders (  -- one level: a deck is in a folder or in none
+    id INTEGER PRIMARY KEY, name TEXT NOT NULL COLLATE NOCASE UNIQUE,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
 CREATE TABLE IF NOT EXISTS decks (
     id INTEGER PRIMARY KEY, name TEXT NOT NULL, format TEXT NOT NULL DEFAULT 'casual', description TEXT NOT NULL DEFAULT '',
+    folder_id INTEGER REFERENCES deck_folders(id) ON DELETE SET NULL,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
     updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
@@ -109,7 +114,7 @@ CREATE INDEX IF NOT EXISTS deck_assignments_coll ON deck_assignments(collection_
 """
 
 # additive migrations (never delete or rewrite data): (table, column, definition)
-_ADD = [("cards", "illustration_id", "TEXT"), ("cards", "image_status", "TEXT"), ("scan_log", "topk_json", "TEXT")]
+_ADD = [("decks", "folder_id", "INTEGER REFERENCES deck_folders(id) ON DELETE SET NULL"), ("cards", "illustration_id", "TEXT"), ("cards", "image_status", "TEXT"), ("scan_log", "topk_json", "TEXT")]
 
 
 def _migrate(db):
