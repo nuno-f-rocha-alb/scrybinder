@@ -85,6 +85,7 @@ def build_update(root: Path, new: dict, old: dict, out_zip: Path) -> dict:
                    if removed else "Nothing to delete in this update.")
         text = INSTRUCTIONS.format(old=old["version"], new=new["version"], removal=removal)
         z.writestr("UPDATE.txt", text.replace("\n", "\r\n"))  # Windows line endings: opens right in any Notepad
+        z.writestr("manifest.json", json.dumps(new, indent=1))  # so the app folder's manifest matches the new version
         z.writestr("update.json", json.dumps({"from": old["version"], "to": new["version"], "remove": removed}, indent=2))
     return {"changed": len(changed), "removed": len(removed)}
 
