@@ -30,3 +30,10 @@ def test_save_csv_writes_exact_text(tmp_path, monkeypatch):
 def test_save_csv_cancelled_writes_nothing(tmp_path, monkeypatch):
     _fake_webview(monkeypatch, None)
     assert Bridge().save_csv("x.csv", "data") is None
+
+
+def test_save_text_writes_a_deck_list(tmp_path, monkeypatch):
+    target = tmp_path / "deck.txt"
+    seen = _fake_webview(monkeypatch, [str(target)])  # some versions answer with a list
+    assert Bridge().save_text("../x/deck.txt", "Deck\n1 Sol Ring\n") == str(target)
+    assert seen["name"] == "deck.txt" and target.read_bytes() == b"Deck\n1 Sol Ring\n"

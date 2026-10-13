@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { IconAlertTriangle, IconArrowLeft, IconBox, IconCheck, IconCopy, IconPlus, IconSearch, IconTrash, IconX } from "@tabler/icons-react";
+import { IconAlertTriangle, IconArrowLeft, IconBox, IconCheck, IconCopy, IconDownload, IconTrash, IconUpload, IconX } from "@tabler/icons-react";
 import { api, eur, qs } from "../api";
 import { BOARDS, BOARD_LABEL, Board, CardFilter, Deck as DeckT, DeckStats, FORMATS, Format, GROUPS, GroupBy, Legality, OracleRow, Preview, SORTS, SortBy, VIEWS, View, groupCards, matchesFilter, resultPreview, toPreview } from "../decks";
 import { CardImg, Modal, useToast } from "../components/ui";
@@ -8,6 +8,9 @@ import { GridControls, useCardGrid } from "../components/cardgrid";
 import { DeckView, useZoom } from "../components/deckviews";
 import { LegalityPanel, StatsPanel } from "../components/deckstats";
 import AssignDialog from "../components/assign";
+import AddCards from "../components/addcards";
+import ImportDialog, { Skipped } from "../components/decklist";
+import type { ImportReport } from "../components/decklist";
 
 const cap = (f: string) => f[0].toUpperCase() + f.slice(1);
 
@@ -41,53 +44,6 @@ function PreviewPanel({ p }: { p: Preview | null }) {
   );
 }
 
-function AddCards({ deck, onAdd, setPreview }: { deck: DeckT; onAdd: (oracleId: string, board: Board) => void; setPreview: (p: Preview) => void }) {
-  const [q, setQ] = useState("");
-  const [board, setBoard] = useState<Board>(deck.format === "commander" && !deck.cards.some((c) => c.board === "commander") ? "commander" : "main");
-  const [legalOnly, setLegalOnly] = useState(true);
-  const [rows, setRows] = useState<OracleRow[]>([]);
-  const [done, setDone] = useState("");  // the query whose results are shown: "No cards found" only once the search has answered
-  useEffect(() => {
-    if (!q.trim()) { setRows([]); return; }
-    let live = true;  // an older, slower answer must not replace a newer one
-    const t = setTimeout(() => api<{ rows: OracleRow[] }>("/oracle/search?" + qs({ q, deck: deck.id, legal: legalOnly ? "true" : "", limit: 8 }))
-      .then((r) => { if (live) { setRows(r.rows); setDone(q); } }).catch(() => { if (live) { setRows([]); setDone(q); } }), 200);
-    return () => { live = false; clearTimeout(t); };
-  }, [q, legalOnly, deck.id, deck.cards]);
-  const add = (r: OracleRow) => onAdd(r.oracle_id, board);
-  return (
-    <div className="mb-5 rounded-xl border border-line bg-surface p-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <div className="relative min-w-[220px] flex-1">
-          <IconSearch className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-mute" aria-hidden />
-          <input className="field pl-9" placeholder="Find cards to add…" aria-label="Find cards to add" value={q} onChange={(e) => setQ(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && rows[0]) add(rows[0]); }} />
-        </div>
-        <select className="field w-auto" value={board} aria-label="Add to" onChange={(e) => setBoard(e.target.value as Board)}>
-          {BOARDS.map((b) => <option key={b} value={b}>{BOARD_LABEL[b]}</option>)}
-        </select>
-        <label className="flex cursor-pointer items-center gap-2 text-sm text-mute" title="Only cards legal in this deck's format (and its commander's colours)">
-          <input type="checkbox" checked={legalOnly} onChange={(e) => setLegalOnly(e.target.checked)} className="accent-[var(--color-accent)]" />Only legal
-        </label>
-      </div>
-      {q.trim() && done === q && rows.length === 0 && <p className="mt-3 text-sm text-mute">No cards found.</p>}
-      {rows.length > 0 && (
-        <ul className="mt-2 divide-y divide-line">
-          {rows.map((r) => (
-            <li key={r.oracle_id} onMouseEnter={() => setPreview(resultPreview(r))} className="flex items-center gap-3 px-1 py-1.5 hover:bg-raised">
-              <button className="btn-ghost !px-2 !py-1" onClick={() => add(r)} aria-label={`Add ${r.name}`}><IconPlus className="size-4" /></button>
-              <span className="min-w-0 flex-1 truncate text-sm">{r.name}</span>
-              <ManaCost cost={r.mana_cost} />
-              <span className="hidden w-48 truncate text-xs text-mute md:block">{r.type_line}</span>
-              <span className="w-24 text-right text-xs text-mute tabular-nums">{r.in_deck ? `${r.in_deck} in deck · ` : ""}{r.owned} owned</span>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
-}
-
 export default function Deck({ id, onBack }: { id: number; onBack: () => void }) {
   const [deck, setDeck] = useState<DeckT | null>(null);
   const [legality, setLegality] = useState<Legality | null>(null);
@@ -107,6 +63,8 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
   const [filter, setFilter] = useState<CardFilter | null>(null);
   const [showProblems, setShowProblems] = useState(false);
   const [assignId, setAssignId] = useState<number | null>(null);
+  const [importing, setImporting] = useState(false);
+  const [imported, setImported] = useState<ImportReport | null>(null);
 
   const reload = useCallback(() => Promise.all([api<DeckT>(`/decks/${id}`), api<Legality>(`/decks/${id}/legality`), api<DeckStats>(`/decks/${id}/stats`)])
     .then(([d, l, s]) => { setDeck(d); setName(d.name); setLegality(l); setStats(s); setErr(""); }).catch((e) => setErr(e.message)), [id]);
@@ -117,6 +75,16 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
   if (err && !deck) return <div><button className="btn-ghost mb-4" onClick={onBack}><IconArrowLeft className="size-4" />Decks</button><p className="text-danger">{err}</p></div>;
   if (!deck) return <p className="text-mute">Loading…</p>;
 
+  const exportList = async () => {
+    const bridge = (window as { pywebview?: { api?: { save_text?: (n: string, t: string) => Promise<string | null> } } }).pywebview?.api;
+    if (!bridge?.save_text) { window.location.assign(`/api/decks/${id}/export`); return; }
+    try {
+      const r = await fetch(`/api/decks/${id}/export`);
+      if (!r.ok) throw new Error(r.statusText);
+      const path = await bridge.save_text(`${deck.name.replace(/[^\w .-]+/g, "").trim() || "deck"}.txt`, await r.text());
+      if (path) toast(`Saved to ${path}`);
+    } catch (e) { toast((e as Error).message, true); }
+  };
   const patchDeck = (body: object) => act(api(`/decks/${id}`, { method: "PATCH", body: JSON.stringify(body) }));
   const errors = legality?.problems.filter((p) => p.severity === "error").length ?? 0;
   const main = (stats?.totals.main ?? 0) + (stats?.totals.commander ?? 0);
@@ -137,15 +105,23 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
           <select className="field w-auto" aria-label="Format" value={deck.format} onChange={(e) => patchDeck({ format: e.target.value as Format })}>
             {FORMATS.map((f) => <option key={f} value={f}>{cap(f)}</option>)}
           </select>
+        </div>
+        <div className="mb-4 flex flex-wrap items-center gap-2">
           <button className="btn-ghost" title="Reserve the free copies of your collection for the cards that still need them"
             onClick={() => api<{ assigned: number }>(`/decks/${id}/assign-free`, { method: "POST" }).then((r) => { toast(r.assigned ? `Assigned ${r.assigned} ${r.assigned === 1 ? "copy" : "copies"}` : "No free copies to assign"); reload(); }).catch((e) => toast(e.message, true))}>
             <IconBox className="size-4" />Assign free copies
+          </button>
+          <button className="btn-ghost" title="Add the cards of a list (Moxfield, Archidekt, MTGO style) to this deck" onClick={() => setImporting(true)}>
+            <IconUpload className="size-4" />Import list
+          </button>
+          <button className="btn-ghost" title="Save the deck as a text list" onClick={exportList}>
+            <IconDownload className="size-4" />Export list
           </button>
           <button className="btn-ghost" title="Copy this deck (without assigned copies)"
             onClick={() => api<{ id: number }>(`/decks/${id}/duplicate`, { method: "POST" }).then(() => toast("Deck duplicated")).catch((e) => toast(e.message, true))}>
             <IconCopy className="size-4" />Duplicate
           </button>
-          <button className="btn-danger" onClick={() => {
+          <button className="btn-danger ml-auto" onClick={() => {
             if (!confirmDelete) { setConfirmDelete(true); setTimeout(() => setConfirmDelete(false), 4000); return; }
             api(`/decks/${id}`, { method: "DELETE" }).then(onBack).catch((e) => toast(e.message, true));
           }}><IconTrash className="size-4" />{confirmDelete ? "Click again to delete" : "Delete"}</button>
@@ -206,6 +182,14 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
           </span>
         </div>
       </div>
+      {importing && <ImportDialog deckId={id} onClose={() => setImporting(false)} onDone={(r) => { setImporting(false); setImported(r); reload(); }} />}
+      {imported && (
+        <Modal title="Deck list imported" onClose={() => setImported(null)}>
+          <h2 className="mb-2 text-lg font-semibold">Imported {imported.cards} {imported.cards === 1 ? "card" : "cards"}</h2>
+          <Skipped report={imported} />
+          <div className="mt-5 flex justify-end"><button className="btn-primary" onClick={() => setImported(null)}>Done</button></div>
+        </Modal>
+      )}
       {assignId !== null && deck.cards.find((c) => c.id === assignId) && (
         <AssignDialog deckId={id} card={deck.cards.find((c) => c.id === assignId)!} onClose={() => setAssignId(null)} onChanged={reload} />
       )}

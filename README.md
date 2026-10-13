@@ -31,7 +31,8 @@ Scrybinder is a desktop app that recognises the *exact printing* of each card yo
 - **Photos, folders, live camera — or a whole binder page.** Drop photos, watch a folder that another program saves into, or point a webcam / capture card at your cards. Turn on *Binder page (3×3)* and one photo of a binder page adds up to nine cards at once.
 - **Review before you commit.** Every scan lands in a list where you can change the printing, finish, quantity, condition and language. Uncertain reads are flagged. Hover any card image (your photo or the printing it was matched to) to see it enlarged, which settles "is this the promo or the regular one?". Prices and a running total are shown.
 - **A real collection manager.** Search, filter, group by set, edit in bulk, move cards between boxes, track purchase price and date, see per-set completion. Deleted rows are saved to a trash file first.
-- **Import / export.** ManaBox (lossless round trip), Moxfield (collection CSV, both ways) and Cardmarket stock lists.
+- **Decks tied to your collection.** Build Commander and 60-card decks from cards you own and cards you do not, in folders. The deck page checks legality and shows statistics, says which copy of your collection is in which deck and what is left to buy, and imports and exports Moxfield / Archidekt / MTGO text lists — [how](#decks).
+- **Import / export.** ManaBox (lossless round trip), Moxfield (collection CSV, both ways) and Cardmarket stock lists; deck lists as text.
 - **Private by design.** Everything is stored in a local SQLite database. The only network traffic is to Scryfall (card data, prices and images) — [details](#security-and-privacy).
 - **Runs on the CPU, faster on an NVIDIA GPU.** The installed app ships the CPU build of PyTorch; one click in Settings adds GPU support — [how](#gpu-acceleration).
 - **Small updates.** Each release also publishes an *update package* of a few tens of MB instead of the ~1 GB installer — [how](#updating).
@@ -44,10 +45,10 @@ Scrybinder is a desktop app that recognises the *exact printing* of each card yo
 | Account / subscription | none | free tiers | none |
 | Data stays on your PC | yes | no (cloud sync) | yes |
 | Exact printing (promos, foils, serialized) | yes, with a review list | scanning picks a printing | yes |
-| Import / export | ManaBox, Moxfield, Cardmarket | own formats | CSV |
+| Import / export | ManaBox, Moxfield, Cardmarket, deck lists | own formats | CSV |
 | Open source | MIT | no | GPL-3.0 |
 
-Scrybinder does not do deck building, price history or mobile scanning; use it alongside tools like Moxfield, Archidekt or ManaBox.
+Scrybinder does not do price history, playtesting, public deck sharing, deck combos or mobile scanning; use it alongside tools like Moxfield, Archidekt or ManaBox.
 
 ## Download and install
 
@@ -128,7 +129,18 @@ Scanned cards wait in a temporary list; only **Add to collection** writes to you
 | **Moxfield** collection CSV | yes — it carries no Scryfall id, so each row is matched by **edition and collector number** (rows that cannot be matched are listed, not dropped silently) | yes (the location goes into `Tags`) |
 | **Cardmarket** stock list | — | yes (condition and language mappings are approximate) |
 
-Importing the same file twice adds the cards twice.
+Importing the same file twice adds the cards twice. Deck lists are plain text and have their own import and export on the deck page (see [Decks](#decks)).
+
+### Decks
+
+The **Decks** page holds your decks, optionally in folders (one level; deleting a folder keeps its decks). A deck is its own list: it can hold cards you do not own, and what is missing is counted so you know what to buy.
+
+- **Building.** Create a deck (optionally from a pasted list), then search for cards to add: by name, with filters for rules text, type, colours, mana value and *only cards I own*. *Only legal* hides cards that are banned in the deck's format or outside the commander's colour identity. Each card sits in the **main deck, sideboard, commander** or **maybeboard** (the maybeboard never counts).
+- **Formats.** Commander, Standard, Pioneer, Modern, Legacy, Vintage and Pauper have full deck rules; *Casual* has none. The legality panel (click the status in the bottom bar) lists what is wrong: banned or not legal cards, copy limits (with the exceptions for basic lands and cards like *Relentless Rats*), 60-card size and sideboard, and for Commander the 100 cards, singleton, who may be a commander and which pairs are allowed (Partner, Partner with, Friends forever, Background, Doctor's companion), colour identity and the number of game changers. Legality comes from the Scryfall data; Brawl, Oathbreaker, brackets and companions are not checked.
+- **Your copies.** Click the status of a card to reserve **copies of your collection** for it. The status says whether a card is *assigned* (every copy is in this deck), *available* (you own free copies you can assign), *in other decks* (your copies are reserved elsewhere, and which) or *missing* (what you would have to buy, with its cost). A card tagged **proxy** is in the deck but is not a real copy: it never counts as missing and never enters your collection. Lowering or deleting a collection row that is assigned to a deck is refused, naming the decks (free the copies in the deck first); *Assign free copies* in the deck header reserves every free copy a deck still needs.
+- **Views.** List, Compact, Grid, Stacks (with *Every copy*) and Spoiler, grouped by type, colour, mana value, tag or collection status and sorted by name, mana value or price. The big card on the left follows the pointer and stays on the last card.
+- **Statistics.** Mana curve, symbols against land sources per colour (with a warning when a colour has too few sources), types and tags, average mana value, price and cost to complete, and the chance of having enough lands or coloured sources by a given turn. Click a bar to see those cards.
+- **Lists.** *Import list* and *Export list* use the common text format, `4 Lightning Bolt` or `1 Sol Ring (C21) 263 #ramp`, with `Commander`, `Deck`, `Sideboard` and `Maybeboard` sections; lines that match no card are listed. The first time, the card rules are filled from the card database you already downloaded (no new download).
 
 ## The visual index
 
