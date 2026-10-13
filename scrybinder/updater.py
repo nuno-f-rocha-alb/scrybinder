@@ -9,6 +9,7 @@ wrong undoes the renames: a package is applied completely or not at all, so the 
 Trust: files are checked against the `manifest.json` and `SHA256SUMS` of the same release, over HTTPS from github.com. That catches a corrupt
 download, not a compromised release (the installer is not code-signed).
 """
+import contextlib
 import hashlib
 import json
 import os
@@ -151,7 +152,36 @@ def _rollback(app: Path, pend: dict) -> list[str]:
     return aside
 
 
+@contextlib.contextmanager
+def _apply_lock(root: Path):
+    """Held while files are being swapped (or undone); yields False if another Scrybinder holds it. The OS drops it if that process dies,
+    so a crashed update can be undone while a running one is left alone."""
+    root.mkdir(parents=True, exist_ok=True)
+    f = open(root / "apply.lock", "a+b")
+    got = True
+    try:
+        if sys.platform == "win32":
+            import msvcrt
+            msvcrt.locking(f.fileno(), msvcrt.LK_NBLCK, 1)
+        else:
+            import fcntl
+            fcntl.flock(f, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        got = False
+    try:
+        yield got
+    finally:
+        f.close()  # releases the lock
+
+
 def _apply(app: Path, changed: list[str], removed: list[str], tag: str) -> list[str]:
+    with _apply_lock(update_dir()) as got:
+        if not got:
+            raise RuntimeError("another Scrybinder window is applying an update: wait for it to finish")
+        return _apply_locked(app, changed, removed, tag)
+
+
+def _apply_locked(app: Path, changed: list[str], removed: list[str], tag: str) -> list[str]:
     """Rename-and-replace; the first error puts everything back. Returns the files that could not be renamed because they are open without
     sharing (base_library.zip is): they stay as `<name>.new` and are put in place by `restart()` once this process has exited. `pending.json` says what is in flight, so a crash is undone at the next start."""
     root = update_dir()
@@ -271,13 +301,16 @@ def cleanup_on_start() -> None:
         listed = json.loads((root / "old.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         listed = []
-    try:  # the app was closed (or crashed) in the middle of an update: put the previous version back first
-        pend = json.loads((root / "pending.json").read_text(encoding="utf-8"))
-        if not pend.get("done"):
-            listed += _rollback(app_dir(), pend)
-        (root / "pending.json").unlink()
-    except (OSError, ValueError, KeyError):
-        pass
+    with _apply_lock(root) as got:
+        if not got:
+            return  # another Scrybinder window is in the middle of an update: leave everything as it is
+        try:  # the app was closed (or crashed) in the middle of an update: put the previous version back first
+            pend = json.loads((root / "pending.json").read_text(encoding="utf-8"))
+            if not pend.get("done"):
+                listed += _rollback(app_dir(), pend)
+            (root / "pending.json").unlink()
+        except (OSError, ValueError, KeyError):
+            pass
     try:  # files restart() should have put in place but that are still staged: drop them
         for rel in json.loads((root / "deferred.json").read_text(encoding="utf-8")):
             (app_dir() / (rel + ".new")).unlink(missing_ok=True)
