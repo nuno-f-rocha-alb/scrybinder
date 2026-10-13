@@ -44,13 +44,18 @@ def _rect_like(q: np.ndarray, lo=62.0, hi=118.0) -> bool:
 
 
 def _fit_quad(hull: np.ndarray) -> np.ndarray:
-    """Convex hull → quadrilateral (tl,tr,br,bl): polygon approximation, or the minimum-area rectangle for rounded corners."""
+    """Convex hull → quadrilateral (tl,tr,br,bl): polygon approximation (keeps the perspective), or the minimum-area rectangle for
+    rounded corners and for polygons that stray from it (an irregular outline bends them)."""
+    rect = order_quad(cv2.boxPoints(cv2.minAreaRect(hull)))
     peri = cv2.arcLength(hull, True)
     for eps in (0.02, 0.035, 0.05):
         ap = cv2.approxPolyDP(hull, eps * peri, True)
         if len(ap) == 4:
-            return order_quad(ap)
-    return order_quad(cv2.boxPoints(cv2.minAreaRect(hull)))
+            quad = order_quad(ap)
+            if abs(cv2.contourArea(quad) / max(cv2.contourArea(rect), 1.0) - 1) <= 0.08:
+                return quad
+            break
+    return rect
 
 
 def find_card(frame: np.ndarray, min_area_frac=0.04) -> np.ndarray | None:
@@ -85,66 +90,155 @@ def find_card(frame: np.ndarray, min_area_frac=0.04) -> np.ndarray | None:
     return None if best is None else best / scale
 
 
-def _texture_mask(gray: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
-    """(fine, coarse) masks of the pixels with detail (card art and text), as opposed to flat background, pocket plastic and
-    gaps; works on dark pages too. `fine` keeps the dips between cards (page edges and pocket lines are opened away: only art and text blocks are left), `coarse` is one blob."""
-    g = gray.astype(np.float32)
-    mean = cv2.boxFilter(g, -1, (9, 9))
-    std = np.sqrt(np.maximum(cv2.boxFilter(g * g, -1, (9, 9)) - mean * mean, 0))
-    fine = cv2.morphologyEx((std > 10).astype(np.uint8) * 255, cv2.MORPH_OPEN, np.ones((13, 13), np.uint8))
-    return fine, cv2.morphologyEx(fine, cv2.MORPH_CLOSE, np.ones((41, 41), np.uint8))
+def _page_candidates(gray: np.ndarray) -> list[np.ndarray]:
+    """Card-shaped quads (any number) from several masks; erosion separates cards fused through narrow gaps."""
+    H, W = gray.shape
+    k = np.ones((5, 5), np.uint8)
+    out = []
+    for mask in _candidates(gray):
+        for er in (0, 2, 4):
+            m = cv2.erode(mask, k, iterations=er) if er else mask
+            cnts, _ = cv2.findContours(m, cv2.RETR_LIST, cv2.CHAIN_APPROX_SIMPLE)
+            for c in cnts:
+                area = cv2.contourArea(c)
+                if not 0.006 * H * W <= area <= 0.2 * H * W:
+                    continue
+                if er:  # grow the eroded blob back to its real outline
+                    blob = cv2.dilate(cv2.drawContours(np.zeros_like(mask), [c], -1, 255, -1), k, iterations=er)
+                    c = max(cv2.findContours(blob, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)[0], key=cv2.contourArea)
+                x, y, bw, bh = cv2.boundingRect(c)
+                if x <= 3 or y <= 3 or x + bw >= W - 3 or y + bh >= H - 3:
+                    continue
+                hull = cv2.convexHull(c)
+                quad = _fit_quad(hull)
+                qa = cv2.contourArea(quad)
+                if qa > 0 and cv2.contourArea(hull) / qa >= 0.88 and _aspect_ok(quad) and _rect_like(quad):
+                    out.append(quad)
+    return out
 
 
-BORDER, GAP = 0.05, 0.03  # black border and spacing between pockets, as fractions of a card
+def _consistent(quads: list[np.ndarray]) -> list[np.ndarray]:
+    """The cards of one page: among the groups of quads of a similar area (±35 %), deduplicated by centre, the one that covers the
+    most area. Pockets beat the art and text boxes inside them (which are many, but small)."""
+    if not quads:
+        return []
+    areas = np.array([cv2.contourArea(q) for q in quads])
+    best, best_score = [], -1.0
+    for ref in range(len(quads)):
+        w = np.sqrt(areas[ref] * RATIO)
+        out: list[np.ndarray] = []
+        for i in np.argsort(-areas):
+            if abs(areas[i] / areas[ref] - 1) < 0.35 and all(np.linalg.norm(quads[i].mean(0) - o.mean(0)) > 0.5 * w for o in out):
+                out.append(quads[i])
+        score = sum(cv2.contourArea(q) for q in out)
+        if score > best_score:
+            best, best_score = out, score
+    return best
 
 
-def _grid_shape(aspect: float) -> tuple[int, int]:
-    """(columns, rows) of a binder page whose block of cards has this width/height: the cells are cards (width/height 0.716).
-    The largest grid that fits wins: a square-ish block is 3x3, not 2x2 or 1x1."""
-    fits = [(c, r) for c in (1, 2, 3) for r in (1, 2, 3) if abs(aspect / (RATIO * c / r) - 1) < 0.15]
-    return max(fits, key=lambda cr: cr[0] * cr[1]) if fits else (3, 3)
+def _same_size_upright(quads: list[np.ndarray]) -> list[np.ndarray]:
+    """Drop what is not an upright card of the size most of them have: a block of a dark card's art and text can pass for a card
+    (even lying down, as the shape test ignores orientation) but its width or height is off. The lattice then recovers that pocket."""
+    if len(quads) < 3:
+        return quads
+    wh = np.array([((np.linalg.norm(q[1] - q[0]) + np.linalg.norm(q[2] - q[3])) / 2,
+                    (np.linalg.norm(q[3] - q[0]) + np.linalg.norm(q[2] - q[1])) / 2) for q in quads])
+    mw, mh = np.median(wh, axis=0)
+    keep = [q for q, (w, h) in zip(quads, wh) if w < h and abs(w / mw - 1) < 0.2 and abs(h / mh - 1) < 0.2]
+    return keep if len(keep) >= 2 else quads
 
 
-def find_cards(frame: np.ndarray, max_cards=9, min_density=0.12) -> list[np.ndarray]:
-    """Quadrilaterals (tl,tr,br,bl, frame coordinates) of the cards on a binder page (up to 3x3), row by row.
-    The block of detail is rectified and split into the grid its proportions say; empty pockets (flat) are dropped.
-    Meant for photos the user says are a binder page, shot upright: it does not tell a page from a single card, and a page
-    holding one card (or a single column/row that is not at the top-left) cannot be told from a smaller grid."""
+def _groups(vals: np.ndarray, size: float) -> list[list[int]]:
+    """Indices of `vals` grouped into rows/columns: a new group starts after a gap of more than half a card."""
+    order = np.argsort(vals)
+    groups = [[int(order[0])]]
+    for a, b in zip(order, order[1:]):
+        if vals[b] - vals[a] > 0.5 * size:
+            groups.append([])
+        groups[-1].append(int(b))
+    return groups
+
+
+def _axis(vals: np.ndarray, size: float) -> tuple[np.ndarray, float, float]:
+    """Integer lattice index of every value plus (origin, pitch): the pitch is fitted when two or more rows/columns exist."""
+    gs = _groups(vals, size)
+    means = np.array([vals[g].mean() for g in gs])
+    pitch = 1.06 * size
+    idx = np.round((means - means[0]) / pitch).astype(int)
+    if len(set(idx)) >= 2:
+        pitch, _ = np.polyfit(idx, means, 1)
+    idx = np.round((means - means[0]) / pitch).astype(int)
+    origin = means[0] - idx[0] * pitch
+    out = np.zeros(len(vals), int)
+    for g, i in zip(gs, idx):
+        out[g] = i
+    return out, float(origin), float(pitch)
+
+
+def _card_present(frame: np.ndarray, quad: np.ndarray, min_banding=100.0) -> bool:
+    """Is there a card in this pocket? A card is banded from top to bottom (title bar, art, text box) so its rows change a lot;
+    an empty pocket is dark and smooth, and a glossy one only reflects the room softly. Measured on real binder photos: cards
+    >= 130 (typically 250-450), empty pockets <= 72."""
+    c = quad.mean(0)
+    patch = cv2.resize(warp_card(frame, c + (quad - c) * 0.9), (315, 440), interpolation=cv2.INTER_AREA)
+    rows = cv2.cvtColor(patch, cv2.COLOR_BGR2GRAY).astype(np.float32)[:, 40:-40].mean(1)
+    return float(np.abs(np.diff(cv2.GaussianBlur(rows[:, None], (1, 0), 3)[:, 0])).sum()) >= min_banding
+
+
+def find_cards(frame: np.ndarray, max_cards=9) -> list[np.ndarray]:
+    """Quadrilaterals (tl,tr,br,bl, frame coordinates) of the cards on a binder page, row by row. The cards found fix a
+    3x3 lattice; the cells with no clean contour (touching borders, glare) are recovered from it. Empty pockets give no card."""
     h, w = frame.shape[:2]
     scale = 1000 / max(h, w) if max(h, w) > 1000 else 1.0
     small = cv2.resize(frame, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA) if scale < 1 else frame
     gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY) if small.ndim == 3 else small
-    fine, coarse = _texture_mask(gray)
-    cnts, _ = cv2.findContours(coarse, cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-    if not cnts:
-        return []
-    biggest = max(cv2.contourArea(c) for c in cnts)
-    if biggest < 0.03 * gray.shape[0] * gray.shape[1]:
-        return []
-    # empty pockets split the detail into several blocks: take them together
-    block = np.vstack([c for c in cnts if cv2.contourArea(c) >= 0.1 * biggest])
-    quad = order_quad(cv2.boxPoints(cv2.minAreaRect(block)))  # a missing corner (last row incomplete) must not bend the grid
-    bw = float(max(np.linalg.norm(quad[1] - quad[0]), np.linalg.norm(quad[2] - quad[3])))
-    bh = float(max(np.linalg.norm(quad[3] - quad[0]), np.linalg.norm(quad[2] - quad[1])))
-    cols, rows = _grid_shape(bw / bh)
-    M = cv2.getPerspectiveTransform(quad, np.float32([[0, 0], [bw, 0], [bw, bh], [0, bh]]))
-    flat = cv2.warpPerspective(fine, M, (int(bw), int(bh))) > 0
-    inv = np.linalg.inv(M)
-    # The detail stops at the black border (BORDER of a card on each outer side) and the cards are GAP apart:
-    # bw = cols*cw + (cols-1)*GAP*cw - 2*BORDER*cw, and the same for the height.
-    cw = bw / (cols + (cols - 1) * GAP - 2 * BORDER)
-    ch = bh / (rows + (rows - 1) * GAP - 2 * BORDER)
-    out = []
-    for j in range(rows):
-        for i in range(cols):
-            x0 = -BORDER * cw + i * (1 + GAP) * cw
-            y0 = -BORDER * ch + j * (1 + GAP) * ch
-            core = flat[int(max(y0, 0) + 0.25 * ch):int(min(y0 + ch, bh) - 0.25 * ch), int(max(x0, 0) + 0.25 * cw):int(min(x0 + cw, bw) - 0.25 * cw)]
-            if core.size == 0 or core.mean() < min_density:
-                continue  # empty pocket
-            cell = np.float32([[x0, y0], [x0 + cw, y0], [x0 + cw, y0 + ch], [x0, y0 + ch]])
-            out.append(cv2.perspectiveTransform(cell[None], inv)[0] / scale)
-    return out[:max_cards]
+    # a card or pocket never takes more than a fifth of a page photo: the page itself (card-shaped, too) is not one of them
+    found = _consistent([q for q in _page_candidates(gray) if cv2.contourArea(q) <= 0.2 * gray.shape[0] * gray.shape[1]])
+    found = _same_size_upright(found)
+    if len(found) < 2:  # one card (or none): not a page, same detector as the single-card scan
+        one = find_card(frame)
+        return [] if one is None else [one]
+    ref = max(found, key=cv2.contourArea)
+    cw = float((np.linalg.norm(ref[1] - ref[0]) + np.linalg.norm(ref[2] - ref[3])) / 2)
+    ch = float((np.linalg.norm(ref[3] - ref[0]) + np.linalg.norm(ref[2] - ref[1])) / 2)
+    if cw > ch:
+        cw, ch = ch, cw
+    tops = [np.arctan2(*(q[1] - q[0])[::-1]) for q in found]
+    th = float(np.median(np.where(np.abs(tops) > np.pi / 4, np.array(tops) - np.sign(tops) * np.pi / 2, tops)))
+    Rm = np.array([[np.cos(th), np.sin(th)], [-np.sin(th), np.cos(th)]])  # frame → page axes
+    cen = np.array([q.mean(0) for q in found]) @ Rm.T
+    ci, x0, px = _axis(cen[:, 0], cw)
+    ri, y0, py = _axis(cen[:, 1], ch)
+    cells: dict[tuple[int, int], np.ndarray] = {}
+    for q, i, j in zip(found, ci, ri):
+        if (i, j) not in cells or cv2.contourArea(q) > cv2.contourArea(cells[(i, j)]):
+            cells[(i, j)] = q
+    gh, gw = gray.shape
+
+    def recover(i, j):
+        near = min(cells, key=lambda k: abs(k[0] - i) + abs(k[1] - j))
+        q = cells[near]
+        shift = (np.array([x0 + i * px, y0 + j * py]) - np.array([x0 + near[0] * px, y0 + near[1] * py])) @ Rm
+        q = q + shift
+        if q[:, 0].min() < 3 or q[:, 1].min() < 3 or q[:, 0].max() > gw - 3 or q[:, 1].max() > gh - 3:
+            return None
+        return q
+    seen: dict[tuple[int, int], bool] = {}
+
+    def present(key, q):
+        if key not in seen:
+            seen[key] = _card_present(frame, q / scale)
+        return seen[key]
+    ci_min, ci_max, ri_min, ri_max = min(ci), max(ci), min(ri), max(ri)
+    best = None
+    for a in range(min(ci_max - 2, ci_min), max(ci_min, ci_max - 2) + 1):  # 3-wide windows that hold the cards found
+        for b in range(min(ri_max - 2, ri_min), max(ri_min, ri_max - 2) + 1):
+            got = {(i, j): cells[(i, j)] if (i, j) in cells else recover(i, j) for i in range(a, a + 3) for j in range(b, b + 3)}
+            got = {k: v for k, v in got.items() if v is not None and present(k, v)}
+            if best is None or len(got) > len(best):
+                best = got
+    ordered = [best[k] for k in sorted(best, key=lambda k: (k[1], k[0]))]
+    return [q / scale for q in ordered[:max_cards]]
 
 
 def warp_card(frame: np.ndarray, quad: np.ndarray) -> np.ndarray:

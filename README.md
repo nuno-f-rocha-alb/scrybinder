@@ -66,7 +66,7 @@ The Windows builds bundle Tesseract; on Linux and macOS install it yourself (`su
 
 ### Scanning a binder page
 
-Turn on **Binder page (3×3)** in the Scan page and drop a photo of a whole binder page (or let the watched folder pick them up): up to 9 cards are found and each one lands in the review list as its own entry. Shoot the page upright and as large as you can (photos are used up to 4500 px; each card needs about 600 px of height to be read reliably), with the cards in their pockets. Pages filled row by row (the last page of a binder) and pages with a few empty pockets work; a page with a single card, or with a whole first row or column missing, is better scanned card by card. Live camera capture is still one card at a time.
+Turn on **Binder page (3×3)** in the Scan page and drop a photo of a whole binder page (or let the watched folder pick them up): up to 9 cards are found and each one lands in the review list as its own entry. Shoot the page upright and as large as you can (photos are used up to 4500 px; each card needs about 600 px of height to be read reliably), with the cards in their pockets. The pockets are found from their outline and an empty pocket is told from a card by the light and dark bands of a card (title bar, art, text box), so a glossy empty pocket is not taken for one. It was measured on black binders; pages filled row by row (the last page of a binder) and pages with some empty pockets work, and a page holding a single card is read like a normal photo. Very strong reflections can hide a card, and light binders are less tested. Live camera capture is still one card at a time.
 
 ### Scanning tips
 
