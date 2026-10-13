@@ -13,6 +13,7 @@ const FORMATS = [
 export default function ImportExport() {
   const [file, setFile] = useState<File | null>(null);
   const [loc, setLoc] = useState("");
+  const [fmt, setFmt] = useState<"manabox" | "moxfield">("manabox");
   const [busy, setBusy] = useState(false);
   const [res, setRes] = useState<Result | null>(null);
   const [exportLoc, setExportLoc] = useState<string | undefined>(undefined);
@@ -28,16 +29,20 @@ export default function ImportExport() {
     if (!file) return;
     setBusy(true);
     try {
-      setRes(await api<Result>("/import/manabox?" + qs({ location: loc }), { method: "POST", headers: { "Content-Type": "text/csv" }, body: await file.text() }));
+      setRes(await api<Result>(`/import/${fmt}?` + qs({ location: loc }), { method: "POST", headers: { "Content-Type": "text/csv" }, body: await file.text() }));
     } catch (e) { toast((e as Error).message, true); } finally { setBusy(false); }
   };
 
   return (
     <div className="space-y-10">
       <section>
-        <h1 className="mb-1 text-2xl font-semibold tracking-tight">Import from ManaBox</h1>
-        <p className="mb-4 max-w-2xl text-sm text-mute">Choose the CSV exported from ManaBox. Cards are linked by <code>scryfall_id</code>, so the exact printing is kept. Importing the same file twice adds the quantities up.</p>
+        <h1 className="mb-1 text-2xl font-semibold tracking-tight">Import</h1>
+        <p className="mb-4 max-w-2xl text-sm text-mute">{fmt === "manabox"
+          ? <>Choose the CSV exported from ManaBox. Cards are linked by <code>scryfall_id</code>, so the exact printing is kept.</>
+          : <>Choose the collection CSV exported from Moxfield. It has no <code>scryfall_id</code>, so cards are matched by edition and collector number.</>} Importing the same file twice adds the quantities up.</p>
         <div className="flex max-w-2xl flex-wrap items-end gap-3 rounded-2xl border border-line bg-surface p-4">
+          <select className="field w-auto" value={fmt} onChange={(e) => { setFmt(e.target.value as typeof fmt); setRes(null); }} aria-label="Import format">
+            <option value="manabox">ManaBox</option><option value="moxfield">Moxfield</option></select>
           <label className="btn-ghost cursor-pointer"><IconUpload className="size-4" />{file ? file.name : "Choose CSV file"}
             <input type="file" accept=".csv,text/csv" className="sr-only" onChange={(e) => pick(e.target.files?.[0] ?? null)} /></label>
           <div className="min-w-48 flex-1"><span className="mb-1 block text-xs font-medium text-mute">Location for the imported cards</span>

@@ -4,6 +4,12 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Added
+- Import a Moxfield collection CSV (Import page, `POST /api/import/moxfield`); cards are matched by edition and collector number (#10).
+
+### Fixed
+- The Moxfield export wrote language codes (`en`); it now writes the names Moxfield uses (`English`), so it imports back.
+
 ## [0.2.0] — 2026-10-13
 
 ### Added
