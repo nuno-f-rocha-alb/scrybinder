@@ -97,7 +97,7 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
         return {"started": True}
 
     # --- visual index: build from Settings (same work as `scrybinder-index`) ---
-    ixjob = {"state": "idle", "mode": None, "done": 0, "total": 0, "error": None, "failed": 0}
+    ixjob = {"state": "idle", "mode": None, "done": 0, "total": 0, "error": None, "failed": 0, "detail": ""}
     ix_stop = threading.Event()
     ix_lock = threading.Lock()  # check-and-set of the state: a double click must not start two builds on the same shards
 
@@ -113,7 +113,8 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
             d = ixmod.index_dir(emb)
             ixmod.add_rows(conn, d, *(pilot_where() if mode == "pilot" else ("1", ())))
             ixjob["state"] = "build"
-            res = ixmod.build(emb, d, progress=lambda i, t: ixjob.update(done=i, total=t), should_stop=ix_stop.is_set)
+            res = ixmod.build(emb, d, progress=lambda i, t: ixjob.update(done=i, total=t), should_stop=ix_stop.is_set,
+                              detail=lambda text: ixjob.update(detail=text))
             ixjob.update(state="stopped" if res.get("stopped") else "done", failed=res["failed_downloads"])
             if res["indexed"]:
                 scanner.ident.reset_vis()

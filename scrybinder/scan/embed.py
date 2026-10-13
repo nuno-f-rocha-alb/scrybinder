@@ -36,6 +36,10 @@ def art_box_name(frame: str | None, border_color: str | None) -> str:
     return frame if frame in ("1993", "1997", "2003") else "2015"
 
 
+class Stopped(Exception):
+    """The caller asked to stop while vectors were being computed."""
+
+
 def prep_hash() -> str:
     """Changes if any pre-processing parameter changes: the old index is then no longer reused."""
     blob = json.dumps({"boxes": BOXES, "card": CARD_SIZE, "art": ART_SIZE, "v": 1}, sort_keys=True)
@@ -78,7 +82,8 @@ class Embedder:
         if self._dev == "cuda":
             self._model.half()
 
-    def embed_raw(self, imgs: list[np.ndarray], size: tuple[int, int], batch=64) -> np.ndarray:
+    def embed_raw(self, imgs: list[np.ndarray], size: tuple[int, int], batch=64, progress=None) -> np.ndarray:
+        """`progress(done, total)` is called after every batch; if it returns True the work is abandoned (`Stopped`)."""
         import torch
         if self._model is None:
             self._load()
@@ -91,13 +96,15 @@ class Embedder:
             with torch.no_grad():
                 o = self._model(pixel_values=x.half() if self._dev == "cuda" else x).pooler_output
             out.append(o.float().cpu().numpy())
+            if progress and progress(min(i + batch, len(imgs)), len(imgs)):
+                raise Stopped()
         return _unit(np.concatenate(out)) if out else np.zeros((0, self.dim), np.float32)
 
-    def cards(self, cards: list[np.ndarray]) -> np.ndarray:
-        return self.embed_raw(cards, CARD_SIZE)
+    def cards(self, cards: list[np.ndarray], progress=None) -> np.ndarray:
+        return self.embed_raw(cards, CARD_SIZE, progress=progress)
 
-    def arts(self, cards: list[np.ndarray], boxes: list[str]) -> np.ndarray:
-        return self.embed_raw([crop_art(c, b) for c, b in zip(cards, boxes)], ART_SIZE)
+    def arts(self, cards: list[np.ndarray], boxes: list[str], progress=None) -> np.ndarray:
+        return self.embed_raw([crop_art(c, b) for c, b in zip(cards, boxes)], ART_SIZE, progress=progress)
 
     def query(self, card: np.ndarray) -> tuple[np.ndarray, np.ndarray]:
         """630x880 capture → (card vector [d], art vectors per candidate box [len(BOXES), d])."""

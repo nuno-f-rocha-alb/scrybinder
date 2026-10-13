@@ -17,7 +17,7 @@ export type Status = {
   cards_in_db: number; bulk_age_days: number | null; bulk_stale: boolean; credit: string; version?: string;
   job: { state: string; done: number; total: number; error: string | null; cards: number };
   index?: { indexed: number; rows: number; eligible: number };
-  index_job?: { state: string; mode: string | null; done: number; total: number; error: string | null; failed: number };
+  index_job?: { state: string; mode: string | null; done: number; total: number; error: string | null; failed: number; detail?: string };
 };
 
 export async function api<T>(path: string, opts: RequestInit = {}): Promise<T> {

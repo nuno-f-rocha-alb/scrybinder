@@ -14,7 +14,7 @@ import numpy as np
 
 from .. import scryfall
 from ..db import DATA_DIR
-from .embed import art_box_name, normalize_card, prep_hash
+from .embed import Stopped, art_box_name, normalize_card, prep_hash
 
 SHARD = 2048
 # en/pt + printings that only exist in other languages (e.g. Japanese Mystical Archive), with no en equivalent in the same set/number
@@ -105,8 +105,11 @@ def status(d: Path) -> dict:
             "done_shards": len(done)}
 
 
-def build(emb, d: Path, progress=None, should_stop=None) -> dict:
-    """Build the missing shards. Resumable: it can be interrupted and continued; images stay in data/images/normal."""
+def build(emb, d: Path, progress=None, should_stop=None, detail=None) -> dict:
+    """Build the missing shards. Resumable: it can be interrupted and continued; images stay in data/images/normal.
+    `progress(done, total)`: faces finished (a shard counts half for its downloads and half for its vectors); `detail(text)`: what is
+    going on now; `should_stop()` is checked while downloading and between batches of vectors."""
+    note = detail or (lambda text: None)
     rdb = _rows_db(d)
     total = rdb.execute("SELECT COUNT(*) FROM rows").fetchone()[0]
     failed = 0
@@ -132,11 +135,25 @@ def build(emb, d: Path, progress=None, should_stop=None) -> dict:
                 boxes.append(box)
                 if i % 50 == 0:
                     if progress:
-                        progress(k * SHARD + i, total)
+                        progress(k * SHARD + i // 2, total)
+                    note(f"downloading images {i:,}/{exp:,}")
                     if should_stop and should_stop():  # the unfinished shard is dropped; its images stay cached for the next run
                         rdb.close()
                         return {**status(d), "failed_downloads": failed, "stopped": True}
-            cv, av = emb.cards(cards), emb.arts(cards, boxes)
+
+            def vectors(pass_no):  # two passes (card, then art): the second half of the shard's work
+                def tick(done, tot):
+                    frac = (pass_no + done / tot) / 2
+                    if progress:
+                        progress(k * SHARD + exp // 2 + int(frac * (exp - exp // 2)), total)
+                    note(f"computing vectors {int(frac * 100)}% of this block (slow on a CPU: minutes per block)")
+                    return bool(should_stop and should_stop())
+                return tick
+            try:
+                cv, av = emb.cards(cards, progress=vectors(0)), emb.arts(cards, boxes, progress=vectors(1))
+            except Stopped:  # same as above: the block is dropped, the images stay
+                rdb.close()
+                return {**status(d), "failed_downloads": failed, "stopped": True}
             cmat = np.zeros((exp, cv.shape[1]), np.float16)
             amat = np.zeros_like(cmat)
             idx = np.flatnonzero(ok)
@@ -145,6 +162,8 @@ def build(emb, d: Path, progress=None, should_stop=None) -> dict:
                 rdb.executemany("UPDATE rows SET failed=? WHERE row=?", [(int(not o), r[0]) for o, r in zip(ok, rows)])
             np.save(d / f"art_{k:05d}.npy", amat)
             np.save(d / f"card_{k:05d}.npy", cmat)  # 'card' is written last: it marks the shard as complete
+            if progress:
+                progress((k + 1) * SHARD if (k + 1) * SHARD < total else total, total)
     rdb.close()
     (d / "manifest.json").write_text(json.dumps({"prep": prep_hash(), "model": emb.model_id, "dim": emb.dim,
                                                  **status(d)}), encoding="utf-8")
