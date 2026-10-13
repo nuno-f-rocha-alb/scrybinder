@@ -1,11 +1,19 @@
 import { useCallback, useEffect, useState } from "react";
-import { IconAlertTriangle, IconArrowLeft, IconCheck, IconCopy, IconMinus, IconPlus, IconSearch, IconTrash } from "@tabler/icons-react";
+import { IconAlertTriangle, IconArrowLeft, IconCheck, IconCopy, IconPlus, IconSearch, IconTrash } from "@tabler/icons-react";
 import { api, eur, qs } from "../api";
-import { BOARDS, BOARD_LABEL, Board, Deck as DeckT, DeckCard, DeckStats, FORMATS, Format, Legality, OracleRow, Preview, groupCards, resultPreview, toPreview } from "../decks";
-import { CardImg, useToast } from "../components/ui";
+import { BOARDS, BOARD_LABEL, Board, Deck as DeckT, DeckStats, FORMATS, Format, GROUPS, GroupBy, Legality, OracleRow, Preview, SORTS, SortBy, VIEWS, View, groupCards, resultPreview, toPreview } from "../decks";
+import { CardImg, Modal, useToast } from "../components/ui";
 import { ManaCost, StatusBadge } from "../components/mana";
+import { GridControls, useCardGrid } from "../components/cardgrid";
+import { DeckView, useZoom } from "../components/deckviews";
 
 const cap = (f: string) => f[0].toUpperCase() + f.slice(1);
+
+/** A choice remembered between sessions (the view, the grouping...). */
+function useChoice<T extends string>(key: string, def: T, ok: readonly T[]): [T, (v: T) => void] {
+  const [v, set] = useState<T>(() => { try { const x = localStorage.getItem("scrybinder.deck." + key) as T | null; return x && ok.includes(x) ? x : def; } catch { return def; } });
+  return [v, (x) => { set(x); try { localStorage.setItem("scrybinder.deck." + key, x); } catch { /* no storage */ } }];
+}
 
 /** The big card on the left: the one under the pointer, and it stays on the last one when the pointer leaves. */
 function PreviewPanel({ p }: { p: Preview | null }) {
@@ -78,34 +86,6 @@ function AddCards({ deck, onAdd, setPreview }: { deck: DeckT; onAdd: (oracleId: 
   );
 }
 
-function Row({ c, deckId, act, setPreview }: { c: DeckCard; deckId: number; act: (p: Promise<unknown>) => void; setPreview: (p: Preview) => void }) {
-  const patch = (body: object) => act(api(`/decks/${deckId}/cards/${c.id}`, { method: "PATCH", body: JSON.stringify(body) }));
-  const remove = () => act(api(`/decks/${deckId}/cards/${c.id}`, { method: "DELETE" }));
-  const btn = "flex size-6 items-center justify-center rounded-md text-mute hover:bg-line hover:text-ink";
-  return (
-    <li onMouseEnter={() => setPreview(toPreview(c))} onFocus={() => setPreview(toPreview(c))} className="grid grid-cols-[84px_minmax(0,1fr)_auto_116px_64px_92px] items-center gap-3 rounded-md px-2 py-1 hover:bg-raised">
-      <div className="flex items-center gap-1">
-        <button className={btn} aria-label={c.quantity === 1 ? `Remove ${c.name}` : `One less ${c.name}`} onClick={() => (c.quantity === 1 ? remove() : patch({ quantity: c.quantity - 1 }))}>
-          {c.quantity === 1 ? <IconTrash className="size-3.5" /> : <IconMinus className="size-3.5" />}
-        </button>
-        <span className="w-6 text-center text-sm font-medium tabular-nums">{c.quantity}</span>
-        <button className={btn} aria-label={`One more ${c.name}`} onClick={() => patch({ quantity: c.quantity + 1 })}><IconPlus className="size-3.5" /></button>
-      </div>
-      <div className="flex min-w-0 items-center gap-2 text-sm">
-        <span className="truncate">{c.name}</span>
-        {c.missing > 0 && <span className="shrink-0 text-xs text-danger">{c.missing} missing</span>}
-        {c.tags.map((t) => <span key={t} className="shrink-0 rounded-md bg-raised px-1.5 py-0.5 text-[10.5px] text-mute">{t}</span>)}
-      </div>
-      <ManaCost cost={c.mana_cost} />
-      <StatusBadge status={c.status} title={c.elsewhere.length ? `Assigned to: ${c.elsewhere.map((e) => e.name).join(", ")}` : undefined} />
-      <span className="text-right text-xs text-mute tabular-nums">{eur(c.price)}</span>
-      <select className="field !w-auto !px-1.5 !py-0.5 text-xs" aria-label={`Board of ${c.name}`} value={c.board} onChange={(e) => patch({ board: e.target.value })}>
-        {BOARDS.map((b) => <option key={b} value={b}>{BOARD_LABEL[b]}</option>)}
-      </select>
-    </li>
-  );
-}
-
 export default function Deck({ id, onBack }: { id: number; onBack: () => void }) {
   const [deck, setDeck] = useState<DeckT | null>(null);
   const [legality, setLegality] = useState<Legality | null>(null);
@@ -115,6 +95,12 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
   const [err, setErr] = useState("");
   const [confirmDelete, setConfirmDelete] = useState(false);
   const { toast, node } = useToast();
+  const [view, setView] = useChoice<View>("view", "list", VIEWS.map((v) => v.id));
+  const [group, setGroup] = useChoice<GroupBy>("group", "type", GROUPS.map((g) => g.id));
+  const [sort, setSort] = useChoice<SortBy>("sort", "name", SORTS.map((x) => x.id));
+  const [every, setEvery] = useChoice<"1" | "0">("every", "0", ["0", "1"]);
+  const grid = useCardGrid();
+  const { zoom, close, onZoom } = useZoom();
 
   const reload = useCallback(() => Promise.all([api<DeckT>(`/decks/${id}`), api<Legality>(`/decks/${id}/legality`), api<DeckStats>(`/decks/${id}/stats`)])
     .then(([d, l, s]) => { setDeck(d); setName(d.name); setLegality(l); setStats(s); setErr(""); }).catch((e) => setErr(e.message)), [id]);
@@ -153,13 +139,23 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
 
         <AddCards deck={deck} setPreview={setPreview} onAdd={(oracle_id, board) => act(api(`/decks/${id}/cards`, { method: "POST", body: JSON.stringify({ oracle_id, board }) }))} />
 
+        <div className="mb-4 flex flex-wrap items-center gap-2">
+          <label className="flex items-center gap-1.5 text-xs text-mute">View
+            <select className="field w-auto" value={view} onChange={(e) => setView(e.target.value as View)}>{VIEWS.map((v) => <option key={v.id} value={v.id}>{v.label}</option>)}</select></label>
+          <label className="flex items-center gap-1.5 text-xs text-mute">Group
+            <select className="field w-auto" value={group} onChange={(e) => setGroup(e.target.value as GroupBy)}>{GROUPS.map((g) => <option key={g.id} value={g.id}>{g.label}</option>)}</select></label>
+          <label className="flex items-center gap-1.5 text-xs text-mute">Sort
+            <select className="field w-auto" value={sort} onChange={(e) => setSort(e.target.value as SortBy)}>{SORTS.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}</select></label>
+          {view === "stacks" && (
+            <label className="flex cursor-pointer items-center gap-2 text-sm text-mute" title="Show a strip for every copy instead of one with a count">
+              <input type="checkbox" checked={every === "1"} onChange={(e) => setEvery(e.target.checked ? "1" : "0")} className="accent-[var(--color-accent)]" />Every copy
+            </label>
+          )}
+          {(view === "grid" || view === "stacks" || view === "spoiler") && <GridControls g={grid} />}
+        </div>
+
         {cards.length === 0 && <div className="rounded-2xl border border-dashed border-line p-12 text-center text-mute">This deck is empty. Search above to add cards.</div>}
-        {groupCards(cards).map((g) => (
-          <section key={g.key} className="mb-5" aria-label={g.label}>
-            <h2 className="mb-1 flex items-baseline gap-2 border-b border-line pb-1 text-sm font-semibold">{g.label}<span className="text-xs font-normal text-mute">{g.count}</span></h2>
-            <ul>{g.cards.map((c) => <Row key={c.id} c={c} deckId={id} act={act} setPreview={setPreview} />)}</ul>
-          </section>
-        ))}
+        <DeckView groups={groupCards(cards, group, sort)} view={view} every={every === "1"} layout={grid} ctx={{ deckId: id, act, setPreview, onZoom }} />
 
         <div className="sticky bottom-0 -mx-6 -mb-6 mt-6 flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-line bg-surface/95 px-6 py-3 text-sm backdrop-blur">
           <span className="font-medium tabular-nums">{main} <span className="font-normal text-mute">main deck</span> / {stats?.totals.side ?? 0} <span className="font-normal text-mute">sideboard</span></span>
@@ -173,6 +169,13 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
           </span>
         </div>
       </div>
+      {zoom && (
+        <Modal title={zoom.name} onClose={close}>
+          <div className="mx-auto max-w-[340px]"><CardImg id={zoom.image_id ?? ""} size="large" /></div>
+          <p className="mt-3 text-center text-sm font-medium">{zoom.name}</p>
+          <div className="mt-1 flex justify-center"><StatusBadge status={zoom.status} /></div>
+        </Modal>
+      )}
       {node}
     </div>
   );

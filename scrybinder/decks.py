@@ -13,7 +13,7 @@ PROXY = "proxy"  # defined tag: the card is in the deck but is not a real copy
 
 # copies owned (proxy rows of the collection are not real copies) and the cheapest price of the oracle card
 _CARD_SQL = """
-SELECT d.id, d.oracle_id, d.scryfall_id, d.quantity, d.board, o.name, o.mana_cost, o.cmc, o.type_line, o.color_identity,
+SELECT d.id, d.oracle_id, d.scryfall_id, d.quantity, d.board, o.name, o.mana_cost, o.cmc, o.type_line, o.colors, o.color_identity,
        o.produced_mana, o.game_changer,
        (SELECT COALESCE(SUM(c.quantity), 0) FROM collection c JOIN cards k ON k.id = c.scryfall_id
          WHERE k.oracle_id = d.oracle_id AND c.proxy = 0) AS owned,
@@ -93,6 +93,7 @@ def cards(db, deck_id: int) -> list[dict]:
     out, pool = [], {}
     for row in db.execute(_CARD_SQL, (deck_id,)):
         r = dict(row)
+        r["colors"] = json.loads(r["colors"] or "[]")
         r["color_identity"] = json.loads(r["color_identity"] or "[]")
         r["produced_mana"] = json.loads(r["produced_mana"] or "[]")
         r["game_changer"] = bool(r["game_changer"])

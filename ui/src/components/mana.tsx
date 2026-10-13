@@ -32,3 +32,14 @@ export function StatusBadge({ status, title }: { status: CardStatus; title?: str
   const s = STATUS[status];
   return <span title={title ?? s.hint} className={`inline-flex items-center gap-1 whitespace-nowrap text-xs font-medium ${s.cls}`}><s.Icon className="size-3.5" aria-hidden />{s.label}</span>;
 }
+
+export const STATUS_RING: Record<CardStatus, string> = {
+  assigned: "ring-ok/70", available: "ring-accent/70", elsewhere: "ring-gold/70", missing: "ring-danger/70", proxy: "ring-mute/50",
+};
+
+/** The status as a small round icon (for the visual views, where there is no room for the word). */
+export function StatusDot({ status, title }: { status: CardStatus; title?: string }) {
+  const s = STATUS[status];
+  return <span role="img" aria-label={s.label} title={title ?? `${s.label}: ${s.hint}`}
+    className={`flex size-5 items-center justify-center rounded-full bg-bg/90 ring-1 ring-line ${s.cls}`}><s.Icon className="size-3" aria-hidden /></span>;
+}
