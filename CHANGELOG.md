@@ -4,6 +4,9 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Fixed
+- Exporting a CSV opens a native *Save as* dialog instead of the generic Edge downloads popup (#26).
+
 ## [0.4.2] — 2026-10-13
 
 ### Fixed
