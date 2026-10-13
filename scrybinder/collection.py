@@ -2,6 +2,8 @@
 import json
 import re
 
+from . import decks
+
 KEY = ("scryfall_id", "finish", "condition", "language", "location", "altered", "signed", "misprint", "proxy")
 EDITABLE = KEY[1:] + ("quantity", "purchase_price", "purchase_currency", "purchase_date", "notes")
 DEFAULTS = {"finish": "nonfoil", "condition": "NM", "language": "en", "location": "", "altered": 0, "signed": 0,
@@ -41,8 +43,9 @@ def add(db, **fields) -> int:
         return cur.lastrowid
 
 
-def update(db, row_id: int, **fields) -> int:
-    """Edit a row. If the new key collides with another row they are merged. Returns the resulting id."""
+def update(db, row_id: int, release: bool = False, **fields) -> int:
+    """Edit a row. If the new key collides with another row they are merged. Returns the resulting id.
+    Copies assigned to decks follow a merge; fewer copies than assigned (or a proxy) raise decks.Conflict unless `release`."""
     cur = db.execute("SELECT * FROM collection WHERE id=?", (row_id,)).fetchone()
     if not cur:
         raise KeyError(row_id)
@@ -50,8 +53,10 @@ def update(db, row_id: int, **fields) -> int:
     r = _norm(merged)
     where = " AND ".join(f"{k}=?" for k in KEY)
     with db:
+        decks.check_row(db, row_id, r["quantity"], bool(r["proxy"]), release)
         other = db.execute(f"SELECT id FROM collection WHERE {where} AND id<>?", [r[k] for k in KEY] + [row_id]).fetchone()
         if other:
+            decks.transfer(db, row_id, other["id"])
             db.execute("UPDATE collection SET quantity=quantity+?, purchase_price=COALESCE(purchase_price,?) WHERE id=?",
                        (r["quantity"], r["purchase_price"], other["id"]))
             db.execute("DELETE FROM collection WHERE id=?", (row_id,))
@@ -61,12 +66,13 @@ def update(db, row_id: int, **fields) -> int:
     return row_id
 
 
-def delete(db, row_id: int):
+def delete(db, row_id: int, release: bool = False):
+    decks.check_delete(db, [row_id], release)
     with db:
         db.execute("DELETE FROM collection WHERE id=?", (row_id,))
 
 
-def move(db, row_id: int, location: str, quantity: int | None = None) -> int:
+def move(db, row_id: int, location: str, quantity: int | None = None, release: bool = False) -> int:
     """Move `quantity` (or everything) to another location; merges with the identical row at the destination."""
     cur = db.execute("SELECT * FROM collection WHERE id=?", (row_id,)).fetchone()
     if not cur:
@@ -75,8 +81,9 @@ def move(db, row_id: int, location: str, quantity: int | None = None) -> int:
     if not 1 <= q <= cur["quantity"]:
         raise ValueError("invalid quantity")
     if q == cur["quantity"]:
-        return update(db, row_id, location=location)
+        return update(db, row_id, release=release, location=location)
     with db:
+        decks.check_row(db, row_id, cur["quantity"] - q, False, release)
         db.execute("UPDATE collection SET quantity=quantity-? WHERE id=?", (q, row_id))
         d = dict(cur)
         d.update(location=location, quantity=q)
@@ -183,6 +190,10 @@ def bulk_update(db, ids: list[int], **fields) -> dict:
     if "condition" in fields and fields["condition"] not in _CONDITIONS:
         raise ValueError(f"invalid condition: {fields['condition']}")
     _validate_bulk(fields)
+    if fields.get("proxy"):  # a proxy cannot hold assignments: refuse before changing anything
+        used = decks.users(db, ids)
+        if used:
+            raise decks._conflict(used)
     updated = merged = skipped = 0
     for i in dict.fromkeys(ids):
         if "finish" in fields:  # do not allow foil/etched on a printing that does not exist in that finish
@@ -199,7 +210,7 @@ def bulk_update(db, ids: list[int], **fields) -> dict:
     return {"updated": updated, "merged": merged, "skipped": skipped}
 
 
-def bulk_delete(db, ids: list[int], trash_dir=None) -> int:
+def bulk_delete(db, ids: list[int], trash_dir=None, release: bool = False) -> int:
     """Delete several rows. They are first saved to <trash_dir>/<date>.json so they can be recovered."""
     import json
     from datetime import datetime
@@ -212,6 +223,7 @@ def bulk_delete(db, ids: list[int], trash_dir=None) -> int:
             f"SELECT * FROM collection WHERE id IN ({','.join('?' * len(chunk))})", chunk)]
     if not rows:
         return 0
+    decks.check_delete(db, [r["id"] for r in rows], release)
     if trash_dir is not None:
         d = Path(trash_dir)
         d.mkdir(parents=True, exist_ok=True)

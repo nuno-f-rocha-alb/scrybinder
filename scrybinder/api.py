@@ -442,6 +442,8 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
             return fn(*a, **k)
         except KeyError:
             raise HTTPException(404)
+        except decks.Conflict as e:  # copies assigned to decks: the detail lists them so the UI can offer to release
+            raise HTTPException(409, {"message": str(e), "decks": e.decks})
         except (ValueError, sqlite3.IntegrityError) as e:  # invalid input; other errors are bugs and should be 500
             raise HTTPException(422, str(e))
 
@@ -487,18 +489,27 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
         _wrap(decks.remove_card, db, deck_id, card_id)
         return {"ok": True}
 
+    @app.put("/api/decks/{deck_id}/cards/{card_id}/assign")
+    def decks_assign(deck_id: int, card_id: int, body: dict = Body(...)):
+        _wrap(decks.assign, db, deck_id, card_id, body.get("items"))
+        return {"ok": True}
+
+    @app.post("/api/decks/{deck_id}/assign-free")
+    def decks_assign_free(deck_id: int):
+        return {"assigned": _wrap(decks.assign_free, db, deck_id)}
+
     @app.post("/api/collection")
     def coll_add(body: dict = Body(...)):
         return {"id": _wrap(collection.add, db, **{k: v for k, v in body.items() if k in collection.EDITABLE
                                                    or k == "scryfall_id"})}
 
     @app.patch("/api/collection/{row_id}")
-    def coll_edit(row_id: int, body: dict = Body(...)):
-        return {"id": _wrap(collection.update, db, row_id, **body)}
+    def coll_edit(row_id: int, release: bool = False, body: dict = Body(...)):
+        return {"id": _wrap(collection.update, db, row_id, release=release, **body)}
 
     @app.delete("/api/collection/{row_id}")
-    def coll_del(row_id: int):
-        collection.delete(db, row_id)
+    def coll_del(row_id: int, release: bool = False):
+        _wrap(collection.delete, db, row_id, release)
         return {"ok": True}
 
     @app.get("/api/collection/ids")
@@ -506,13 +517,13 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
         return {"ids": collection.matching_ids(db, q, set, location, finish, language)}
 
     @app.post("/api/collection/bulk")
-    def coll_bulk(body: dict = Body(...)):
+    def coll_bulk(release: bool = False, body: dict = Body(...)):
         ids = body.get("ids")
         if not isinstance(ids, list) or not 1 <= len(ids) <= 20000 or not all(isinstance(i, int) and not isinstance(i, bool) for i in ids):
             raise HTTPException(422, "ids: lista de 1 a 20000 inteiros")
         action = body.get("action")
         if action == "delete":
-            return {"deleted": collection.bulk_delete(db, ids, dbmod.DATA_DIR / "trash")}
+            return {"deleted": _wrap(collection.bulk_delete, db, ids, dbmod.DATA_DIR / "trash", release)}
         if action == "update":
             fields = body.get("fields")
             if not isinstance(fields, dict):
@@ -521,8 +532,8 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
         raise HTTPException(422, "action: delete ou update")
 
     @app.post("/api/collection/{row_id}/move")
-    def coll_move(row_id: int, body: dict = Body(...)):
-        return {"id": _wrap(collection.move, db, row_id, body.get("location", ""), body.get("quantity"))}
+    def coll_move(row_id: int, release: bool = False, body: dict = Body(...)):
+        return {"id": _wrap(collection.move, db, row_id, body.get("location", ""), body.get("quantity"), release)}
 
     # --- import / export ---
     @app.post("/api/import/{fmt}")
