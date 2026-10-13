@@ -8,7 +8,7 @@ PyTorch and the DINOv2 weights are most of the app and almost never change; the 
 
 Formats (an in-app updater can rely on them):
   manifest.json  {"version": "0.2.0", "files": {"relative/posix/path": "<sha256>", ...}}. It ships inside the app folder and as a release asset.
-  update zip     the changed and new files, at their path relative to the app folder, plus `update.json`:
+  update zip     the changed and new files, at their path relative to the app folder, plus `UPDATE.txt` (instructions for people) and `update.json`:
                  {"from": "0.1.0", "to": "0.2.0", "remove": ["files that no longer exist"]}
                  To apply: close Scrybinder, extract over the app folder, delete the files in "remove". `data/` (the user's database in a
                  portable install) is never touched.
@@ -54,6 +54,24 @@ def manifest_of_zip(zip_path: Path, version: str) -> dict:
     return {"version": version, "files": dict(sorted(files.items()))}
 
 
+INSTRUCTIONS = r"""Scrybinder update: {old} -> {new}
+
+This is NOT an installer: it holds only the files that changed since version {old}.
+It only works on top of version {old}. For any other version, use the full installer from the release page.
+
+1. Close Scrybinder completely (also check the system tray / Task Manager).
+2. Find the app folder:
+     - installed with the setup program: %LOCALAPPDATA%\Programs\Scrybinder
+     - portable zip: the folder you extracted it to (the one with Scrybinder.exe)
+3. Extract this zip INTO that folder and choose "Replace the files in the destination" when asked.
+4. {removal}
+5. Start Scrybinder. Settings shows the new version number.
+
+Your collection and the card images are not touched: they live in the data folder
+(%LOCALAPPDATA%\Scrybinder, or the "data" folder next to Scrybinder.exe in the portable version).
+"""
+
+
 def build_update(root: Path, new: dict, old: dict, out_zip: Path) -> dict:
     """Zip of what changed since `old`; returns {"changed": n, "removed": n}."""
     changed = [rel for rel, h in new["files"].items() if old["files"].get(rel) != h]
@@ -62,6 +80,11 @@ def build_update(root: Path, new: dict, old: dict, out_zip: Path) -> dict:
     with zipfile.ZipFile(out_zip, "w", zipfile.ZIP_DEFLATED, compresslevel=6) as z:
         for rel in changed:
             z.write(root / rel, rel)
+        sep = "\n       "
+        removal = ("Delete these files from the app folder (they are no longer part of the app):" + sep + sep.join(removed)
+                   if removed else "Nothing to delete in this update.")
+        text = INSTRUCTIONS.format(old=old["version"], new=new["version"], removal=removal)
+        z.writestr("UPDATE.txt", text.replace("\n", "\r\n"))  # Windows line endings: opens right in any Notepad
         z.writestr("update.json", json.dumps({"from": old["version"], "to": new["version"], "remove": removed}, indent=2))
     return {"changed": len(changed), "removed": len(removed)}
 
