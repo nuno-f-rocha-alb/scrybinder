@@ -97,13 +97,17 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/')
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: actions/download-artifact@v4
         with:
           name: windows  # Linux is built to check that it works, but only Windows is released
           path: out
       - run: cd out && sha256sum * > SHA256SUMS
+      - name: Release notes from the changelog
+        run: python3 packaging/release.py notes "${GITHUB_REF_NAME#v}" > notes.md || echo "See CHANGELOG.md." > notes.md
       - uses: softprops/action-gh-release@v2
         with:
           files: out/*
+          body_path: notes.md        # the changelog section; the generated list of merged PRs is appended
           generate_release_notes: true
           prerelease: ${{ contains(github.ref_name, '-') }}

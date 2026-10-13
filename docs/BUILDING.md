@@ -51,11 +51,26 @@ otherwise `%LOCALAPPDATA%\Scrybinder`, `~/Library/Application Support/Scrybinder
 
 ## Releases and updates
 
-A release is a tag on `main`:
+A release is one command and one merge. Keep `CHANGELOG.md` up to date as you go: put each change under `## [Unreleased]` in the PR that makes it (these entries become the release notes).
 
-1. Merge what goes into the version (CI must pass: `main` is protected).
-2. In a PR, bump the version in `pyproject.toml` and `scrybinder/__init__.py`, and move `[Unreleased]` in `CHANGELOG.md` to the new version.
-3. From an up-to-date `main`: `git tag v0.2.0 && git push origin v0.2.0`. The tag starts `release.yml`, which builds, smoke-tests the packaged app and publishes the installer, the portable zip, `manifest.json`, an update package and `SHA256SUMS`. A tag with a hyphen (`v0.2.0-rc1`) is published as a pre-release. *Actions → Release → Run workflow* does a dry run (builds, publishes nothing).
+1. **Merge what goes into the version** (CI must pass: `main` is protected).
+2. **Prepare the release** from an up-to-date `main`:
+
+   ```bash
+   uv run python packaging/release.py prepare 0.4.0 --dry-run   # shows the notes and the files that change; changes nothing
+   uv run python packaging/release.py prepare 0.4.0             # branch release/0.4.0, version bump, changelog, PR
+   ```
+
+   It refuses a version that is not newer, an empty `[Unreleased]`, a dirty tree or an out-of-date `main`. It bumps the version in `pyproject.toml`, `scrybinder/__init__.py` (shown in Settings) and `uv.lock`, moves `[Unreleased]` under the new version with today's date, pushes the branch and opens the PR.
+3. **Merge the release PR** when CI is green.
+4. **Nothing else.** `.github/workflows/tag-release.yml` sees the version change land on `main`, creates the tag `v0.4.0` and starts `release.yml`, which builds, smoke-tests the packaged app and publishes the installer, the portable zip, `manifest.json`, an update package and `SHA256SUMS`, with the changelog section as the notes. It takes about 20 minutes.
+
+Things worth knowing:
+
+- A version with a hyphen (`0.4.0-rc1`) is published as a pre-release.
+- *Actions → Release → Run workflow* does a dry run of the build (publishes nothing). *Actions → Tag release → Run workflow* (dry run on by default) says what the tagging step would do.
+- If the automatic tag does not appear, do it by hand from an up-to-date `main`: `git tag v0.4.0 && git push origin v0.4.0` (a tag pushed by a person starts `release.yml` directly).
+- The tag workflow starts `release.yml` itself because a tag pushed with the workflow token does not trigger other workflows.
 
 `manifest.json` lists the SHA-256 of every app file (it also ships inside the app folder). The update package is built from the manifest of the previous release (`packaging/make_update.py`); an in-app updater can use the same two files: compare manifests, download the changed files, restart.
 

@@ -1,0 +1,50 @@
+name: Tag release
+# When a PR that bumps the version in pyproject.toml is merged into main, tag it and start the release build.
+# (A tag pushed with the workflow token does not start other workflows, so release.yml is started explicitly.)
+# Run it by hand with "dry run" on (the default) to see what it would do.
+on:
+  push:
+    branches: [main]
+    paths: [pyproject.toml]
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Only say what would happen"
+        type: boolean
+        default: true
+permissions:
+  contents: write
+  actions: write
+jobs:
+  tag:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+      - name: Was the version bumped, and is it untagged?
+        id: v
+        run: |
+          NEW=$(python packaging/release.py version)
+          OLD=$(git show HEAD^1:pyproject.toml 2>/dev/null | sed -n 's/^version = "\(.*\)"/\1/p' | head -1)
+          TAGGED=$(git ls-remote --tags origin "refs/tags/v$NEW" | wc -l)
+          echo "version in main: $NEW, before this commit: ${OLD:-none}, tag v$NEW exists: $TAGGED"
+          if [ "$TAGGED" != 0 ]; then echo "release=false" >> "$GITHUB_OUTPUT"
+          elif [ "${{ github.event_name }}" = workflow_dispatch ] || [ "$NEW" != "$OLD" ]; then echo "release=true" >> "$GITHUB_OUTPUT"
+          else echo "release=false" >> "$GITHUB_OUTPUT"; fi
+          echo "version=$NEW" >> "$GITHUB_OUTPUT"
+      - name: Release notes that will be used
+        if: steps.v.outputs.release == 'true'
+        run: python packaging/release.py notes "${{ steps.v.outputs.version }}"
+      - name: Tag it and start the release build
+        if: steps.v.outputs.release == 'true' && !(github.event_name == 'workflow_dispatch' && inputs.dry_run)
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V="${{ steps.v.outputs.version }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag -a "v$V" -m "Scrybinder $V"
+          git push origin "v$V"
+          gh workflow run release.yml --ref "v$V"
+          echo "Tagged v$V and started the release build."
