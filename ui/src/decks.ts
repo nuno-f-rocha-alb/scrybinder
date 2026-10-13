@@ -21,7 +21,37 @@ export type Legality = { problems: Problem[]; counts: { main: number; side: numb
 export type DeckStats = {
   totals: Record<Board, number>; types: Record<string, number>; lands: number; price: number; cost_to_complete: number; game_changers: number;
   color_identity: string[];
+  curve: { cmc: number; permanents: number; spells: number }[];
+  cmc: { average: number; median: number; average_with_lands: number; median_with_lands: number };
+  pips: Record<string, number>; sources: Record<string, number>; land_sources: Record<string, number>;
+  color_warnings: { color: string; pips_share: number; sources_share: number }[];
+  tags: Record<string, number>;
 };
+
+/** A filter set by clicking a chart: the list then shows only the cards behind that bar (main deck and commander). */
+export type CardFilter = { kind: "cmc" | "color" | "type" | "tag"; value: string; label: string };
+export function matchesFilter(c: DeckCard, f: CardFilter): boolean {
+  if (c.board !== "main" && c.board !== "commander") return false;
+  const land = primaryType(c.type_line) === "land";
+  switch (f.kind) {
+    case "cmc": return !land && Math.min(7, Math.floor(c.cmc)) === Number(f.value);
+    case "color": return f.value === "C" ? !land && c.colors.length === 0 : c.colors.includes(f.value);
+    case "type": return primaryType(c.type_line) === f.value;
+    case "tag": return c.tags.includes(f.value);
+  }
+}
+
+/** P(at least `k` of `K` wanted cards among `n` drawn from a deck of `N`): the hypergeometric tail. */
+export function atLeast(N: number, K: number, n: number, k: number): number {
+  if (k <= 0) return 1;
+  if (K < k || n < k || N <= 0 || n > N) return 0;
+  const lf = [0];
+  for (let i = 1; i <= N; i++) lf[i] = lf[i - 1] + Math.log(i);
+  const lc = (a: number, b: number) => (b < 0 || b > a ? -Infinity : lf[a] - lf[b] - lf[a - b]);
+  let p = 0;
+  for (let i = k; i <= Math.min(K, n); i++) p += Math.exp(lc(K, i) + lc(N - K, n - i) - lc(N, n));
+  return Math.min(1, p);
+}
 export type OracleRow = {
   oracle_id: string; name: string; mana_cost: string; cmc: number; type_line: string | null; color_identity: string[]; oracle_text: string | null;
   id: string | null; price: number | null; owned: number; in_deck: number;

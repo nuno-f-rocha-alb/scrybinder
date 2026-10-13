@@ -1,7 +1,7 @@
 import { IconBox, IconCheck, IconCopy, IconShoppingCart, IconSwitchHorizontal } from "@tabler/icons-react";
 import type { CardStatus } from "../decks";
 
-const PIP: Record<string, string> = { W: "#f6f1c9", U: "#7fb8e8", B: "#9d8f99", R: "#ee8a6e", G: "#6dbb85", C: "#c9c5c0", X: "#c9c5c0" };
+export const PIP: Record<string, string> = { W: "#f6f1c9", U: "#7fb8e8", B: "#9d8f99", R: "#ee8a6e", G: "#6dbb85", C: "#c9c5c0", X: "#c9c5c0" };
 
 /** A mana cost as small coloured circles: "{2}{W}{U/B}" (hybrid shows the first colour). */
 export function ManaCost({ cost }: { cost: string | null | undefined }) {
