@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 
 import time
 
-from . import __version__, collection, db as dbmod, decks, decktext, formats, gpu as gpumod, scryfall, updater as updmod
+from . import __version__, collection, db as dbmod, decks, decktext, formats, gpu as gpumod, oracle, scryfall, updater as updmod
 from .scan.session import MAX_SIDE, MAX_SIDE_PAGE, Scanner, decode
 
 UI_DIST = Path(__file__).resolve().parent.parent / "ui" / "dist"
@@ -281,6 +281,12 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
             "(SELECT rowid FROM cards_fts WHERE cards_fts MATCH ?) AND k.digital=0 "
             "GROUP BY COALESCE(k.oracle_id,k.id) ORDER BY k.name LIMIT ?", (collection._fts(q), min(limit, 50)))
         return [dict(r) for r in rows]
+
+    @app.get("/api/oracle/search")
+    def oracle_search(q: str = "", text: str = "", colors: str = "", type: str = "", cmc_min: str = "", cmc_max: str = "",
+                      owned: bool = False, legal: bool = False, deck: int | None = None, sort: str = "name",
+                      limit: int = 50, offset: int = 0):
+        return _wrap(oracle.search, db, q, text, colors, type, cmc_min, cmc_max, owned, legal, deck, sort, limit, offset)
 
     @app.get("/api/cards/prints")
     def prints(oracle_id: str = "", name: str = ""):
