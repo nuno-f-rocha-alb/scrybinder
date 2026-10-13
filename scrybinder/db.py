@@ -85,6 +85,21 @@ CREATE TABLE IF NOT EXISTS oracle_cards (  -- one row per oracle_id: the rules d
 );
 CREATE VIRTUAL TABLE IF NOT EXISTS oracle_fts USING fts5(
     name, oracle_text, content='oracle_cards', content_rowid='rowid', tokenize='unicode61 remove_diacritics 2');
+
+CREATE TABLE IF NOT EXISTS decks (
+    id INTEGER PRIMARY KEY, name TEXT NOT NULL, format TEXT NOT NULL DEFAULT 'casual', description TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')),
+    updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+CREATE TABLE IF NOT EXISTS deck_cards (  -- scryfall_id is the preferred printing (NULL = any)
+    id INTEGER PRIMARY KEY, deck_id INTEGER NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
+    oracle_id TEXT NOT NULL REFERENCES oracle_cards(oracle_id), scryfall_id TEXT REFERENCES cards(id),
+    quantity INTEGER NOT NULL CHECK (quantity > 0), board TEXT NOT NULL DEFAULT 'main' CHECK (board IN ('main','side','commander','maybe'))
+);
+CREATE UNIQUE INDEX IF NOT EXISTS deck_cards_key ON deck_cards(deck_id, oracle_id, COALESCE(scryfall_id, ''), board);
+CREATE TABLE IF NOT EXISTS deck_card_tags (
+    deck_card_id INTEGER NOT NULL REFERENCES deck_cards(id) ON DELETE CASCADE, tag TEXT NOT NULL, PRIMARY KEY (deck_card_id, tag)
+);
 """
 
 # additive migrations (never delete or rewrite data): (table, column, definition)

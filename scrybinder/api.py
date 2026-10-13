@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 
 import time
 
-from . import __version__, collection, db as dbmod, formats, gpu as gpumod, scryfall, updater as updmod
+from . import __version__, collection, db as dbmod, decks, formats, gpu as gpumod, scryfall, updater as updmod
 from .scan.session import MAX_SIDE, MAX_SIDE_PAGE, Scanner, decode
 
 UI_DIST = Path(__file__).resolve().parent.parent / "ui" / "dist"
@@ -444,6 +444,48 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
             raise HTTPException(404)
         except (ValueError, sqlite3.IntegrityError) as e:  # invalid input; other errors are bugs and should be 500
             raise HTTPException(422, str(e))
+
+    # --- decks ---
+    @app.get("/api/decks")
+    def decks_list():
+        return decks.listing(db)
+
+    @app.post("/api/decks")
+    def decks_create(body: dict = Body(...)):
+        return {"id": _wrap(decks.create, db, body.get("name"), body.get("format") or "casual", body.get("description") or "")}
+
+    @app.get("/api/decks/{deck_id}")
+    def decks_get(deck_id: int):
+        return _wrap(decks.get, db, deck_id)
+
+    @app.patch("/api/decks/{deck_id}")
+    def decks_update(deck_id: int, body: dict = Body(...)):
+        _wrap(decks.update, db, deck_id, **body)
+        return {"ok": True}
+
+    @app.delete("/api/decks/{deck_id}")
+    def decks_delete(deck_id: int):
+        _wrap(decks.delete, db, deck_id)
+        return {"ok": True}
+
+    @app.post("/api/decks/{deck_id}/duplicate")
+    def decks_duplicate(deck_id: int):
+        return {"id": _wrap(decks.duplicate, db, deck_id)}
+
+    @app.post("/api/decks/{deck_id}/cards")
+    def decks_add_card(deck_id: int, body: dict = Body(...)):
+        return {"id": _wrap(decks.add_card, db, deck_id, body.get("oracle_id"), body.get("quantity", 1),
+                            body.get("board", "main"), body.get("scryfall_id"), body.get("tags") or ())}
+
+    @app.patch("/api/decks/{deck_id}/cards/{card_id}")
+    def decks_update_card(deck_id: int, card_id: int, body: dict = Body(...)):
+        return {"id": _wrap(decks.update_card, db, deck_id, card_id,
+                            **{k: v for k, v in body.items() if k in ("quantity", "board", "scryfall_id", "tags")})}
+
+    @app.delete("/api/decks/{deck_id}/cards/{card_id}")
+    def decks_remove_card(deck_id: int, card_id: int):
+        _wrap(decks.remove_card, db, deck_id, card_id)
+        return {"ok": True}
 
     @app.post("/api/collection")
     def coll_add(body: dict = Body(...)):
