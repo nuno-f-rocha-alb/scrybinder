@@ -202,6 +202,73 @@ def test_a_crash_after_everything_was_applied_keeps_the_update(env, monkeypatch)
     assert (env / "a.dll").read_bytes() == b"2"
 
 
+def _lock(monkeypatch, name):
+    """Windows: a file the running process holds open without sharing cannot be renamed (base_library.zip is one)."""
+    real = up.Path.rename
+
+    def rename(self, target):
+        if self.name == name:
+            raise PermissionError(32, "in use", str(self))
+        return real(self, target)
+    monkeypatch.setattr(up.Path, "rename", rename)
+
+
+def test_a_locked_file_is_left_for_restart(env, monkeypatch):
+    (env / "_internal").mkdir()
+    (env / "_internal/base_library.zip").write_bytes(b"old")
+    (env / "a.dll").write_bytes(b"1")
+    fetch, step = _package({"_internal/base_library.zip": b"new", "a.dll": b"2"})
+    _lock(monkeypatch, "base_library.zip")
+    job = _run(step, fetch)
+    assert job["state"] == "done"
+    assert (env / "a.dll").read_bytes() == b"2"  # everything else went in
+    assert (env / "_internal/base_library.zip").read_bytes() == b"old"  # the locked one waits
+    assert (env / "_internal/base_library.zip.new").read_bytes() == b"new"  # staged and verified
+    assert json.loads((dbmod.DATA_DIR / "update" / "deferred.json").read_text()) == ["_internal/base_library.zip"]
+    up.cleanup_on_start()  # a start that did not get it in place drops the staged copy
+    assert not (env / "_internal/base_library.zip.new").exists()
+
+
+def test_restart_puts_deferred_files_in_place_first(env, monkeypatch):
+    launched = []
+    monkeypatch.setattr(up.subprocess, "Popen", lambda cmd, **k: launched.append(cmd))
+    monkeypatch.setattr(up.threading, "Timer", lambda *a, **k: type("T", (), {"start": lambda self: None})())
+    monkeypatch.setattr(up.sys, "executable", str(env / "Scrybinder.exe"))
+    monkeypatch.setattr(up.sys, "argv", ["Scrybinder.exe"])
+    up.restart()
+    assert launched == [[str(env / "Scrybinder.exe")]]  # nothing deferred: just start again
+    (dbmod.DATA_DIR / "update").mkdir(exist_ok=True)
+    (dbmod.DATA_DIR / "update" / "deferred.json").write_text(json.dumps(["_internal/base_library.zip"]))
+    up.restart()
+    assert launched[1][1] == "/c" and launched[1][2].endswith("finish.cmd")
+    text = open(launched[1][2], encoding="utf-8").read()
+    assert "base_library.zip.new" in text and "move /y" in text and text.rstrip().endswith('"' + str(env / "Scrybinder.exe") + '"')
+
+
+def test_finish_script_escapes_percent_signs(tmp_path):
+    s = up.finish_script(tmp_path / "100%", ["a b.dll"], str(tmp_path / "x.exe"), ["--browser"])
+    assert "100%%" in s and '"a b.dll.new"' not in s and "a b.dll.new" in s and s.endswith('"--browser"\r\n')
+
+
+@pytest.mark.skipif(os.name != "nt", reason="cmd.exe")
+def test_finish_script_runs(tmp_path):
+    tmp_path = tmp_path / "João – ç"  # accents and a character outside the OEM page
+    tmp_path.mkdir()
+    (tmp_path / "f.zip").write_bytes(b"old")
+    (tmp_path / "f.zip.new").write_bytes(b"new")
+    (tmp_path / "go.cmd").write_text("@echo ok>started.txt\r\n")
+    script = tmp_path / "finish.cmd"
+    script.write_text(up.finish_script(tmp_path, ["f.zip"], str(tmp_path / "go.cmd"), []), encoding="utf-8")
+    import subprocess
+    import time
+    subprocess.run(["cmd", "/c", str(script)], check=True, cwd=tmp_path)
+    for _ in range(50):
+        if (tmp_path / "started.txt").exists():
+            break
+        time.sleep(0.1)
+    assert (tmp_path / "f.zip").read_bytes() == b"new" and (tmp_path / "started.txt").exists()
+
+
 def test_start_up_keeps_the_old_files_when_it_cannot_undo_yet(env, monkeypatch):
     (env / "a.dll").write_bytes(b"1")
     fetch, step = _package({"a.dll": b"2"})
