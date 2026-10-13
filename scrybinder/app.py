@@ -14,7 +14,7 @@ from pathlib import Path
 
 import uvicorn
 
-from . import gpu
+from . import gpu, updater
 from .api import create_app
 
 
@@ -44,6 +44,7 @@ def main():
     if sys.stderr is None or getattr(sys, "frozen", False):
         _redirect_output_to_log()
     if getattr(sys, "frozen", False):
+        updater.cleanup_on_start()  # the .old files of the last update
         gpu.activate()  # before anything imports torch: use the downloaded CUDA build if there is one
     if sys.platform == "win32":
         try:  # own identity in the taskbar (otherwise it groups with Python and shows its icon)

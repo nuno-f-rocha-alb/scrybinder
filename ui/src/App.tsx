@@ -40,7 +40,8 @@ export default function App() {
           </SidebarGroup>
           {(["scan", "add", "io", "settings"] as const).map((p) => {
             const I = ICON[p];
-            return <SidebarItem key={p} icon={<I className="size-[18px]" stroke={1.75} />} active={page === p} onClick={() => setPage(p)}>{PAGES[p]}</SidebarItem>;
+            return <SidebarItem key={p} icon={<I className="size-[18px]" stroke={1.75} />} active={page === p} badge={p === "settings" && status?.update_available ? <span className="size-2 rounded-full bg-accent" title={`Scrybinder ${status.update_available} is available`} /> : undefined}
+              onClick={() => setPage(p)}>{PAGES[p]}</SidebarItem>;
           })}
         </SidebarSection>
         <SidebarFooter>Card data and images © Scryfall<br />Scrybinder is not affiliated with Wizards of the Coast.</SidebarFooter>
