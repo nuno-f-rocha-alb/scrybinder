@@ -4,6 +4,8 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+## [0.4.3] — 2026-10-13
+
 ### Fixed
 - Exporting a CSV opens a native *Save as* dialog instead of the generic Edge downloads popup (#26).
 - A second Scrybinder window opened while an update is being applied no longer undoes it (the swap holds a lock; a crashed update is still undone at the next start).
