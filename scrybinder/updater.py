@@ -355,7 +355,9 @@ def restart() -> None:
     if deferred:
         script = update_dir() / "finish.cmd"
         script.write_text(finish_script(app_dir(), deferred, sys.executable, sys.argv[1:]), encoding="utf-8")
-        subprocess.Popen([os.environ.get("COMSPEC", "cmd.exe"), "/c", str(script)], creationflags=flags, close_fds=True, cwd=str(app_dir()), env=env)
+        # no DETACHED_PROCESS here: a cmd.exe without a console makes every console program it runs (ping, move) open its own window
+        hidden = getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "CREATE_NO_WINDOW", 0)
+        subprocess.Popen([os.environ.get("COMSPEC", "cmd.exe"), "/c", str(script)], creationflags=hidden, close_fds=True, cwd=str(app_dir()), env=env)
     else:
         subprocess.Popen([sys.executable, *sys.argv[1:]], creationflags=flags, close_fds=True, cwd=str(app_dir()), env=env)
     threading.Timer(0.5, os._exit, [0]).start()  # after the response has gone out
