@@ -6,7 +6,7 @@ import { CardImg } from "./ui";
 import { ManaCost, STATUS_RING, StatusBadge, StatusDot } from "./mana";
 import { sourceFor } from "./cardgrid";
 
-export type Ctx = { deckId: number; act: (p: Promise<unknown>) => void; setPreview: (p: Preview) => void; onZoom: (c: DeckCard) => void };
+export type Ctx = { deckId: number; act: (p: Promise<unknown>) => void; setPreview: (p: Preview) => void; onZoom: (c: DeckCard) => void; onAssign: (c: DeckCard) => void };
 export type Layout = { tile: number; tilePx: number; style: React.CSSProperties; setGridEl: (el: HTMLDivElement | null) => void };
 
 /** The same few operations on a deck card in every view: one more, one less (the last one removes it), a board. */
@@ -35,6 +35,14 @@ function Stepper({ c, ctx }: { c: DeckCard; ctx: Ctx }) {
   );
 }
 
+/** The status of a card is also the way to its copies and tags. */
+function AssignBtn({ c, ctx, className = "", children }: { c: DeckCard; ctx: Ctx; className?: string; children: React.ReactNode }) {
+  return (
+    <button className={`cursor-pointer rounded outline-none focus-visible:ring-2 focus-visible:ring-accent ${className}`} aria-label={`Copies and tags of ${c.name}`} title="Copies and tags"
+      onClick={(e) => { e.stopPropagation(); ctx.onAssign(c); }}>{children}</button>
+  );
+}
+
 const elsewhereHint = (c: DeckCard) => (c.elsewhere.length ? `Assigned to: ${c.elsewhere.map((e) => e.name).join(", ")}` : undefined);
 const Tags = ({ c }: { c: DeckCard }) => <>{c.tags.map((t) => <span key={t} className="shrink-0 rounded-md bg-raised px-1.5 py-0.5 text-[10.5px] text-mute">{t}</span>)}</>;
 
@@ -51,7 +59,7 @@ function ListRow({ c, ctx }: { c: DeckCard; ctx: Ctx }) {
         <span className="hidden items-center gap-2 sm:flex"><Tags c={c} /></span>
       </div>
       <ManaCost cost={c.mana_cost} />
-      <StatusBadge status={c.status} title={elsewhereHint(c)} />
+      <AssignBtn c={c} ctx={ctx} className="px-1 text-left hover:bg-line"><StatusBadge status={c.status} title={elsewhereHint(c)} /></AssignBtn>
       <span className="hidden text-right text-xs text-mute tabular-nums md:block">{eur(c.price)}</span>
       <select className="field hidden !w-auto !px-1.5 !py-0.5 text-xs md:block" aria-label={`Board of ${c.name}`} value={c.board} onClick={(e) => e.stopPropagation()}
         onChange={(e) => o.board(e.target.value)}>
@@ -73,7 +81,7 @@ function CompactRow({ c, ctx }: { c: DeckCard; ctx: Ctx }) {
         <button className={STEP} aria-label={`One less ${c.name}`} onClick={o.less}><IconMinus className="size-3" /></button>
         <button className={STEP} aria-label={`One more ${c.name}`} onClick={o.more}><IconPlus className="size-3" /></button>
       </span>
-      <StatusDot status={c.status} title={elsewhereHint(c)} />
+      <AssignBtn c={c} ctx={ctx}><StatusDot status={c.status} title={elsewhereHint(c)} /></AssignBtn>
     </li>
   );
 }
@@ -88,7 +96,7 @@ function Tile({ c, ctx, layout, crop }: { c: DeckCard; ctx: Ctx; layout: Layout;
       {c.image_id ? <CardImg id={c.image_id} size={sourceFor(layout.tilePx)} className={crop ? "!aspect-[63/62] object-top" : ""} />
         : <div className={`flex w-full items-center justify-center bg-raised p-2 text-center text-xs text-mute ${crop ? "aspect-[63/62]" : "aspect-[63/88]"}`}>{c.name}</div>}
       {c.quantity > 1 && <span className="absolute left-1.5 top-1.5 rounded-md bg-bg/90 px-1.5 py-0.5 text-xs font-semibold tabular-nums">×{c.quantity}</span>}
-      <span className="absolute right-1.5 top-1.5"><StatusDot status={c.status} title={elsewhereHint(c)} /></span>
+      <span className="absolute right-1.5 top-1.5"><AssignBtn c={c} ctx={ctx}><StatusDot status={c.status} title={elsewhereHint(c)} /></AssignBtn></span>
       <span className="absolute inset-x-0 bottom-0 flex justify-center gap-1 bg-gradient-to-t from-black/80 to-transparent px-2 pb-1.5 pt-6 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
         onClick={(e) => e.stopPropagation()}>
         <button className="flex size-7 items-center justify-center rounded-md bg-bg/90 text-ink hover:bg-accent" aria-label={c.quantity === 1 ? `Remove ${c.name}` : `One less ${c.name}`} onClick={o.less}>
@@ -111,7 +119,7 @@ function Strip({ c, ctx, layout, last, copy }: { c: DeckCard; ctx: Ctx; layout: 
       className={`group relative shrink-0 overflow-hidden rounded-[5px] outline-none ring-2 transition-[height] duration-150 motion-reduce:transition-none ${STATUS_RING[c.status]} hover:ring-accent focus-visible:ring-accent ${last ? "h-(--full)" : "h-(--strip) hover:h-(--full) focus:h-(--full)"}`}>
       {c.image_id ? <CardImg id={c.image_id} size={sourceFor(layout.tilePx)} className="!rounded-none" /> : <div className="h-full bg-raised p-1 text-xs">{c.name}</div>}
       {copy === undefined && c.quantity > 1 && <span className="absolute left-1 top-0.5 rounded bg-bg/90 px-1 text-[11px] font-semibold tabular-nums">×{c.quantity}</span>}
-      <span className="absolute right-1 top-0.5"><StatusDot status={c.status} title={elsewhereHint(c)} /></span>
+      <span className="absolute right-1 top-0.5"><AssignBtn c={c} ctx={ctx}><StatusDot status={c.status} title={elsewhereHint(c)} /></AssignBtn></span>
       <span className="absolute inset-x-0 bottom-0 hidden justify-center gap-1 bg-gradient-to-t from-black/80 to-transparent px-2 pb-1.5 pt-6 group-hover:flex group-focus-within:flex" onClick={(e) => e.stopPropagation()}>
         <button className="flex size-7 items-center justify-center rounded-md bg-bg/90 hover:bg-accent" aria-label={`One less ${c.name}`} onClick={o.less}><IconMinus className="size-4" /></button>
         <button className="flex size-7 items-center justify-center rounded-md bg-bg/90 hover:bg-accent" aria-label={`One more ${c.name}`} onClick={o.more}><IconPlus className="size-4" /></button>
