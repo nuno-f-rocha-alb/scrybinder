@@ -101,7 +101,25 @@ Known limits: Room/split cards (the artwork box does not exist), very strong hol
 
 ## Build from source
 
-Requirements: Python 3.12, [uv](https://docs.astral.sh/uv/), Node.js 20+, Tesseract OCR.
+### What you need
+
+| | What for | How to get it |
+|---|---|---|
+| **Python 3.12** | the app | [uv](https://docs.astral.sh/uv/) installs it for you |
+| **[uv](https://docs.astral.sh/uv/)** | installs Python and every Python dependency | `winget install astral-sh.uv` (Windows), `brew install uv` (macOS), or see its docs |
+| **Tesseract OCR** (English data) | reads the card names | `winget install UB-Mannheim.TesseractOCR` (Windows), `sudo apt install tesseract-ocr` (Linux), `brew install tesseract` (macOS). It must be on your `PATH`, or set `SCRYBINDER_TESSERACT` to its executable |
+| **Node.js 20+** | only to build the UI (`ui/dist`) | [nodejs.org](https://nodejs.org) |
+| **PyTorch + DINOv2** (optional) | identifies the exact printing from the artwork | the `vision` extra below |
+
+There is no `requirements.txt`: the Python dependencies are declared in [`pyproject.toml`](pyproject.toml) and pinned in `uv.lock`, and `uv sync` installs exactly those. The extras:
+
+| Command | Installs | Size | Result |
+|---|---|---|---|
+| `uv sync` | the app only | small | OCR only: it recognises the card, you pick the printing |
+| `uv sync --extra vision` | + PyTorch CPU, DINOv2 | ~1 GB | identifies the printing from the artwork (needs the visual index, see below) |
+| `uv sync --extra vision-cuda` | + PyTorch for NVIDIA (CUDA 12.8; Windows/Linux) | ~3 GB | the same, much faster to build the index |
+
+`vision` and `vision-cuda` exclude each other, and a plain `uv sync` removes PyTorch again. The DINOv2 model (~330 MB) downloads from Hugging Face the first time it is used. The full visual index needs about 12 GB of disk for the card images; the pilot index is a few hundred MB.
 
 ```bash
 git clone https://github.com/nuno-f-rocha-alb/scrybinder.git && cd scrybinder
@@ -110,6 +128,8 @@ cd ui && npm ci && npm run build && cd ..
 uv run scrybinder               # desktop window; add --browser or --serve for a browser tab
 uv run pytest                   # tests
 ```
+
+On first run open **Settings** and update the card database (the Scryfall bulk file, ~80 MB), then build the visual index there.
 
 Packaging (PyInstaller, Windows installer) is described in [docs/BUILDING.md](docs/BUILDING.md).
 
