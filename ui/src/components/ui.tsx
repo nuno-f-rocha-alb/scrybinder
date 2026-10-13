@@ -2,6 +2,26 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { api, img } from "../api";
 
+/** Shows `zoom` (a big version of the card image) next to the pointer while it is over `children`. Mouse only: touch has no hover. */
+export function HoverZoom({ children, zoom, className = "" }: { children: React.ReactNode; zoom: React.ReactNode; className?: string }) {
+  const [at, setAt] = useState<{ x: number; y: number } | null>(null);
+  const move = (e: { clientX: number; clientY: number }) => { if (window.matchMedia("(hover: hover)").matches) setAt({ x: e.clientX, y: e.clientY }); };
+  const W = 320, H = Math.round((W * 88) / 63);  // the preview box: card proportions
+  let left = 0, top = 0;
+  if (at) {
+    left = at.x + 24 + W > window.innerWidth ? at.x - 24 - W : at.x + 24;  // flip to the left near the right edge
+    top = Math.min(Math.max(8, at.y - H / 2), Math.max(8, window.innerHeight - H - 8));
+  }
+  return (
+    <div className={className} onMouseEnter={move} onMouseMove={move} onMouseLeave={() => setAt(null)}>
+      {children}
+      {at && createPortal(
+        <div className="pointer-events-none fixed z-[60] overflow-hidden rounded-[4.5%] shadow-[0_16px_48px_rgba(0,0,0,0.7)] ring-1 ring-line" style={{ left, top, width: W, height: H }}>{zoom}</div>,
+        document.body)}
+    </div>
+  );
+}
+
 export function CardImg({ id, size = "normal", className = "" }: { id: string; size?: "small" | "normal" | "large"; className?: string }) {
   const [tries, setTries] = useState(0);
   useEffect(() => setTries(0), [id, size]); // another card in the same component: start over
