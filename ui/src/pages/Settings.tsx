@@ -81,7 +81,7 @@ export default function Settings({ status, refresh }: { status: Status | null; r
           <div className="mt-4 text-sm" role="status">
             <div className={ij.state === "error" ? "text-danger" : ij.state === "done" ? "text-ok" : ""}>
               {ij.state === "prepare" && "Preparing…"}
-              {ij.state === "build" && `Indexing ${ij.done.toLocaleString()} / ${ij.total.toLocaleString()} (${ij.mode})`}
+              {ij.state === "build" && `Indexing ${ij.done.toLocaleString()} / ${ij.total.toLocaleString()} (${ij.mode})${ij.detail ? ` · ${ij.detail}` : ""}`}
               {ij.state === "done" && `Done${ij.failed ? ` — ${ij.failed} images failed, run again to retry` : ""}`}
               {ij.state === "stopped" && "Stopped — start again to resume"}
               {ij.state === "error" && "Error"}

@@ -340,8 +340,9 @@ def test_index_build_from_settings(client, monkeypatch):
     seen = {}
     monkeypatch.setattr(ixmod, "add_rows", lambda conn, d, where="1", params=(), dry_run=False: seen.update(where=where) or 3)
 
-    def fake_build(emb, d, progress=None, should_stop=None):
+    def fake_build(emb, d, progress=None, should_stop=None, detail=None):
         progress(2, 3)
+        detail("computing vectors 40% of this block")
         return {"indexed": 0, "failed_downloads": 1}
     monkeypatch.setattr(ixmod, "build", fake_build)
     assert client.post("/api/index/build", json={"mode": "nope"}).status_code == 422
@@ -351,7 +352,7 @@ def test_index_build_from_settings(client, monkeypatch):
         if job["state"] not in ("prepare", "build"):
             break
         time.sleep(0.05)
-    assert job["state"] == "done" and job["failed"] == 1 and job["done"] == 2 and "scan_log" in seen["where"]
+    assert job["state"] == "done" and job["failed"] == 1 and job["done"] == 2 and "vectors" in job["detail"] and "scan_log" in seen["where"]
     assert client.get("/api/index/estimate").json()["printings"] == 3
 
 
