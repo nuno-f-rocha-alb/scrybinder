@@ -73,7 +73,7 @@ If your system has no native web view, Scrybinder opens in your browser instead.
 
 ### Updating
 
-**In the app:** *Settings → Updates → Check for updates*, then *Update now* and *Restart now*. Scrybinder downloads only the files that changed (up to three releases behind; further back it points you to the installer), checks each one against the release's checksums, and swaps them in while it runs. If anything fails it puts everything back, and if Scrybinder is closed or crashes in the middle of an update, the next start undoes the unfinished update. *Check on start-up* is off by default. This needs the installed (or portable) Windows app in a folder you can write to. Uninstalling afterwards may leave a few files behind in the app folder.
+**In the app:** *Settings → Updates → Check for updates*, then *Update now* and *Restart now*. Scrybinder downloads only the files that changed (up to three releases behind; further back it points you to the installer), checks each one against the release's checksums, and swaps them in while it runs (the few files Windows keeps locked while the app is open are put in place by a small script after you press *Restart now*). If anything fails it puts everything back, and if Scrybinder is closed or crashes in the middle of an update, the next start undoes the unfinished update. *Check on start-up* is off by default. This needs the installed (or portable) Windows app in a folder you can write to. Uninstalling afterwards may leave a few files behind in the app folder.
 
 **By hand:** you do not have to download the whole installer again either. Each release has an update package for the version before it:
 
@@ -204,7 +204,7 @@ Known limits: Room/split cards (the artwork box does not exist), very strong hol
 
 - **No telemetry, no analytics, no accounts.** The code contains no tracking and no secrets.
 - **The local server** listens on `127.0.0.1` only, protected by a per-session token, a `SameSite=Strict` cookie and a `Host` check. Links the app opens in your browser are limited to Scryfall and Cardmarket.
-- **No arbitrary code execution:** the app does not use `eval`/`exec`, `os.system` or shell commands. The only subprocess is the app itself: started with `--gpu-selftest` to test a downloaded PyTorch when you enable the GPU, and again to restart after an update.
+- **No arbitrary code execution:** the app does not use `eval`/`exec`, `os.system` or shell commands. The subprocesses are the app itself (started with `--gpu-selftest` to test a downloaded PyTorch when you enable the GPU, and again to restart after an update) and, only when an update has locked files to put in place, a `cmd.exe` running a short script the app writes to its data folder (`update/finish.cmd`) that moves those files and starts the app.
 - **Deleting files:** the app deletes only the scan captures it created, its own `gpu/` folder if you press Remove GPU support, and the old copies of the files an update replaced.
 - **Verifying a download:** release files are built by GitHub Actions from the public source, and `SHA256SUMS` lets you check them. The Windows binaries are not code-signed, and the in-app updater trusts the checksums published with the release (it catches a corrupt download, not a compromised release).
 - Found a vulnerability? See [SECURITY.md](SECURITY.md).

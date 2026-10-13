@@ -151,8 +151,9 @@ def _rollback(app: Path, pend: dict) -> list[str]:
     return aside
 
 
-def _apply(app: Path, changed: list[str], removed: list[str], tag: str) -> None:
-    """Rename-and-replace; the first error puts everything back. `pending.json` says what is in flight, so a crash is undone at the next start."""
+def _apply(app: Path, changed: list[str], removed: list[str], tag: str) -> list[str]:
+    """Rename-and-replace; the first error puts everything back. Returns the files that could not be renamed because they are open without
+    sharing (base_library.zip is): they stay as `<name>.new` and are put in place by `restart()` once this process has exited. `pending.json` says what is in flight, so a crash is undone at the next start."""
     root = update_dir()
     changed = sorted(changed, key=lambda r: "/" not in r and r.lower().endswith(".exe"))  # the exe last: until then the old one still starts and can undo a crash
     moves = [(rel, f"{rel}.old-{tag}") for rel in changed + removed if (app / rel).exists()]
@@ -161,13 +162,18 @@ def _apply(app: Path, changed: list[str], removed: list[str], tag: str) -> None:
     leftovers = json.loads(old_json.read_text(encoding="utf-8")) if old_json.exists() else []
     old_json.write_text(json.dumps(leftovers + [m[1] for m in moves]), encoding="utf-8")  # before touching anything
     (root / "pending.json").write_text(json.dumps(pend), encoding="utf-8")
+    deferred: list[str] = []
     try:
         for rel in changed:
             t = app / rel
             if t.exists():
                 old = _old(t, tag)
                 old.unlink(missing_ok=True)
-                t.rename(old)
+                try:
+                    t.rename(old)
+                except PermissionError:
+                    deferred.append(rel)
+                    continue
             t.parent.mkdir(parents=True, exist_ok=True)
             os.replace(app / (rel + ".new"), t)
         for rel in removed:
@@ -184,8 +190,12 @@ def _apply(app: Path, changed: list[str], removed: list[str], tag: str) -> None:
         else:
             (root / "pending.json").unlink(missing_ok=True)
         raise RuntimeError(f"could not replace {getattr(e, 'filename', None) or 'a file'}: {e.strerror or e}; nothing was changed") from e
+    if deferred:
+        dj = root / "deferred.json"
+        dj.write_text(json.dumps(sorted(set(json.loads(dj.read_text(encoding="utf-8")) if dj.exists() else []) | set(deferred))), encoding="utf-8")
     (root / "pending.json").write_text(json.dumps({**pend, "done": True}), encoding="utf-8")  # complete: a crash from here on must not undo it
     (root / "pending.json").unlink(missing_ok=True)
+    return deferred
 
 
 def _install_step(job: dict, step: dict, fetch) -> None:
@@ -193,6 +203,7 @@ def _install_step(job: dict, step: dict, fetch) -> None:
     shutil.rmtree(work, ignore_errors=True)
     work.mkdir(parents=True)
     staged: list[Path] = []
+    keep: set[str] = set()  # staged files that restart() still has to put in place
     try:
         job["state"] = "download"
         sums = _sums(b"".join(fetch(step["sums"])).decode("utf-8", "replace"))
@@ -225,10 +236,11 @@ def _install_step(job: dict, step: dict, fetch) -> None:
                 if n != "manifest.json" and h.hexdigest() != manifest["files"][n]:
                     raise RuntimeError(f"{n} does not match its checksum")
         job["state"] = "apply"
-        _apply(app, names, removed, step["version"])
+        keep = {n + ".new" for n in _apply(app, names, removed, step["version"])}
     finally:
         for p in staged:
-            p.unlink(missing_ok=True)
+            if p.relative_to(app).as_posix() not in keep:
+                p.unlink(missing_ok=True)
         shutil.rmtree(work, ignore_errors=True)
 
 
@@ -266,6 +278,11 @@ def cleanup_on_start() -> None:
         (root / "pending.json").unlink()
     except (OSError, ValueError, KeyError):
         pass
+    try:  # files restart() should have put in place but that are still staged: drop them
+        for rel in json.loads((root / "deferred.json").read_text(encoding="utf-8")):
+            (app_dir() / (rel + ".new")).unlink(missing_ok=True)
+    except (OSError, ValueError):
+        pass
     if (root / "pending.json").exists():
         return  # it could not be undone yet and the .old files are the only copy of the previous version: keep them, try again next start
     left = []
@@ -283,9 +300,29 @@ def cleanup_on_start() -> None:
         shutil.rmtree(root, ignore_errors=True)
 
 
+def finish_script(app: Path, deferred: list[str], exe: str, args: list[str]) -> str:
+    """cmd script: wait until the app has exited (a `move` onto a file that is still open fails), put the deferred files in place, start the app."""
+    q = lambda s: '"' + str(s).replace("%", "%%") + '"'  # noqa: E731
+    lines = ["@echo off", "chcp 65001 >nul"]  # the script is UTF-8: user names may have any character
+    for i, rel in enumerate(deferred):
+        lines += [f"set n=0", f":w{i}", f"move /y {q(app / (rel + '.new'))} {q(app / rel)} >nul 2>&1 && goto d{i}",
+                  "set /a n+=1", f"if %n% lss 60 (ping -n 2 127.0.0.1 >nul & goto w{i})", f":d{i}"]
+    lines.append(f'start "" {q(exe)} ' + " ".join(q(a) for a in args))
+    return "\r\n".join(lines) + "\r\n"
+
+
 def restart() -> None:
-    """Start the app again (a new process, its own port) and close this one."""
+    """Start the app again (a new process, its own port) and close this one. Files that were locked are put in place first, by a cmd script."""
     flags = getattr(subprocess, "DETACHED_PROCESS", 0) | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0) | getattr(subprocess, "CREATE_NO_WINDOW", 0)
     env = {**os.environ, "PYINSTALLER_RESET_ENVIRONMENT": "1"}  # the new process must not reuse this one's bootloader state
-    subprocess.Popen([sys.executable, *sys.argv[1:]], creationflags=flags, close_fds=True, cwd=str(app_dir()), env=env)
+    try:
+        deferred = json.loads((update_dir() / "deferred.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        deferred = []
+    if deferred:
+        script = update_dir() / "finish.cmd"
+        script.write_text(finish_script(app_dir(), deferred, sys.executable, sys.argv[1:]), encoding="utf-8")
+        subprocess.Popen([os.environ.get("COMSPEC", "cmd.exe"), "/c", str(script)], creationflags=flags, close_fds=True, cwd=str(app_dir()), env=env)
+    else:
+        subprocess.Popen([sys.executable, *sys.argv[1:]], creationflags=flags, close_fds=True, cwd=str(app_dir()), env=env)
     threading.Timer(0.5, os._exit, [0]).start()  # after the response has gone out
