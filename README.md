@@ -73,7 +73,7 @@ If your system has no native web view, Scrybinder opens in your browser instead.
 
 ### Updating
 
-**In the app:** *Settings → Updates → Check for updates*, then *Update now* and *Restart now*. Scrybinder downloads only the files that changed (up to three releases behind; further back it points you to the installer), checks each one against the release's checksums, and swaps them in while it runs. If anything fails it puts everything back. *Check on start-up* is off by default. This needs the installed (or portable) Windows app in a folder you can write to. Uninstalling afterwards may leave a few files behind in the app folder.
+**In the app:** *Settings → Updates → Check for updates*, then *Update now* and *Restart now*. Scrybinder downloads only the files that changed (up to three releases behind; further back it points you to the installer), checks each one against the release's checksums, and swaps them in while it runs. If anything fails it puts everything back, and if Scrybinder is closed or crashes in the middle of an update, the next start undoes the unfinished update. *Check on start-up* is off by default. This needs the installed (or portable) Windows app in a folder you can write to. Uninstalling afterwards may leave a few files behind in the app folder.
 
 **By hand:** you do not have to download the whole installer again either. Each release has an update package for the version before it:
 
