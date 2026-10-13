@@ -130,40 +130,62 @@ def _old(p: Path, tag: str) -> Path:
     return p.with_name(f"{p.name}.old-{tag}")  # one per package: the previous package's copy is the file the running app has open
 
 
+def _rollback(app: Path, pend: dict) -> list[str]:
+    """Put back what `pend` (see _apply) says was moved, and delete what it says was created. Safe to run when nothing happened yet.
+    Returns files that had to be set aside (the new exe, when it is the one running): to be deleted at a later start."""
+    aside = []
+    for rel, old_rel in reversed(pend["moves"]):
+        if (app / old_rel).exists():
+            try:
+                os.replace(app / old_rel, app / rel)
+            except PermissionError:  # the file there is in use (a new exe doing its own rollback): rename it away, then put the old one back
+                bad = app / (rel + ".bad")
+                bad.unlink(missing_ok=True)
+                (app / rel).rename(bad)
+                os.replace(app / old_rel, app / rel)
+                aside.append(rel + ".bad")
+    for rel in pend["created"]:
+        (app / rel).unlink(missing_ok=True)
+    for rel in pend["staged"]:
+        (app / (rel + ".new")).unlink(missing_ok=True)
+    return aside
+
+
 def _apply(app: Path, changed: list[str], removed: list[str], tag: str) -> None:
-    """Rename-and-replace; the first error puts everything back."""
-    old_json = update_dir() / "old.json"
+    """Rename-and-replace; the first error puts everything back. `pending.json` says what is in flight, so a crash is undone at the next start."""
+    root = update_dir()
+    changed = sorted(changed, key=lambda r: "/" not in r and r.lower().endswith(".exe"))  # the exe last: until then the old one still starts and can undo a crash
+    moves = [(rel, f"{rel}.old-{tag}") for rel in changed + removed if (app / rel).exists()]
+    pend = {"moves": moves, "created": [rel for rel in changed if not (app / rel).exists()], "staged": changed}
+    old_json = root / "old.json"
     leftovers = json.loads(old_json.read_text(encoding="utf-8")) if old_json.exists() else []
-    old_json.write_text(json.dumps(leftovers + [f"{r}.old-{tag}" for r in changed + removed]), encoding="utf-8")  # before touching anything
-    done: list[tuple[Path, Path | None]] = []
+    old_json.write_text(json.dumps(leftovers + [m[1] for m in moves]), encoding="utf-8")  # before touching anything
+    (root / "pending.json").write_text(json.dumps(pend), encoding="utf-8")
     try:
         for rel in changed:
-            t, new = app / rel, app / (rel + ".new")
-            old = None
+            t = app / rel
             if t.exists():
                 old = _old(t, tag)
                 old.unlink(missing_ok=True)
                 t.rename(old)
-            done.append((t, old))
             t.parent.mkdir(parents=True, exist_ok=True)
-            os.replace(new, t)
+            os.replace(app / (rel + ".new"), t)
         for rel in removed:
             t = app / rel
             if t.exists():
                 old = _old(t, tag)
                 old.unlink(missing_ok=True)
                 t.rename(old)
-                done.append((t, old))
     except OSError as e:
-        for t, old in reversed(done):
-            try:
-                if old is not None:
-                    os.replace(old, t)
-                else:
-                    t.unlink(missing_ok=True)
-            except OSError:
-                pass
+        try:
+            _rollback(app, pend)
+        except OSError:
+            pass  # pending.json stays: the next start tries again
+        else:
+            (root / "pending.json").unlink(missing_ok=True)
         raise RuntimeError(f"could not replace {getattr(e, 'filename', None) or 'a file'}: {e.strerror or e}; nothing was changed") from e
+    (root / "pending.json").write_text(json.dumps({**pend, "done": True}), encoding="utf-8")  # complete: a crash from here on must not undo it
+    (root / "pending.json").unlink(missing_ok=True)
 
 
 def _install_step(job: dict, step: dict, fetch) -> None:
@@ -229,7 +251,7 @@ def install(job: dict, pl: dict, fetch=None) -> None:
 # --- start-up and restart ---
 
 def cleanup_on_start() -> None:
-    """Delete the `.old` files of the last update (they were still in use then) and any download left over."""
+    """Undo an update that was cut short, then delete the `.old` files of the last one (they were still in use then) and any download left over."""
     root = update_dir()
     if not root.exists():
         return
@@ -237,6 +259,15 @@ def cleanup_on_start() -> None:
         listed = json.loads((root / "old.json").read_text(encoding="utf-8"))
     except (OSError, ValueError):
         listed = []
+    try:  # the app was closed (or crashed) in the middle of an update: put the previous version back first
+        pend = json.loads((root / "pending.json").read_text(encoding="utf-8"))
+        if not pend.get("done"):
+            listed += _rollback(app_dir(), pend)
+        (root / "pending.json").unlink()
+    except (OSError, ValueError, KeyError):
+        pass
+    if (root / "pending.json").exists():
+        return  # it could not be undone yet and the .old files are the only copy of the previous version: keep them, try again next start
     left = []
     for rel in listed:
         try:
@@ -244,7 +275,7 @@ def cleanup_on_start() -> None:
         except OSError:
             left.append(rel)
     for p in root.iterdir():
-        if p.name != "old.json":
+        if p.name not in ("old.json", "pending.json"):
             shutil.rmtree(p, ignore_errors=True)
     if left:
         (root / "old.json").write_text(json.dumps(left), encoding="utf-8")

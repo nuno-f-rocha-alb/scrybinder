@@ -125,6 +125,98 @@ def test_a_failure_while_applying_puts_everything_back(env, monkeypatch):
     assert _app_state(env) == before
 
 
+class _Crash(BaseException):
+    """The process dies: nothing in the updater gets to catch it."""
+
+
+def test_a_crash_in_the_middle_is_undone_at_the_next_start(env, monkeypatch):
+    for n in ("a.dll", "b.dll", "gone.txt"):
+        (env / n).write_bytes(b"old-" + n.encode())
+    before = _app_state(env)
+    fetch, step = _package({"a.dll": b"A", "b.dll": b"B", "new.js": b"N"}, remove=["gone.txt"])
+    real, calls = os.replace, []
+
+    def die(src, dst):
+        calls.append(dst)
+        if len(calls) == 2:
+            raise _Crash()
+        return real(src, dst)
+    monkeypatch.setattr(up.os, "replace", die)
+    with pytest.raises(_Crash):
+        _run(step, fetch)
+    monkeypatch.setattr(up.os, "replace", real)
+    up.cleanup_on_start()  # the next start
+    assert _app_state(env) == before and not (dbmod.DATA_DIR / "update").exists()
+
+
+def test_the_running_exe_is_set_aside_when_rolling_back(env, monkeypatch):
+    (env / "app.exe").write_bytes(b"1")
+    fetch, step = _package({"app.exe": b"2"})
+    real = os.replace
+    monkeypatch.setattr(up.os, "replace", lambda s, d: (_ for _ in ()).throw(_Crash()) if str(s).endswith("app.exe.new") else real(s, d))
+    with pytest.raises(_Crash):
+        _run(step, fetch)  # the old exe is app.exe.old-0.3.1, app.exe is gone
+    monkeypatch.setattr(up.os, "replace", real)
+    (env / "app.exe").write_bytes(b"2")  # the new exe got in and is the one running now
+    real_replace = os.replace
+
+    def locked_target(s, d):  # Windows: cannot overwrite a running exe
+        if str(d).endswith("app.exe") and (env / "app.exe").exists():
+            raise PermissionError("in use")
+        return real_replace(s, d)
+    monkeypatch.setattr(up.os, "replace", locked_target)
+    real_unlink = up.Path.unlink
+    monkeypatch.setattr(up.Path, "unlink", lambda self, *a, **k: (_ for _ in ()).throw(PermissionError("in use")) if self.name == "app.exe.bad" and self.exists() else real_unlink(self, *a, **k))
+    up.cleanup_on_start()
+    assert (env / "app.exe").read_bytes() == b"1" and (env / "app.exe.bad").read_bytes() == b"2"  # the running one cannot be deleted yet
+    monkeypatch.setattr(up.os, "replace", real)
+    monkeypatch.setattr(up.Path, "unlink", real_unlink)
+    up.cleanup_on_start()  # the next start removes the one that was set aside
+    assert not (env / "app.exe.bad").exists()
+
+
+def test_the_exe_is_replaced_last(env, monkeypatch):
+    (env / "app.exe").write_bytes(b"1")
+    (env / "a.dll").write_bytes(b"1")
+    fetch, step = _package({"app.exe": b"2", "a.dll": b"2", "sub/x.exe": b"2"})
+    real, order = os.replace, []
+    monkeypatch.setattr(up.os, "replace", lambda s, d: (order.append(os.path.basename(str(d))), real(s, d))[1])
+    assert _run(step, fetch)["state"] == "done"
+    assert order[-1] == "app.exe" and set(order) == {"app.exe", "a.dll", "x.exe", "manifest.json"}
+
+
+def test_a_crash_after_everything_was_applied_keeps_the_update(env, monkeypatch):
+    (env / "a.dll").write_bytes(b"1")
+    fetch, step = _package({"a.dll": b"2"})
+    real_unlink = up.Path.unlink
+
+    def die(self, *a, **k):
+        if self.name == "pending.json":
+            raise _Crash()
+        return real_unlink(self, *a, **k)
+    monkeypatch.setattr(up.Path, "unlink", die)
+    with pytest.raises(_Crash):
+        _run(step, fetch)
+    monkeypatch.setattr(up.Path, "unlink", real_unlink)
+    up.cleanup_on_start()
+    assert (env / "a.dll").read_bytes() == b"2"
+
+
+def test_start_up_keeps_the_old_files_when_it_cannot_undo_yet(env, monkeypatch):
+    (env / "a.dll").write_bytes(b"1")
+    fetch, step = _package({"a.dll": b"2"})
+    real = os.replace
+    monkeypatch.setattr(up.os, "replace", lambda s, d: (_ for _ in ()).throw(_Crash()) if str(d).endswith("a.dll") else real(s, d))
+    with pytest.raises(_Crash):
+        _run(step, fetch)
+    monkeypatch.setattr(up.os, "replace", lambda s, d: (_ for _ in ()).throw(PermissionError("locked")))
+    up.cleanup_on_start()  # cannot restore a.dll yet
+    assert (env / "a.dll.old-0.3.1").read_bytes() == b"1" and (dbmod.DATA_DIR / "update" / "pending.json").exists()
+    monkeypatch.setattr(up.os, "replace", real)
+    up.cleanup_on_start()
+    assert (env / "a.dll").read_bytes() == b"1"
+
+
 def test_never_touches_the_data_folder(env):
     fetch, step = _package({"data/scrybinder.db": b"x"})
     assert _run(step, fetch)["state"] == "error" and not (env / "data").exists()
