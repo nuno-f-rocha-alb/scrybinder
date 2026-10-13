@@ -53,17 +53,17 @@ def test_status_summary_and_proxy(db):
     cb = decks.add_card(db, d, b, 1)
     cm = decks.add_card(db, d, a, 4, board="maybe")
     st = {c["id"]: c for c in decks.get(db, d)["cards"]}
-    assert (st[ca]["status"], st[ca]["owned"], st[ca]["missing"]) == ("partial", 2, 1)
+    assert (st[ca]["status"], st[ca]["owned"], st[ca]["missing"]) == ("missing", 2, 1)
     assert (st[cb]["status"], st[cb]["owned"]) == ("missing", 0)
     s = decks.get(db, d)["summary"]
-    assert (s["cards"], s["complete"], s["missing"], s["proxies"]) == (4, 0, 2, 0)  # maybe is ignored
+    assert (s["cards"], s["assigned"], s["available"], s["missing"], s["proxies"]) == (4, 0, 2, 2, 0)  # maybe is ignored
     assert s["cost_to_complete"] == 3.0  # 2 missing x 1.50
     decks.update_card(db, d, cb, tags=["proxy"])
     s = decks.get(db, d)["summary"]
-    assert (s["complete"], s["missing"], s["proxies"], s["cost_to_complete"]) == (1, 1, 1, 1.5)
+    assert (s["missing"], s["proxies"], s["cost_to_complete"]) == (1, 1, 1.5)
     assert {c["id"]: c["status"] for c in decks.get(db, d)["cards"]}[cb] == "proxy"
     collection.add(db, scryfall_id=sid_a, quantity=1, location="X")
-    assert {c["id"]: c["status"] for c in decks.get(db, d)["cards"]}[ca] == "complete"
+    assert {c["id"]: c["status"] for c in decks.get(db, d)["cards"]}[ca] == "available"
 
 
 def test_duplicate_delete_and_rebulk(db, bulk_file):

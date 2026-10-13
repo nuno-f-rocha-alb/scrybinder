@@ -100,6 +100,12 @@ CREATE UNIQUE INDEX IF NOT EXISTS deck_cards_key ON deck_cards(deck_id, oracle_i
 CREATE TABLE IF NOT EXISTS deck_card_tags (
     deck_card_id INTEGER NOT NULL REFERENCES deck_cards(id) ON DELETE CASCADE, tag TEXT NOT NULL, PRIMARY KEY (deck_card_id, tag)
 );
+CREATE TABLE IF NOT EXISTS deck_assignments (  -- copies of a collection row reserved for a deck card
+    deck_card_id INTEGER NOT NULL REFERENCES deck_cards(id) ON DELETE CASCADE,
+    collection_id INTEGER NOT NULL REFERENCES collection(id) ON DELETE CASCADE,
+    quantity INTEGER NOT NULL CHECK (quantity > 0), PRIMARY KEY (deck_card_id, collection_id)
+);
+CREATE INDEX IF NOT EXISTS deck_assignments_coll ON deck_assignments(collection_id);
 """
 
 # additive migrations (never delete or rewrite data): (table, column, definition)
