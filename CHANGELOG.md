@@ -4,6 +4,9 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Fixed
+- Restarting after an update no longer flashes console windows (the helper script was started without a console, so each `ping`/`move` opened its own).
+
 ## [0.4.3] — 2026-10-13
 
 ### Fixed

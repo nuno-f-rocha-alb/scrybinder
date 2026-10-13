@@ -232,7 +232,8 @@ def test_a_locked_file_is_left_for_restart(env, monkeypatch):
 
 def test_restart_puts_deferred_files_in_place_first(env, monkeypatch):
     launched = []
-    monkeypatch.setattr(up.subprocess, "Popen", lambda cmd, **k: launched.append(cmd))
+    flags = []
+    monkeypatch.setattr(up.subprocess, "Popen", lambda cmd, **k: (launched.append(cmd), flags.append(k["creationflags"])))
     monkeypatch.setattr(up.threading, "Timer", lambda *a, **k: type("T", (), {"start": lambda self: None})())
     monkeypatch.setattr(up.sys, "executable", str(env / "Scrybinder.exe"))
     monkeypatch.setattr(up.sys, "argv", ["Scrybinder.exe"])
@@ -242,6 +243,7 @@ def test_restart_puts_deferred_files_in_place_first(env, monkeypatch):
     (dbmod.DATA_DIR / "update" / "deferred.json").write_text(json.dumps(["_internal/base_library.zip"]))
     up.restart()
     assert launched[1][1] == "/c" and launched[1][2].endswith("finish.cmd")
+    assert not flags[1] & 0x8  # DETACHED_PROCESS: the console programs in the script would each open a visible window
     text = open(launched[1][2], encoding="utf-8").read()
     assert "base_library.zip.new" in text and "move /y" in text and text.rstrip().endswith('"' + str(env / "Scrybinder.exe") + '"')
 
