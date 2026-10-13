@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { IconAlertTriangle, IconArrowLeft, IconCheck, IconCopy, IconPlus, IconSearch, IconTrash, IconX } from "@tabler/icons-react";
+import { IconAlertTriangle, IconArrowLeft, IconBox, IconCheck, IconCopy, IconPlus, IconSearch, IconTrash, IconX } from "@tabler/icons-react";
 import { api, eur, qs } from "../api";
 import { BOARDS, BOARD_LABEL, Board, CardFilter, Deck as DeckT, DeckStats, FORMATS, Format, GROUPS, GroupBy, Legality, OracleRow, Preview, SORTS, SortBy, VIEWS, View, groupCards, matchesFilter, resultPreview, toPreview } from "../decks";
 import { CardImg, Modal, useToast } from "../components/ui";
@@ -7,6 +7,7 @@ import { ManaCost, StatusBadge } from "../components/mana";
 import { GridControls, useCardGrid } from "../components/cardgrid";
 import { DeckView, useZoom } from "../components/deckviews";
 import { LegalityPanel, StatsPanel } from "../components/deckstats";
+import AssignDialog from "../components/assign";
 
 const cap = (f: string) => f[0].toUpperCase() + f.slice(1);
 
@@ -105,6 +106,7 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
   const [tab, setTab] = useState<"cards" | "stats">("cards");
   const [filter, setFilter] = useState<CardFilter | null>(null);
   const [showProblems, setShowProblems] = useState(false);
+  const [assignId, setAssignId] = useState<number | null>(null);
 
   const reload = useCallback(() => Promise.all([api<DeckT>(`/decks/${id}`), api<Legality>(`/decks/${id}/legality`), api<DeckStats>(`/decks/${id}/stats`)])
     .then(([d, l, s]) => { setDeck(d); setName(d.name); setLegality(l); setStats(s); setErr(""); }).catch((e) => setErr(e.message)), [id]);
@@ -135,6 +137,10 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
           <select className="field w-auto" aria-label="Format" value={deck.format} onChange={(e) => patchDeck({ format: e.target.value as Format })}>
             {FORMATS.map((f) => <option key={f} value={f}>{cap(f)}</option>)}
           </select>
+          <button className="btn-ghost" title="Reserve the free copies of your collection for the cards that still need them"
+            onClick={() => api<{ assigned: number }>(`/decks/${id}/assign-free`, { method: "POST" }).then((r) => { toast(r.assigned ? `Assigned ${r.assigned} ${r.assigned === 1 ? "copy" : "copies"}` : "No free copies to assign"); reload(); }).catch((e) => toast(e.message, true))}>
+            <IconBox className="size-4" />Assign free copies
+          </button>
           <button className="btn-ghost" title="Copy this deck (without assigned copies)"
             onClick={() => api<{ id: number }>(`/decks/${id}/duplicate`, { method: "POST" }).then(() => toast("Deck duplicated")).catch((e) => toast(e.message, true))}>
             <IconCopy className="size-4" />Duplicate
@@ -182,7 +188,7 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
           </div>
         )}
         {cards.length === 0 && <div className="rounded-2xl border border-dashed border-line p-12 text-center text-mute">{filter ? "No cards match this filter." : "This deck is empty. Search above to add cards."}</div>}
-        <DeckView groups={groupCards(cards, group, sort)} view={view} every={every === "1"} layout={grid} ctx={{ deckId: id, act, setPreview, onZoom }} />
+        <DeckView groups={groupCards(cards, group, sort)} view={view} every={every === "1"} layout={grid} ctx={{ deckId: id, act, setPreview, onZoom, onAssign: (c) => setAssignId(c.id) }} />
         </>}
 
         <div className="sticky bottom-0 -mx-6 -mb-6 mt-6 flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-line bg-surface/95 px-6 py-3 text-sm backdrop-blur">
@@ -200,6 +206,9 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
           </span>
         </div>
       </div>
+      {assignId !== null && deck.cards.find((c) => c.id === assignId) && (
+        <AssignDialog deckId={id} card={deck.cards.find((c) => c.id === assignId)!} onClose={() => setAssignId(null)} onChanged={reload} />
+      )}
       {zoom && (
         <Modal title={zoom.name} onClose={close}>
           <div className="mx-auto max-w-[340px]"><CardImg id={zoom.image_id ?? ""} size="large" /></div>

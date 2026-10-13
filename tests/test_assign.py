@@ -135,3 +135,33 @@ def test_assignment_api(db):
     assert c.patch(f"/api/collection/{row}?release=1", json={"quantity": 1}).status_code == 200
     assert c.get(f"/api/decks/{d1}").json()["cards"][0]["assigned"] == 0
     assert c.delete(f"/api/collection/{row}").status_code == 200
+
+
+def test_copies_of_a_deck_card_and_who_holds_them(db):
+    oid, sid, row, d1, d2 = _setup(db, qty=3)
+    other = collection.add(db, scryfall_id=sid, quantity=2, location="B", finish="foil")
+    collection.add(db, scryfall_id=sid, quantity=4, proxy=1, location="P")  # a proxy row is not a copy
+    c1, c2 = decks.add_card(db, d1, oid, 2, scryfall_id=sid), decks.add_card(db, d2, oid, 3)
+    decks.assign(db, d1, c1, [{"collection_id": row, "quantity": 2}])
+    decks.assign(db, d2, c2, [{"collection_id": row, "quantity": 1}, {"collection_id": other, "quantity": 1}])
+    got = decks.copies(db, d1, c1)
+    assert got["quantity"] == 2 and [r["id"] for r in got["rows"]] == [row, other]  # the preferred printing first, no proxy
+    a, b = got["rows"]
+    assert (a["here"], a["free"], a["elsewhere"]) == (2, 0, [{"deck_id": d2, "name": "D2", "quantity": 1}])  # 3 owned: 2 here, 1 in D2
+    assert (b["here"], b["free"], b["finish"]) == (0, 1, "foil") and b["elsewhere"][0]["name"] == "D2"
+    assert decks.copies(db, d2, c2)["rows"][0]["elsewhere"] == [{"deck_id": d1, "name": "D1", "quantity": 2}]
+    with pytest.raises(KeyError):
+        decks.copies(db, d2, c1)  # the card is not in that deck
+    empty = decks.create(db, "E")
+    free = decks.add_card(db, empty, db.execute("SELECT oracle_id FROM oracle_cards WHERE oracle_id != ? LIMIT 1", (oid,)).fetchone()[0])
+    assert decks.copies(db, empty, free)["rows"] == []  # nothing owned
+
+
+def test_copies_api(db):
+    c = TestClient(create_app(db, token=TOKEN, allowed_hosts={"testserver"}))
+    c.get(f"/api/status?t={TOKEN}")
+    oid, sid, row, d1, _ = _setup(db)
+    c1 = c.post(f"/api/decks/{d1}/cards", json={"oracle_id": oid, "quantity": 2}).json()["id"]
+    r = c.get(f"/api/decks/{d1}/cards/{c1}/copies").json()
+    assert r["quantity"] == 2 and r["rows"][0]["id"] == row and r["rows"][0]["free"] == 2
+    assert c.get(f"/api/decks/{d1}/cards/999/copies").status_code == 404

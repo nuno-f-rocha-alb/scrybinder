@@ -534,6 +534,10 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
         _wrap(decks.remove_card, db, deck_id, card_id)
         return {"ok": True}
 
+    @app.get("/api/decks/{deck_id}/cards/{card_id}/copies")
+    def decks_copies(deck_id: int, card_id: int):
+        return _wrap(decks.copies, db, deck_id, card_id)
+
     @app.put("/api/decks/{deck_id}/cards/{card_id}/assign")
     def decks_assign(deck_id: int, card_id: int, body: dict = Body(...)):
         _wrap(decks.assign, db, deck_id, card_id, body.get("items"))

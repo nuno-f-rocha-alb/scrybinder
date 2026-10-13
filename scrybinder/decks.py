@@ -479,3 +479,29 @@ def delete_folder(db, folder_id: int) -> None:
     with db:
         if not db.execute("DELETE FROM deck_folders WHERE id=?", (folder_id,)).rowcount:
             raise KeyError(folder_id)
+
+
+def copies(db, deck_id: int, card_id: int) -> dict:
+    """The copies of the collection that can go to a deck card (proxy rows are not copies): per row how many are assigned
+    to this card (`here`) and to which other cards' decks (`elsewhere`), so the dialog can say how many are free."""
+    card = db.execute("SELECT oracle_id, scryfall_id, quantity FROM deck_cards WHERE id=? AND deck_id=?", (card_id, deck_id)).fetchone()
+    if not card:
+        raise KeyError(card_id)
+    rows = [dict(r) for r in db.execute(
+        "SELECT c.id, c.scryfall_id, c.quantity, c.finish, c.condition, c.language, c.location, c.altered, c.signed, c.misprint,"
+        " k.set_code, k.set_name, k.collector_number,"
+        " CASE c.finish WHEN 'foil' THEN k.eur_foil WHEN 'etched' THEN k.eur_etched ELSE k.eur END AS price,"
+        " COALESCE((SELECT quantity FROM deck_assignments WHERE deck_card_id=? AND collection_id=c.id), 0) AS here"
+        " FROM collection c JOIN cards k ON k.id = c.scryfall_id WHERE k.oracle_id=? AND c.proxy=0"
+        " ORDER BY (c.scryfall_id = ?) DESC, k.released_at DESC, c.id", (card_id, card["oracle_id"], card["scryfall_id"] or ""))]
+    other = {}
+    for coll, did, name, q in db.execute(
+            "SELECT a.collection_id, dk.id, dk.name, SUM(a.quantity) FROM deck_assignments a"
+            " JOIN deck_cards dc ON dc.id = a.deck_card_id JOIN decks dk ON dk.id = dc.deck_id"
+            f" WHERE a.deck_card_id != ? AND a.collection_id IN ({','.join('?' * len(rows)) or 'NULL'})"
+            " GROUP BY a.collection_id, dk.id ORDER BY dk.name", [card_id, *[r["id"] for r in rows]]):
+        other.setdefault(coll, []).append({"deck_id": did, "name": name, "quantity": q})
+    for r in rows:
+        r["elsewhere"] = other.get(r["id"], [])
+        r["free"] = max(r["quantity"] - r["here"] - sum(e["quantity"] for e in r["elsewhere"]), 0)
+    return {"quantity": card["quantity"], "rows": rows}
