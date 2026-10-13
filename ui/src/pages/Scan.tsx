@@ -258,7 +258,7 @@ function Confirm({ item, location, onDone }: { item: Pending; location: string; 
           {cands.map((x, i) => (
             <button key={x.id} onClick={() => setIdx(i)} aria-pressed={i === idx}
               className={`w-24 shrink-0 cursor-pointer rounded-lg p-1 text-left transition ${i === idx ? "bg-accent-soft ring-2 ring-accent" : "hover:bg-raised"}`}>
-              <HoverZoom zoom={<CardImg id={x.id} size="large" />}><CardImg id={x.id} /></HoverZoom><div className="mt-1 truncate text-[11px]"><b>{x.set_code.toUpperCase()}</b> <span className="text-mute">#{x.collector_number}</span></div>
+              <HoverZoom zoom={<CardImg id={x.id} />}><CardImg id={x.id} /></HoverZoom><div className="mt-1 truncate text-[11px]"><b>{x.set_code.toUpperCase()}</b> <span className="text-mute">#{x.collector_number}</span></div>
             </button>))}
         </div>
       )}
@@ -315,7 +315,7 @@ function ReadsList({ reads, location, onChange, toast }: { reads: Read[]; locati
               <div className="flex flex-wrap items-center gap-3">
                 <HoverZoom zoom={<img src={`/api/scan/capture/${r.id}`} alt="" className="size-full object-cover" />}>
                   <img src={`/api/scan/capture/${r.id}`} alt="Capture" className="h-24 rounded-md border border-line" /></HoverZoom>
-                <HoverZoom className="h-24 w-[69px] shrink-0" zoom={r.scryfall_id ? <CardImg id={r.scryfall_id} size="large" /> : null}>{r.scryfall_id && <CardImg id={r.scryfall_id} />}</HoverZoom>
+                <HoverZoom className="h-24 w-[69px] shrink-0" zoom={r.scryfall_id ? <CardImg id={r.scryfall_id} /> : null}>{r.scryfall_id && <CardImg id={r.scryfall_id} />}</HoverZoom>
                 <div className="min-w-[12rem] flex-1">
                   <div className="font-semibold leading-tight">{c?.name ?? "No candidate"}</div>
                   {c && <div className="text-sm text-mute">{c.set_name} · {c.set_code.toUpperCase()} #{c.collector_number} · {c.released_at?.slice(0, 4)}</div>}
@@ -370,7 +370,7 @@ function PrintPicker({ read, onPick }: { read: Read; onPick: (id: string) => voi
         {cands.map((x) => (
           <button key={x.id} onClick={() => onPick(x.id)} aria-pressed={x.id === read.scryfall_id}
             className={`w-24 shrink-0 cursor-pointer rounded-lg p-1 text-left transition ${x.id === read.scryfall_id ? "bg-accent-soft ring-2 ring-accent" : "hover:bg-raised"}`}>
-            <CardImg id={x.id} /><div className="mt-1 truncate text-[11px]"><b>{x.set_code.toUpperCase()}</b> <span className="text-mute">#{x.collector_number}</span></div>
+            <HoverZoom zoom={<CardImg id={x.id} />}><CardImg id={x.id} /></HoverZoom><div className="mt-1 truncate text-[11px]"><b>{x.set_code.toUpperCase()}</b> <span className="text-mute">#{x.collector_number}</span></div>
           </button>))}
       </div>
     </div>
