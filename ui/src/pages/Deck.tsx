@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useState } from "react";
-import { IconAlertTriangle, IconArrowLeft, IconCheck, IconCopy, IconPlus, IconSearch, IconTrash } from "@tabler/icons-react";
+import { IconAlertTriangle, IconArrowLeft, IconCheck, IconCopy, IconPlus, IconSearch, IconTrash, IconX } from "@tabler/icons-react";
 import { api, eur, qs } from "../api";
-import { BOARDS, BOARD_LABEL, Board, Deck as DeckT, DeckStats, FORMATS, Format, GROUPS, GroupBy, Legality, OracleRow, Preview, SORTS, SortBy, VIEWS, View, groupCards, resultPreview, toPreview } from "../decks";
+import { BOARDS, BOARD_LABEL, Board, CardFilter, Deck as DeckT, DeckStats, FORMATS, Format, GROUPS, GroupBy, Legality, OracleRow, Preview, SORTS, SortBy, VIEWS, View, groupCards, matchesFilter, resultPreview, toPreview } from "../decks";
 import { CardImg, Modal, useToast } from "../components/ui";
 import { ManaCost, StatusBadge } from "../components/mana";
 import { GridControls, useCardGrid } from "../components/cardgrid";
 import { DeckView, useZoom } from "../components/deckviews";
+import { LegalityPanel, StatsPanel } from "../components/deckstats";
 
 const cap = (f: string) => f[0].toUpperCase() + f.slice(1);
 
@@ -101,6 +102,9 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
   const [every, setEvery] = useChoice<"1" | "0">("every", "0", ["0", "1"]);
   const grid = useCardGrid();
   const { zoom, close, onZoom } = useZoom();
+  const [tab, setTab] = useState<"cards" | "stats">("cards");
+  const [filter, setFilter] = useState<CardFilter | null>(null);
+  const [showProblems, setShowProblems] = useState(false);
 
   const reload = useCallback(() => Promise.all([api<DeckT>(`/decks/${id}`), api<Legality>(`/decks/${id}/legality`), api<DeckStats>(`/decks/${id}/stats`)])
     .then(([d, l, s]) => { setDeck(d); setName(d.name); setLegality(l); setStats(s); setErr(""); }).catch((e) => setErr(e.message)), [id]);
@@ -114,7 +118,11 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
   const patchDeck = (body: object) => act(api(`/decks/${id}`, { method: "PATCH", body: JSON.stringify(body) }));
   const errors = legality?.problems.filter((p) => p.severity === "error").length ?? 0;
   const main = (stats?.totals.main ?? 0) + (stats?.totals.commander ?? 0);
-  const cards = deck.cards;
+  const cards = filter ? deck.cards.filter((c) => matchesFilter(c, filter)) : deck.cards;
+  const pick = (f: CardFilter) => {  // a click on a chart: show those cards, or clear the filter when it is already the one
+    if (filter?.kind === f.kind && filter.value === f.value) setFilter(null);
+    else { setFilter(f); setTab("cards"); }
+  };
 
   return (
     <div className="flex items-start gap-6">
@@ -137,6 +145,19 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
           }}><IconTrash className="size-4" />{confirmDelete ? "Click again to delete" : "Delete"}</button>
         </div>
 
+        <div role="tablist" aria-label="Deck sections" className="mb-4 flex gap-1 border-b border-line">
+          {([["cards", "Cards"], ["stats", "Statistics"]] as const).map(([k, l]) => (
+            <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
+              className={`-mb-px cursor-pointer border-b-2 px-4 py-2 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-accent ${tab === k ? "border-accent text-ink" : "border-transparent text-mute hover:text-ink"}`}>{l}</button>
+          ))}
+        </div>
+
+        {showProblems && legality && <LegalityPanel legality={legality} format={deck.format} onClose={() => setShowProblems(false)}
+          onCard={(n) => { const c = deck.cards.find((x) => x.name === n); if (c) setPreview(toPreview(c)); }} />}
+
+        {tab === "stats" && (stats ? <StatsPanel stats={stats} active={filter} onFilter={pick} /> : <p className="text-mute">Loading…</p>)}
+
+        {tab === "cards" && <>
         <AddCards deck={deck} setPreview={setPreview} onAdd={(oracle_id, board) => act(api(`/decks/${id}/cards`, { method: "POST", body: JSON.stringify({ oracle_id, board }) }))} />
 
         <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -154,14 +175,24 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
           {(view === "grid" || view === "stacks" || view === "spoiler") && <GridControls g={grid} />}
         </div>
 
-        {cards.length === 0 && <div className="rounded-2xl border border-dashed border-line p-12 text-center text-mute">This deck is empty. Search above to add cards.</div>}
+        {filter && (
+          <div className="mb-4 flex items-center gap-2 text-sm">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-accent-soft px-3 py-1">Showing: {filter.label} <span className="text-mute">({cards.reduce((n, c) => n + c.quantity, 0)} cards)</span>
+              <button className="flex size-5 items-center justify-center rounded-full hover:bg-line" aria-label="Clear the filter" onClick={() => setFilter(null)}><IconX className="size-3.5" /></button></span>
+          </div>
+        )}
+        {cards.length === 0 && <div className="rounded-2xl border border-dashed border-line p-12 text-center text-mute">{filter ? "No cards match this filter." : "This deck is empty. Search above to add cards."}</div>}
         <DeckView groups={groupCards(cards, group, sort)} view={view} every={every === "1"} layout={grid} ctx={{ deckId: id, act, setPreview, onZoom }} />
+        </>}
 
         <div className="sticky bottom-0 -mx-6 -mb-6 mt-6 flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-line bg-surface/95 px-6 py-3 text-sm backdrop-blur">
           <span className="font-medium tabular-nums">{main} <span className="font-normal text-mute">main deck</span> / {stats?.totals.side ?? 0} <span className="font-normal text-mute">sideboard</span></span>
-          {deck.format === "casual" ? <span className="text-mute">Casual</span> : errors ? (
-            <span className="inline-flex items-center gap-1 text-danger" title={legality?.problems.map((p) => p.message).join("\n")}><IconAlertTriangle className="size-4" aria-hidden />{errors} {errors === 1 ? "issue" : "issues"}</span>
-          ) : <span className="inline-flex items-center gap-1 text-ok"><IconCheck className="size-4" aria-hidden />Legal in {cap(deck.format)}</span>}
+          {deck.format === "casual" ? <span className="text-mute">Casual</span> : (
+            <button className={`inline-flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 hover:bg-raised ${errors ? "text-danger" : "text-ok"}`} aria-expanded={showProblems} onClick={() => setShowProblems((v) => !v)}
+              title="Show what is wrong with the deck">
+              {errors ? <><IconAlertTriangle className="size-4" aria-hidden />{errors} {errors === 1 ? "issue" : "issues"}</> : <><IconCheck className="size-4" aria-hidden />Legal in {cap(deck.format)}</>}
+            </button>
+          )}
           <span className="tabular-nums">{eur(stats?.price)}</span>
           {!!stats?.cost_to_complete && <span className="tabular-nums text-danger">{eur(stats.cost_to_complete)} to complete</span>}
           <span className="ml-auto flex flex-wrap gap-x-3 text-xs text-mute tabular-nums">
