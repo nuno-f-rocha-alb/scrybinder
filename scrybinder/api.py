@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 
 import time
 
-from . import __version__, collection, db as dbmod, decks, formats, gpu as gpumod, scryfall, updater as updmod
+from . import __version__, collection, db as dbmod, decks, decktext, formats, gpu as gpumod, scryfall, updater as updmod
 from .scan.session import MAX_SIDE, MAX_SIDE_PAGE, Scanner, decode
 
 UI_DIST = Path(__file__).resolve().parent.parent / "ui" / "dist"
@@ -477,6 +477,19 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
     @app.get("/api/decks/{deck_id}/stats")
     def decks_stats(deck_id: int):
         return _wrap(decks.stats, db, deck_id)
+
+    @app.post("/api/decks/{deck_id}/import")
+    def decks_import(deck_id: int, body: dict = Body(...)):
+        text = body.get("text")
+        if not isinstance(text, str) or len(text) > 1_000_000:
+            raise HTTPException(422, "text: a deck list of up to 1 MB")
+        return _wrap(decktext.import_text, db, deck_id, text, bool(body.get("dry_run")))
+
+    @app.get("/api/decks/{deck_id}/export")
+    def decks_export(deck_id: int, maybe: bool = False):
+        text = _wrap(decktext.export_text, db, deck_id, maybe)
+        return Response(text, media_type="text/plain; charset=utf-8",
+                        headers={"Content-Disposition": f'attachment; filename="scrybinder-deck-{deck_id}.txt"'})
 
     @app.post("/api/decks/{deck_id}/duplicate")
     def decks_duplicate(deck_id: int):
