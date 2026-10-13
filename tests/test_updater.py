@@ -2,6 +2,7 @@ import hashlib
 import io
 import json
 import os
+import sys
 import zipfile
 
 import pytest
@@ -256,12 +257,11 @@ def test_finish_script_runs(tmp_path):
     tmp_path.mkdir()
     (tmp_path / "f.zip").write_bytes(b"old")
     (tmp_path / "f.zip.new").write_bytes(b"new")
-    (tmp_path / "go.cmd").write_text("@echo ok>started.txt\r\n")
     script = tmp_path / "finish.cmd"
-    script.write_text(up.finish_script(tmp_path, ["f.zip"], str(tmp_path / "go.cmd"), []), encoding="utf-8")
+    script.write_text(up.finish_script(tmp_path, ["f.zip"], sys.executable, ["-c", "open('started.txt', 'w').write('ok')"]), encoding="utf-8")
     import subprocess
     import time
-    subprocess.run(["cmd", "/c", str(script)], check=True, cwd=tmp_path)
+    subprocess.run(["cmd", "/c", str(script)], check=True, cwd=tmp_path)  # the launched python exits: no console window is left behind
     for _ in range(50):
         if (tmp_path / "started.txt").exists():
             break
