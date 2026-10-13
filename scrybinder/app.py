@@ -14,6 +14,7 @@ from pathlib import Path
 
 import uvicorn
 
+from . import gpu
 from .api import create_app
 
 
@@ -38,8 +39,12 @@ def _wait_forever():
 
 
 def main():
+    if "--gpu-selftest" in sys.argv:  # the packaged app tests a downloaded PyTorch (Settings → GPU acceleration)
+        sys.exit(gpu.selftest(Path(sys.argv[sys.argv.index("--gpu-selftest") + 1])))
     if sys.stderr is None or getattr(sys, "frozen", False):
         _redirect_output_to_log()
+    if getattr(sys, "frozen", False):
+        gpu.activate()  # before anything imports torch: use the downloaded CUDA build if there is one
     if sys.platform == "win32":
         try:  # own identity in the taskbar (otherwise it groups with Python and shows its icon)
             import ctypes

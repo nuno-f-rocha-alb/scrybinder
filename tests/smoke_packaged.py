@@ -65,6 +65,16 @@ try:
     top = res["candidates"][0]
     print("top:", top["name"], top["id"], "in_index:", top.get("in_index"), "art:", top.get("art"), "confidence:", res["confidence"])
     ok = top["id"] == CARD and top.get("in_index") is True and top.get("art") is not None
+    # GPU acceleration (Settings): the endpoint answers, and the packaged app's self-test fails cleanly where there is no GPU folder
+    gst = json.load(op.open(base + "api/gpu"))
+    print("gpu status:", {k: gst[k] for k in ("supported", "driver", "active", "device")})
+    ok = ok and gst["supported"] == (sys.platform == "win32") and gst["job"]["state"] == "idle" and gst["active"] is False
+    empty = work / "gpu-selftest"
+    empty.mkdir(exist_ok=True)
+    code = subprocess.run([str(exe), "--gpu-selftest", str(empty)], timeout=300).returncode
+    selftest = json.loads((empty / "selftest.json").read_text(encoding="utf-8"))
+    print("gpu selftest on an empty folder: exit", code, selftest)
+    ok = ok and code == 1 and selftest["ok"] is False
 finally:
     proc.terminate()
     print("--- app log ---")
