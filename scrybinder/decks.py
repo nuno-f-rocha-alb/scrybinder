@@ -22,9 +22,9 @@ SELECT d.id, d.oracle_id, d.scryfall_id, d.quantity, d.board, o.name, o.mana_cos
           JOIN cards k ON k.id = c.scryfall_id WHERE k.oracle_id = d.oracle_id) AS assigned_all,
        COALESCE((SELECT eur FROM cards WHERE id = d.scryfall_id),
                 (SELECT MIN(eur) FROM cards WHERE oracle_id = d.oracle_id AND eur IS NOT NULL)) AS price,
-       COALESCE((SELECT image_small FROM cards WHERE id = d.scryfall_id),
-                (SELECT image_small FROM cards WHERE oracle_id = d.oracle_id AND image_small IS NOT NULL
-                  ORDER BY digital, released_at DESC LIMIT 1)) AS image
+       COALESCE(d.scryfall_id,  -- the printing whose image the app shows (/api/image/<id>)
+                (SELECT id FROM cards WHERE oracle_id = d.oracle_id AND digital = 0 AND image_small IS NOT NULL
+                  ORDER BY released_at DESC LIMIT 1)) AS image_id
 FROM deck_cards d JOIN oracle_cards o ON o.oracle_id = d.oracle_id
 WHERE d.deck_id = ? ORDER BY d.board, o.name, d.id
 """
@@ -147,7 +147,9 @@ def listing(db) -> list[dict]:
     out = []
     for row in db.execute("SELECT * FROM decks ORDER BY updated_at DESC, id DESC").fetchall():
         d = dict(row)
-        d["summary"] = summary(cards(db, d["id"]))
+        cs = cards(db, d["id"])
+        d["summary"] = summary(cs)
+        d["cover"] = next((c["image_id"] for c in cs if c["board"] != "maybe"), None)  # the commander's, boards sort first
         out.append(d)
     return out
 

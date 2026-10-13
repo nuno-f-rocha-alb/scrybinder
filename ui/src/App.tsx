@@ -1,17 +1,18 @@
 import { useEffect, useState } from "react";
-import { IconAlertTriangle, IconCards, IconPlus, IconScan, IconSettings, IconSwitchVertical } from "@tabler/icons-react";
+import { IconAlertTriangle, IconCards, IconPlus, IconScan, IconSettings, IconStack2, IconSwitchVertical } from "@tabler/icons-react";
 import { api, Status } from "./api";
 import { Sidebar, SidebarFooter, SidebarGroup, SidebarHeader, SidebarItem, SidebarSection } from "./components/sidebar";
 import Collection from "./pages/Collection";
+import Decks from "./pages/Decks";
 import Sets from "./pages/Sets";
 import Scan from "./pages/Scan";
 import Add from "./pages/Add";
 import ImportExport from "./pages/ImportExport";
 import Settings from "./pages/Settings";
 
-const PAGES = { collection: "Cards", sets: "Sets", scan: "Scan", add: "Add", io: "Import / Export", settings: "Settings" } as const;
+const PAGES = { collection: "Cards", sets: "Sets", decks: "Decks", scan: "Scan", add: "Add", io: "Import / Export", settings: "Settings" } as const;
 type Page = keyof typeof PAGES;
-const ICON = { scan: IconScan, add: IconPlus, io: IconSwitchVertical, settings: IconSettings };
+const ICON = { decks: IconStack2, scan: IconScan, add: IconPlus, io: IconSwitchVertical, settings: IconSettings };
 
 export default function App() {
   const [page, setPage] = useState<Page>("collection");
@@ -38,7 +39,7 @@ export default function App() {
             <SidebarItem active={page === "collection"} onClick={() => { setFilter({}); setPage("collection"); }}>Cards</SidebarItem>
             <SidebarItem active={page === "sets"} onClick={() => setPage("sets")}>Sets</SidebarItem>
           </SidebarGroup>
-          {(["scan", "add", "io", "settings"] as const).map((p) => {
+          {(["decks", "scan", "add", "io", "settings"] as const).map((p) => {
             const I = ICON[p];
             return <SidebarItem key={p} icon={<I className="size-[18px]" stroke={1.75} />} active={page === p} badge={p === "settings" && status?.update_available ? <span className="size-2 rounded-full bg-accent" title={`Scrybinder ${status.update_available} is available`} /> : undefined}
               onClick={() => setPage(p)}>{PAGES[p]}</SidebarItem>;
@@ -59,6 +60,7 @@ export default function App() {
         <div className="mx-auto max-w-[2600px] p-6 min-[1800px]:px-10">
           {page === "collection" && <Collection key={`${filter.set}|${filter.location}`} initialSet={filter.set} initialLocation={filter.location} />}
           {page === "sets" && <Sets onOpen={(set, location) => { setFilter({ set, location }); setPage("collection"); }} />}
+          {page === "decks" && <Decks />}
           {page === "scan" && <Scan />}
           {page === "add" && <Add />}
           {page === "io" && <ImportExport />}
