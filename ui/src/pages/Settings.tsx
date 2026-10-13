@@ -77,6 +77,78 @@ function GpuSection() {
   );
 }
 
+type Upd = {
+  supported: boolean; version: string; checking: boolean; error: string | null; check_on_start: boolean;
+  plan: { latest: string; up_to_date: boolean; needs_installer: boolean; url: string | null; notes: string; chain: { size: number }[] } | null;
+  job: { state: string; done: number; total: number; step: number; steps: number; error: string | null };
+};
+
+/** Updates for the installed app: downloads only the files that changed, checks them and swaps them in (see scrybinder/updater.py). */
+function UpdateSection({ refresh }: { refresh: () => void }) {
+  const [u, setU] = useState<Upd | null>(null);
+  const [err, setErr] = useState("");
+  const [wait, setWait] = useState(false);
+  const load = useCallback(() => api<Upd>("/update").then(setU).catch(() => {}), []);
+  useEffect(() => { load(); }, [load]);
+  const busy = !!u && ["download", "verify", "apply"].includes(u.job.state);
+  useEffect(() => {
+    if (!busy) return;
+    const t = setInterval(load, 1000);
+    return () => clearInterval(t);
+  }, [busy, load]);
+  if (!u) return null;
+  const mb = (n: number) => (n / 1e6).toFixed(0);
+  const call = (path: string, body?: object) => { setErr(""); return api(path, { method: "POST", body: body ? JSON.stringify(body) : undefined }); };
+  const check = () => { setWait(true); call("/update/check").then(() => { load(); refresh(); }).catch((e) => setErr(e.message)).finally(() => setWait(false)); };
+  const install = () => call("/update/install").then(load).catch((e) => setErr(e.message));
+  const restart = () => call("/update/restart").catch((e) => setErr(e.message));
+  const j = u.job, p = u.plan;
+  const size = p ? p.chain.reduce((a, s) => a + s.size, 0) : 0;
+  return (
+    <section className="mt-4 rounded-2xl border border-line bg-surface p-5">
+      <h2 className="font-semibold">Updates</h2>
+      <p className="mt-1 text-sm text-mute">Scrybinder <b className="text-ink">{u.version}</b></p>
+      {!u.supported && <p className="mt-2 text-xs text-mute">The installed Windows app can update itself from here. From source use <code>git pull</code>.</p>}
+      {u.supported && j.state !== "done" && (
+        <>
+          <p className="mt-2 text-xs text-mute">Checks the releases on github.com and downloads only the files that changed (checksums verified), then asks you to restart. Nothing is sent about you.</p>
+          <div className="mt-4 flex flex-wrap items-center gap-3">
+            <button className="btn-ghost" disabled={busy || wait} onClick={check}>{wait ? "Checking…" : "Check for updates"}</button>
+            {p && !p.up_to_date && p.chain.length > 0 && <button className="btn-primary" disabled={busy} onClick={install}>{busy ? "Working…" : `Update to ${p.latest} (${mb(size)} MB)`}</button>}
+            <label className="flex items-center gap-2 text-sm text-mute">
+              <input type="checkbox" checked={u.check_on_start} onChange={(e) => call("/update/settings", { check_on_start: e.target.checked }).then(load).catch((x) => setErr(x.message))} />
+              Check on start-up
+            </label>
+          </div>
+          {p?.up_to_date && <p className="mt-3 text-sm text-ok">Up to date.</p>}
+          {p && !p.up_to_date && p.needs_installer && (
+            <p className="mt-3 text-sm">{p.latest} is available, but there is no short update path from {u.version}: <a className="text-accent underline" href={p.url ?? "#"} target="_blank" rel="noreferrer">download the installer</a>.</p>
+          )}
+          {p && !p.up_to_date && !p.needs_installer && p.notes && <details className="mt-3 text-sm"><summary className="cursor-pointer text-mute">What's new in {p.latest}</summary><pre className="mt-2 whitespace-pre-wrap text-xs text-mute">{p.notes}</pre></details>}
+        </>
+      )}
+      {j.state !== "idle" && (
+        <div className="mt-4 text-sm" role="status">
+          <div className={j.state === "error" ? "text-danger" : j.state === "done" ? "text-ok" : ""}>
+            {j.state === "download" && `Downloading${j.steps > 1 ? ` (${j.step}/${j.steps})` : ""}: ${mb(j.done)} / ${mb(j.total)} MB…`}
+            {j.state === "verify" && "Checking the files…"}
+            {j.state === "apply" && "Replacing the files…"}
+            {j.state === "done" && "Updated. Restart Scrybinder to use the new version."}
+            {j.state === "error" && "It could not be updated; this version stays as it was."}
+          </div>
+          {j.state === "download" && j.total > 0 && (
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-raised"><div className="h-full bg-accent transition-all" style={{ width: `${(j.done / j.total) * 100}%` }} /></div>
+          )}
+          {j.error && <p className="mt-1 text-xs text-danger">{j.error}</p>}
+          {j.state === "done" && <button className="btn-primary mt-3" onClick={restart}>Restart now</button>}
+        </div>
+      )}
+      {u.error && <p className="mt-2 text-xs text-danger">Could not reach GitHub: {u.error}</p>}
+      {err && <p className="mt-2 text-xs text-danger">{err}</p>}
+    </section>
+  );
+}
+
 const LABEL: Record<string, string> = { download: "Downloading bulk data…", import: "Importing cards…", done: "Done", error: "Error" };
 
 export default function Settings({ status, refresh }: { status: Status | null; refresh: () => void }) {
@@ -170,6 +242,7 @@ export default function Settings({ status, refresh }: { status: Status | null; r
         )}
         {err && <p className="mt-2 text-xs text-danger">{err}</p>}
       </section>
+      <UpdateSection refresh={refresh} />
       <GpuSection />
       <p className="mt-6 text-xs text-mute">Scrybinder {status?.version} · Card data and images © Scryfall (scryfall.com). Scrybinder is an unofficial project and is not affiliated with Wizards of the Coast. Magic: The Gathering is a trademark of Wizards of the Coast.</p>
     </div>

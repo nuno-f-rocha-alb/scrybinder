@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 
 import time
 
-from . import __version__, collection, db as dbmod, formats, gpu as gpumod, scryfall
+from . import __version__, collection, db as dbmod, formats, gpu as gpumod, scryfall, updater as updmod
 from .scan.session import MAX_SIDE, MAX_SIDE_PAGE, Scanner, decode
 
 UI_DIST = Path(__file__).resolve().parent.parent / "ui" / "dist"
@@ -71,7 +71,8 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
         age = scryfall.bulk_age_days(db)
         return {"cards_in_db": n, "bulk_age_days": age,
                 "bulk_stale": age is None or age > scryfall.BULK_STALE_DAYS, "job": job, "index": _index_status(), "index_job": ixjob,
-                "credit": "Card data and images © Scryfall — scryfall.com", "version": __version__}
+                "credit": "Card data and images © Scryfall — scryfall.com", "version": __version__,
+                "update_available": (updstate["plan"] or {}).get("latest") if not (updstate["plan"] or {}).get("up_to_date", True) else None}
 
     def _run_bulk():
         try:
@@ -184,6 +185,71 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
             raise HTTPException(409, "wait for the download to finish")
         gpujob.update(state="idle", error=None)
         return {"restart_needed": gpumod.remove()}
+
+    # --- in-app updater for installed builds: find, download, verify and apply the update packages (see updater.py) ---
+    updjob = {"state": "idle", "done": 0, "total": 0, "step": 0, "steps": 0, "applied": None, "error": None}
+    updstate = {"plan": None, "error": None, "checking": False}
+    upd_lock = threading.Lock()
+
+    def _on_start() -> bool:
+        r = db.execute("SELECT value FROM meta WHERE key='update_check_on_start'").fetchone()
+        return bool(r and r[0] == "1")
+
+    def _run_check():
+        try:
+            updstate.update(plan=updmod.check(), error=None)
+        except Exception as e:  # noqa: BLE001 — GitHub unreachable, rate limit...: shown in Settings
+            updstate["error"] = str(e) or e.__class__.__name__
+        finally:
+            updstate["checking"] = False
+
+    @app.get("/api/update")
+    def update_status():
+        return {"supported": updmod.supported(), "version": __version__, **updstate, "job": updjob, "check_on_start": _on_start()}
+
+    @app.post("/api/update/check")
+    def update_check():
+        if not updmod.supported():
+            raise HTTPException(400, "the updater is for the installed Windows app (from source: git pull)")
+        with upd_lock:
+            if updstate["checking"] or updjob["state"] in ("download", "verify", "apply"):
+                raise HTTPException(409, "already running")
+            updstate["checking"] = True
+        _run_check()
+        if updstate["error"]:
+            raise HTTPException(502, "could not reach GitHub: " + updstate["error"])
+        return updstate["plan"]
+
+    @app.post("/api/update/install")
+    def update_install():
+        pl = updstate["plan"]
+        if not updmod.supported() or not pl or not pl["chain"]:
+            raise HTTPException(400, "nothing to install: check for updates first")
+        if not os.access(updmod.app_dir(), os.W_OK):
+            raise HTTPException(400, f"{updmod.app_dir()} is not writable: use the installer, or move the app to a folder you own")
+        with upd_lock:
+            if updjob["state"] in ("download", "verify", "apply", "done"):
+                raise HTTPException(409, "already running, or done: restart Scrybinder")
+            updjob.update(state="download", done=0, total=0, error=None)
+        threading.Thread(target=updmod.install, args=(updjob, pl), daemon=True).start()
+        return {"started": True}
+
+    @app.post("/api/update/restart")
+    def update_restart():
+        if updjob["state"] != "done":
+            raise HTTPException(409, "there is nothing to restart for")
+        updmod.restart()
+        return {"restarting": True}
+
+    @app.post("/api/update/settings")
+    def update_settings(body: dict = Body(...)):
+        with db:
+            db.execute("INSERT OR REPLACE INTO meta VALUES ('update_check_on_start', ?)", ("1" if body.get("check_on_start") else "0",))
+        return {"check_on_start": _on_start()}
+
+    if updmod.supported() and _on_start():
+        updstate["checking"] = True
+        threading.Thread(target=_run_check, daemon=True).start()
 
     age = scryfall.bulk_age_days(db)
     if auto_bulk and age is not None and age > scryfall.AUTO_BULK_DAYS:  # daily prices: refresh on start-up when older than 24 h
