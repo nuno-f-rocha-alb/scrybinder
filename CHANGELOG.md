@@ -5,7 +5,13 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 ## [Unreleased]
 
 ### Added
+- Optional GPU acceleration for the installed Windows app: *Settings → GPU acceleration* downloads the CUDA build of PyTorch (pinned and checksum-verified), tests it on your GPU, and uses it after a restart; Remove, `SCRYBINDER_NO_GPU=1` and any failure leave the app on the CPU (#9).
+- Settings shows which device the visual model runs on.
 - Import a Moxfield collection CSV (Import page, `POST /api/import/moxfield`); cards are matched by edition and collector number (#10).
+
+### Changed
+- Building the visual index reports progress while it computes vectors (it looked stuck after the first block) and Stop answers between batches (#12).
+- README rewritten: install and update steps, binder pages, the visual index with measured timings, GPU acceleration, troubleshooting, and a security and privacy section.
 
 ### Fixed
 - The Moxfield export wrote language codes (`en`); it now writes the names Moxfield uses (`English`), so it imports back.
