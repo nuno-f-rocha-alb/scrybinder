@@ -4,7 +4,7 @@ it is assigned, free to assign, held by other decks, or has to be bought."""
 import json
 import re
 
-from . import deckrules
+from . import deckrules, deckstats
 
 FORMATS = ("commander", "standard", "pioneer", "modern", "legacy", "vintage", "pauper", "casual")
 BOARDS = ("main", "side", "commander", "maybe")  # maybe never counts towards size, legality or statistics
@@ -14,6 +14,7 @@ PROXY = "proxy"  # defined tag: the card is in the deck but is not a real copy
 # copies owned (proxy rows of the collection are not real copies) and the cheapest price of the oracle card
 _CARD_SQL = """
 SELECT d.id, d.oracle_id, d.scryfall_id, d.quantity, d.board, o.name, o.mana_cost, o.cmc, o.type_line, o.color_identity,
+       o.produced_mana, o.game_changer,
        (SELECT COALESCE(SUM(c.quantity), 0) FROM collection c JOIN cards k ON k.id = c.scryfall_id
          WHERE k.oracle_id = d.oracle_id AND c.proxy = 0) AS owned,
        (SELECT COALESCE(SUM(quantity), 0) FROM deck_assignments WHERE deck_card_id = d.id) AS assigned,
@@ -93,6 +94,8 @@ def cards(db, deck_id: int) -> list[dict]:
     for row in db.execute(_CARD_SQL, (deck_id,)):
         r = dict(row)
         r["color_identity"] = json.loads(r["color_identity"] or "[]")
+        r["produced_mana"] = json.loads(r["produced_mana"] or "[]")
+        r["game_changer"] = bool(r["game_changer"])
         r["tags"] = tags.get(r["id"], [])
         r["assignments"] = assignments.get(r["id"], [])
         r["elsewhere"] = elsewhere.get(r["oracle_id"], [])
@@ -411,3 +414,10 @@ def legality(db, deck_id: int, reference: str | None = None) -> dict:
         for k in ("keywords", "color_identity", "legalities"):
             r[k] = json.loads(r[k] or ("{}" if k == "legalities" else "[]"))
     return deckrules.check(deck["format"], rows, reference)
+
+
+def stats(db, deck_id: int) -> dict:
+    """Statistics of the main deck and commander (see deckstats) plus what is left to buy."""
+    _deck(db, deck_id)
+    cs = cards(db, deck_id)
+    return {**deckstats.compute(cs), "cost_to_complete": summary([c for c in cs if c["board"] in deckstats.BOARDS])["cost_to_complete"]}
