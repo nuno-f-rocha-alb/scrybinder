@@ -11,17 +11,18 @@ import numpy as np
 from .. import collection
 from ..db import DATA_DIR
 from .identify import Identifier
-from .vision import Stability, card_from_photo, find_card, inner_card, warp_card
+from .vision import Stability, card_from_photo, find_card, find_cards, inner_card, warp_card
 
 IMG_EXT = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
+MAX_SIDE_PAGE = 4500  # a page holds up to 9 cards: more pixels are needed for each one
 MAX_SIDE = 3000  # larger photos are downscaled: bounds memory and OCR time
 
 
-def decode(data: bytes) -> np.ndarray | None:
+def decode(data: bytes, max_side: int = MAX_SIDE) -> np.ndarray | None:
     img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
     if img is None:
         return None
-    s = MAX_SIDE / max(img.shape[:2])
+    s = max_side / max(img.shape[:2])
     return cv2.resize(img, None, fx=s, fy=s, interpolation=cv2.INTER_AREA) if s < 1 else img
 
 
@@ -55,6 +56,7 @@ class Scanner:
         self.beep = 0                      # increments on every capture: the UI plays a sound
         self.message = ""
         self.split_next = False            # the next capture opens a new entry (e.g. the foil among identical regular cards)
+        self.page_mode = False             # photos are binder pages (up to 3x3 cards) instead of one card each
         self.list_mode = False             # True: reads go to the temporary list (reads) and only enter the collection in commit_reads()
         self._cards: dict[str, dict | None] = {}
         self.reads: list[dict] = self._load_reads()
@@ -197,10 +199,17 @@ class Scanner:
             return same
         return item
 
+    def process_page(self, img: np.ndarray, label: str = "") -> dict:
+        """A photo of a binder page: every card found goes through the normal one-card path (list mode: one entry each)."""
+        quads = find_cards(img)
+        entries = [self.process(warp_card(img, q), f"{label} #{i}" if label else f"#{i}", warped=True) for i, q in enumerate(quads, 1)]
+        self.message = f"{len(entries)} cards detected" if entries else "No cards detected"
+        return {"detected": len(entries), "entries": entries}
+
     def state(self) -> dict:
         with self._lock:
             return {"running": bool(self._thread and self._thread.is_alive()), "source": self.source,
-                    "message": self.message, "beep": self.beep, "split_next": self.split_next, "list_mode": self.list_mode,
+                    "message": self.message, "beep": self.beep, "split_next": self.split_next, "list_mode": self.list_mode, "page_mode": self.page_mode,
                     "pending": list(self.pending),
                     "reads": [{k: v for k, v in r.items() if k != "candidates"} | {"card": self.card_info(r["scryfall_id"])}
                               for r in self.reads]}
@@ -270,7 +279,7 @@ class Scanner:
                 self._seen.add(p.name)
                 img = decode(p.read_bytes())
                 if img is not None:
-                    self.process(img, p.name)
+                    self.process_page(img, p.name) if self.page_mode else self.process(img, p.name)
             self._stop.wait(1.0)
 
     def _run_webcam(self, index: int):
