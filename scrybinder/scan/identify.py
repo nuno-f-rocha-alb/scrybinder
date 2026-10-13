@@ -2,6 +2,7 @@
 illustrations and card + OCR rank the printings; without it, it falls back to OCR-only matching."""
 import os
 import re
+import subprocess
 import sys
 import threading
 import traceback
@@ -21,6 +22,30 @@ if _BUNDLED.exists():
     os.environ.setdefault("TESSDATA_PREFIX", str(_BUNDLED.parent / "tessdata"))
 pytesseract.pytesseract.tesseract_cmd = os.environ.get("SCRYBINDER_TESSERACT") or (
     str(_BUNDLED) if _BUNDLED.exists() else _DEFAULT_TESS if Path(_DEFAULT_TESS).exists() else "tesseract")
+
+class _NoWindow:
+    """pytesseract's view of `subprocess` on Windows: every call gets CREATE_NO_WINDOW. pytesseract only hides tesseract.exe while it OCRs;
+    its version and language checks (the first scan) use plain subprocess calls, and the windowed app has no console to share, so each opened one."""
+
+    def __getattr__(self, name):
+        return getattr(subprocess, name)
+
+    def _flags(self, kw):
+        return {**kw, "creationflags": kw.get("creationflags", 0) | subprocess.CREATE_NO_WINDOW}
+
+    def check_output(self, *a, **kw):
+        return subprocess.check_output(*a, **self._flags(kw))
+
+    def run(self, *a, **kw):
+        return subprocess.run(*a, **self._flags(kw))
+
+    def Popen(self, *a, **kw):  # noqa: N802
+        return subprocess.Popen(*a, **self._flags(kw))
+
+
+if sys.platform == "win32":
+    pytesseract.pytesseract.subprocess = _NoWindow()
+
 
 NAME_CUTOFF = 72  # minimum similarity (0-100) between the OCR name and a bulk name
 # relative zones (x0, y0, x1, y1) of the 630x880 card, modern frame; ponytail: special frames (flip, saga...) get an

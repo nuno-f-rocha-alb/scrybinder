@@ -4,6 +4,9 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Fixed
+- A console window no longer flashes the first time a photo is read (the Tesseract version check opened one).
+
 ## [0.4.4] — 2026-10-13
 
 ### Fixed
