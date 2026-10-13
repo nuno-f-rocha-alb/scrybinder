@@ -75,6 +75,10 @@ Turn on **Binder page (3×3)** in the Scan page and drop a photo of a whole bind
 - The capture triggers when a card stays still for 0.4 s and re-arms when it leaves the frame.
 - `N` marks the next card as foil / a new entry. In the one-by-one confirmation mode (turn *List mode* off): `Enter` accept, `Esc` discard, `←`/`→` change printing, `F` foil, `C` condition, `L` language, `+`/`-` quantity.
 
+### Updating
+
+Each release also has an **update package** (`Scrybinder-X-update-from-Y.zip`, a few tens of MB instead of ~1 GB) with only the files that changed since the previous release. Close Scrybinder, extract it over the app folder (the installer puts it in `%LOCALAPPDATA%\Programs\Scrybinder`), and delete the files listed under `remove` in the `update.json` inside it. Your data is never touched. To jump over several versions, use the full installer.
+
 ### The visual index
 
 Open **Settings → Visual index** and press **Build pilot index** (~5,000 printings, a few minutes) or **Build full index…** (every printing: ~110,000 images, ~12 GB, several hours). Progress is shown there, it can be stopped and resumed, and running it again only adds new printings. The released builds include everything needed (PyTorch CPU).

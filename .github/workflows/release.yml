@@ -47,6 +47,11 @@ jobs:
           EXE=dist/Scrybinder/Scrybinder; [ "${{ matrix.name }}" = windows ] && EXE=$EXE.exe
           mkdir -p smoke
           uv run --extra vision python tests/smoke_packaged.py "$EXE" smoke
+      - name: Manifest of the app files (ships in the app and as a release asset; update packages are built from it)
+        if: matrix.name == 'windows'
+        run: |
+          V="${GITHUB_REF_NAME#v}"; [ "${GITHUB_REF_TYPE}" = tag ] || V=0.0.0
+          python packaging/make_update.py manifest dist/Scrybinder dist/Scrybinder/manifest.json --version "$V"
       - name: Archive
         run: |
           V="${GITHUB_REF_NAME#v}"
@@ -62,6 +67,22 @@ jobs:
             linux)
               tar -czf "out/Scrybinder-$V-linux-x64.tar.gz" -C dist Scrybinder ;;
           esac
+      - name: Update package (only the files that changed since the previous release)
+        if: matrix.name == 'windows'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V="${GITHUB_REF_NAME#v}"; [ "${GITHUB_REF_TYPE}" = tag ] || V=0.0.0
+          cp dist/Scrybinder/manifest.json out/manifest.json
+          PREV=$(gh release list -R "$GITHUB_REPOSITORY" --exclude-drafts --limit 1 --json tagName -q '.[0].tagName')
+          if [ -z "$PREV" ] || [ "$PREV" = "$GITHUB_REF_NAME" ]; then echo "no previous release: no update package"; exit 0; fi
+          P="${PREV#v}"; mkdir prev
+          if gh release download "$PREV" -R "$GITHUB_REPOSITORY" -p manifest.json -D prev 2>/dev/null; then :
+          else  # releases before the manifests existed: take it from their portable zip
+            gh release download "$PREV" -R "$GITHUB_REPOSITORY" -p '*-windows-portable.zip' -D prev
+            python packaging/make_update.py manifest-from-zip prev/*-windows-portable.zip prev/manifest.json --version "$P"
+          fi
+          python packaging/make_update.py update dist/Scrybinder prev/manifest.json "out/Scrybinder-$V-update-from-$P.zip" --version "$V"
       - name: Report sizes
         run: |
           ls -lh out
