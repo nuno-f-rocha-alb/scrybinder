@@ -470,6 +470,10 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
         _wrap(decks.delete, db, deck_id)
         return {"ok": True}
 
+    @app.get("/api/decks/{deck_id}/legality")
+    def decks_legality(deck_id: int, reference: str | None = None):
+        return _wrap(decks.legality, db, deck_id, reference)
+
     @app.post("/api/decks/{deck_id}/duplicate")
     def decks_duplicate(deck_id: int):
         return {"id": _wrap(decks.duplicate, db, deck_id)}
