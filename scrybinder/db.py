@@ -77,6 +77,14 @@ CREATE TABLE IF NOT EXISTS card_faces (  -- one row per face that has its own im
     PRIMARY KEY (card_id, face)
 );
 CREATE INDEX IF NOT EXISTS card_faces_ill ON card_faces(illustration_id);
+
+CREATE TABLE IF NOT EXISTS oracle_cards (  -- one row per oracle_id: the rules data decks need (the latest printing wins)
+    oracle_id TEXT PRIMARY KEY, name TEXT NOT NULL, mana_cost TEXT, cmc REAL, type_line TEXT,
+    colors TEXT, color_identity TEXT, oracle_text TEXT, keywords TEXT, produced_mana TEXT,
+    legalities TEXT, game_changer INTEGER NOT NULL DEFAULT 0, edhrec_rank INTEGER, layout TEXT, released_at TEXT
+);
+CREATE VIRTUAL TABLE IF NOT EXISTS oracle_fts USING fts5(
+    name, oracle_text, content='oracle_cards', content_rowid='rowid', tokenize='unicode61 remove_diacritics 2');
 """
 
 # additive migrations (never delete or rewrite data): (table, column, definition)
