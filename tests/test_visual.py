@@ -24,10 +24,12 @@ class FakeEmb(embed.Embedder):
         super().__init__("fake/model")
         self.calls = 0
 
-    def embed_raw(self, imgs, size, batch=64):
+    def embed_raw(self, imgs, size, batch=64, progress=None):
         self.calls += len(imgs)
         v = np.stack([cv2.resize(cv2.cvtColor(i, cv2.COLOR_BGR2GRAY), (8, 8), interpolation=cv2.INTER_AREA).ravel()
                       .astype(np.float32) for i in imgs])
+        if progress and imgs and progress(len(imgs), len(imgs)):
+            raise embed.Stopped()
         return embed._unit(v - v.mean(1, keepdims=True))
 
 
