@@ -3,7 +3,8 @@ Cards can be assigned physical copies of the collection (reserved for that deck)
 it is assigned, free to assign, held by other decks, or has to be bought."""
 import json
 import re
-import sqlite3
+
+from . import deckrules
 
 FORMATS = ("commander", "standard", "pioneer", "modern", "legacy", "vintage", "pauper", "casual")
 BOARDS = ("main", "side", "commander", "maybe")  # maybe never counts towards size, legality or statistics
@@ -396,3 +397,17 @@ def assign_free(db, deck_id: int) -> int:
         if n:
             _touch(db, deck_id)
     return n
+
+
+def legality(db, deck_id: int, reference: str | None = None) -> dict:
+    """Problems of the deck in its format (`reference`: the format whose per-card legality a casual deck is checked against)."""
+    deck = _deck(db, deck_id)
+    if reference is not None and reference not in FORMATS[:-1]:
+        raise ValueError(f"reference must be one of {', '.join(FORMATS[:-1])}")
+    rows = [dict(r) for r in db.execute(
+        "SELECT d.board, d.quantity, o.name, o.type_line, o.oracle_text, o.keywords, o.color_identity, o.legalities, o.game_changer"
+        " FROM deck_cards d JOIN oracle_cards o ON o.oracle_id = d.oracle_id WHERE d.deck_id=? ORDER BY d.board, o.name", (deck_id,))]
+    for r in rows:
+        for k in ("keywords", "color_identity", "legalities"):
+            r[k] = json.loads(r[k] or ("{}" if k == "legalities" else "[]"))
+    return deckrules.check(deck["format"], rows, reference)
