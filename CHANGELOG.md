@@ -4,8 +4,18 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Added
+- **Decks** (#33). A new *Decks* page to build decks from your collection and from cards you do not own, in folders.
+  - Commander, Standard, Pioneer, Modern, Legacy, Vintage and Pauper have deck rules (banned cards, copy limits and their exceptions, deck size, singleton, commander eligibility and pairs, colour identity, game changers); the legality panel lists what is wrong.
+  - Reserve **copies of your collection** for a card and see what is assigned, free, in other decks or missing, with the cost to complete. Tag a card **proxy** and it never counts as missing and never enters your collection. Changing a collection row that is assigned to a deck is refused, naming the decks.
+  - Five views (List, Compact, Grid, Stacks, Spoiler), grouping by type, colour, mana value, tag or collection status, sorting, and a big card preview that follows the pointer.
+  - Statistics: mana curve, colour symbols against land sources, types, tags, average mana value, price, and the chance of having enough lands by a given turn; the charts filter the list.
+  - A search for cards to add (name, rules text, type, colours, mana value, only owned, only legal), and import and export of Moxfield / Archidekt / MTGO text lists.
+  - The card rules come from the Scryfall file you already download; existing installs fill them in from the cached file at the next start (no new download).
+
 ### Fixed
 - A console window no longer flashes the first time a photo is read (the Tesseract version check opened one).
+- Rare "API misuse" errors when the page asked for several things at once (the shared database connection no longer caches statements).
 
 ## [0.4.4] — 2026-10-13
 

@@ -25,17 +25,24 @@ def _icon() -> str | None:
 
 
 class Bridge:
-    """Exposed to the page as `window.pywebview.api`: a native Save dialog for CSV exports."""
+    """Exposed to the page as `window.pywebview.api`: a native Save dialog for CSV and text exports."""
 
-    def save_csv(self, name: str, text: str) -> str | None:
+    @staticmethod
+    def _save(name: str, text: str, file_types: tuple) -> str | None:
         """Ask where to save, write the file, return its path (None if the dialog was cancelled)."""
         import webview
-        got = webview.windows[0].create_file_dialog(webview.FileDialog.SAVE, save_filename=Path(name).name, file_types=("CSV files (*.csv)",))
+        got = webview.windows[0].create_file_dialog(webview.FileDialog.SAVE, save_filename=Path(name).name, file_types=file_types)
         if not got:
             return None
         path = Path(got if isinstance(got, str) else got[0])
         path.write_text(text, encoding="utf-8", newline="")
         return str(path)
+
+    def save_csv(self, name: str, text: str) -> str | None:
+        return self._save(name, text, ("CSV files (*.csv)",))
+
+    def save_text(self, name: str, text: str) -> str | None:  # a deck list
+        return self._save(name, text, ("Text files (*.txt)",))
 
 
 def _redirect_output_to_log():

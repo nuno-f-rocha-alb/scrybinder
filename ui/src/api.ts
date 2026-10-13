@@ -24,7 +24,8 @@ export async function api<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const r = await fetch("/api" + path, { ...opts, headers: { "Content-Type": "application/json", ...opts.headers } });
   if (!r.ok) {
     const j = await r.json().catch(() => ({}));
-    throw new Error(typeof j.detail === "string" ? j.detail : r.statusText);
+    // the collection answers 409 with {message, decks} when copies are assigned to decks
+    throw new Error(typeof j.detail === "string" ? j.detail : typeof j.detail?.message === "string" ? j.detail.message : r.statusText);
   }
   return r.json();
 }

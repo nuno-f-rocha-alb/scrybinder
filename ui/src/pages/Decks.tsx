@@ -4,6 +4,7 @@ import { api, eur, img } from "../api";
 import { DeckInfo, FORMATS, Folder, Format, Legality } from "../decks";
 import { Field, Modal, useToast } from "../components/ui";
 import Deck from "./Deck";
+import { ImportReport, Skipped } from "../components/decklist";
 
 const label = (f: string) => f[0].toUpperCase() + f.slice(1);
 const NONE = "none";  // the section of the decks that are in no folder
@@ -68,6 +69,8 @@ export default function Decks() {
   const [name, setName] = useState("");
   const [format, setFormat] = useState<Format>("commander");
   const [folder, setFolder] = useState<number | null>(null);
+  const [list, setList] = useState("");
+  const [report, setReport] = useState<{ id: number; r: ImportReport } | null>(null);
   const [folderDialog, setFolderDialog] = useState<{ id?: number; name: string } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
   const [folded, toggle] = useFolded();
@@ -80,6 +83,14 @@ export default function Decks() {
     if (legality) d.filter((x) => x.format !== "casual").forEach((x) => api<Legality>(`/decks/${x.id}/legality`).then((l) => setLegal((m) => ({ ...m, [x.id]: l }))).catch(() => {}));
   }).catch((e) => setErr(e.message));
   useEffect(() => { if (open === null) load(true); }, [open]);
+  // an install updated from an older version fills the card rules in the background at start-up (a few seconds)
+  const [rules, setRules] = useState<{ cards_in_db: number; oracle_cards: number } | null>(null);
+  useEffect(() => {
+    const ask = () => api<{ cards_in_db: number; oracle_cards: number }>("/status").then(setRules).catch(() => {});
+    ask();
+    const t = setInterval(() => setRules((r) => { if (!r || r.oracle_cards === 0) ask(); return r; }), 3000);
+    return () => clearInterval(t);
+  }, []);
 
   if (open !== null) return <Deck id={open} onBack={() => setOpen(null)} />;
 
@@ -87,7 +98,11 @@ export default function Decks() {
   const create = async () => {
     try {
       const { id } = await api<{ id: number }>("/decks", { method: "POST", body: JSON.stringify({ name, format, folder_id: folder }) });
-      setCreating(false); setName(""); setOpen(id);
+      // the deck exists now: if the list is refused the deck still opens (empty) and says why, instead of a retry making a second deck
+      const r = list.trim() ? await api<ImportReport>(`/decks/${id}/import`, { method: "POST", body: JSON.stringify({ text: list }) })
+        .catch((e: Error): ImportReport => ({ lines: 0, cards: 0, preview: [], skipped: [{ line: 0, text: "the pasted list", reason: e.message }] })) : null;
+      setCreating(false); setName(""); setList("");
+      if (r && r.skipped.length) setReport({ id, r }); else setOpen(id);  // lines that did not match a card are shown before the deck opens
     } catch (e) { setErr((e as Error).message); }
   };
   const saveFolder = () => {
@@ -131,6 +146,11 @@ export default function Decks() {
         </div>
       </div>
       {err && !creating && !folderDialog && <p className="mb-4 text-sm text-danger">{err}</p>}
+      {rules && rules.oracle_cards === 0 && (
+        <p className="mb-4 rounded-xl border border-gold/30 bg-gold/10 px-4 py-3 text-sm text-gold" role="status">
+          {rules.cards_in_db ? "Preparing the card rules from your card database (a few seconds). If this stays, update the bulk data in Settings." : "Download the card database in Settings first: decks need the card rules in it."}
+        </p>
+      )}
       {decks && decks.length === 0 && !folders.length && (
         <div className="rounded-2xl border border-dashed border-line p-16 text-center text-mute">No decks yet. Create one to start building.</div>
       )}
@@ -170,12 +190,22 @@ export default function Decks() {
                 </select>
               </Field>
             )}
+            <Field label="Deck list (optional)">
+              <textarea className="field h-32 font-mono text-xs" value={list} onChange={(e) => setList(e.target.value)} placeholder={"Paste a list from Moxfield, Archidekt or MTGO:\n1 Sol Ring\n10 Island"} />
+            </Field>
             {err && <p className="text-sm text-danger">{err}</p>}
             <div className="flex justify-end gap-2">
               <button type="button" className="btn-ghost" onClick={() => setCreating(false)}>Cancel</button>
               <button type="submit" className="btn-primary" disabled={!name.trim()}>Create</button>
             </div>
           </form>
+        </Modal>
+      )}
+      {report && (
+        <Modal title="Deck created" onClose={() => { setOpen(report.id); setReport(null); }}>
+          <h2 className="mb-2 text-lg font-semibold">Deck created with {report.r.cards} {report.r.cards === 1 ? "card" : "cards"}</h2>
+          <Skipped report={report.r} />
+          <div className="mt-5 flex justify-end"><button className="btn-primary" onClick={() => { setOpen(report.id); setReport(null); }}>Open the deck</button></div>
         </Modal>
       )}
       {folderDialog && (
