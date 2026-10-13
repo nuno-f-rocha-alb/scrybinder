@@ -19,6 +19,7 @@ Inside that folder:
 | `bulk/` | the downloaded Scryfall bulk file |
 | `images/{small,normal,large}/` | cached card images (the visual index uses `normal`, ~100 KB each) |
 | `index/` | the visual index (vectors, `rows.db`, manifest) |
+| `gpu/` | the CUDA build of PyTorch, only if you enabled GPU acceleration in Settings (~2 GB; Remove GPU support deletes it) |
 | `captures/` | scan captures and `reads.json` (the unsaved scan list) |
 | `trash/` | JSON copies of rows removed by bulk delete |
 | `scrybinder.log` | log of packaged builds that run without a console |
@@ -35,7 +36,8 @@ Rows are aggregated by (printing, finish, condition, language, location, altered
 |---|---|
 | `api.scryfall.com` | bulk-data metadata (one call per update), set list |
 | `*.scryfall.io` (cards, svgs) | card images and set icons, ≥ 100 ms apart |
-| `huggingface.co` | the DINOv2 weights, once, when the visual index is first used |
+| `huggingface.co` | the DINOv2 weights, once, when the visual index is first used (source builds; the installed app ships them) |
+| `download.pytorch.org` | the CUDA build of PyTorch, only if you press *Enable GPU acceleration* (checksum verified) |
 
 Scrybinder sends `User-Agent: Scrybinder/<version>` as Scryfall's guidelines require. It updates the bulk data at most once a day.
 
