@@ -269,6 +269,33 @@ def test_finish_script_runs(tmp_path):
     assert (tmp_path / "f.zip").read_bytes() == b"new" and (tmp_path / "started.txt").exists()
 
 
+def test_a_second_window_does_not_undo_an_update_in_progress(env, monkeypatch):
+    (env / "a.dll").write_bytes(b"1")
+    fetch, step = _package({"a.dll": b"2"})
+    real = os.replace
+    monkeypatch.setattr(up.os, "replace", lambda s, d: (_ for _ in ()).throw(_Crash()) if str(d).endswith("a.dll") else real(s, d))
+    with pytest.raises(_Crash):
+        _run(step, fetch)  # a.dll moved aside, pending.json written: an interrupted update
+    monkeypatch.setattr(up.os, "replace", real)
+    root = dbmod.DATA_DIR / "update"
+    with up._apply_lock(root) as got:  # ...but here another window still holds the lock, so it is not interrupted
+        assert got
+        up.cleanup_on_start()  # a second window starting
+        assert not (env / "a.dll").exists() and (root / "pending.json").exists()  # left alone
+        with up._apply_lock(root) as again:
+            assert again is False
+    up.cleanup_on_start()  # nobody holds it any more: it really was a crash
+    assert (env / "a.dll").read_bytes() == b"1"
+
+
+def test_apply_refuses_while_another_window_applies(env):
+    fetch, step = _package({"a.dll": b"2"})
+    with up._apply_lock(dbmod.DATA_DIR / "update") as got:
+        assert got
+        job = _run(step, fetch)
+    assert job["state"] == "error" and "another Scrybinder" in job["error"] and not (env / "a.dll").exists()
+
+
 def test_start_up_keeps_the_old_files_when_it_cannot_undo_yet(env, monkeypatch):
     (env / "a.dll").write_bytes(b"1")
     fetch, step = _package({"a.dll": b"2"})
