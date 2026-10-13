@@ -4,6 +4,9 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Fixed
+- Update packages now include the new `manifest.json`, so the app folder's manifest matches the installed version after an update.
+
 ## [0.3.0] — 2026-10-13
 
 ### Added

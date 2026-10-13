@@ -134,4 +134,6 @@ def main(argv=None) -> None:
 
 
 if __name__ == "__main__":
+    for stream in (sys.stdout, sys.stderr):
+        stream.reconfigure(encoding="utf-8")  # the Windows console (cp1252) can't print the "→" in notes
     main()

@@ -23,9 +23,10 @@ def test_update_zip_has_only_what_changed(tmp_path):
     res = mu.build_update(new, new_m, old_m, tmp_path / "up.zip")
     assert res == {"changed": 2, "removed": 1}
     with zipfile.ZipFile(tmp_path / "up.zip") as z:
-        assert sorted(z.namelist()) == ["Scrybinder.exe", "UPDATE.txt", "_internal/ui/b.js", "update.json"]  # the big unchanged file is not in it
+        assert sorted(z.namelist()) == ["Scrybinder.exe", "UPDATE.txt", "_internal/ui/b.js", "manifest.json", "update.json"]  # the big unchanged file is not in it
         text = z.read("UPDATE.txt").decode()
         assert "0.1.0 -> 0.2.0" in text and "_internal/gone.txt" in text and "NOT an installer" in text
+        assert json.loads(z.read("manifest.json")) == new_m
         info = json.loads(z.read("update.json"))
     assert info == {"from": "0.1.0", "to": "0.2.0", "remove": ["_internal/gone.txt"]}
 
@@ -48,4 +49,4 @@ def test_cli_roundtrip(tmp_path):
     mu.main(["manifest", str(old), str(tmp_path / "old.json"), "--version", "1.0.0"])
     mu.main(["update", str(new), str(tmp_path / "old.json"), str(tmp_path / "u.zip"), "--version", "1.1.0"])
     with zipfile.ZipFile(tmp_path / "u.zip") as z:
-        assert sorted(z.namelist()) == ["UPDATE.txt", "b", "update.json"]
+        assert sorted(z.namelist()) == ["UPDATE.txt", "b", "manifest.json", "update.json"]
