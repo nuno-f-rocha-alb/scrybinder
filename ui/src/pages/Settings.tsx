@@ -1,5 +1,81 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { api, Status } from "../api";
+
+type Gpu = {
+  supported: boolean; driver: number | null; gpu: string | null; wheel: { tag: string; torch: string; size: number } | null;
+  installed: { tag: string; torch: string } | null; pending_removal: boolean; active: boolean; device: string | null;
+  job: { state: string; done: number; total: number; error: string | null };
+};
+
+/** Optional GPU acceleration for the installed app: downloads the CUDA build of PyTorch (see scrybinder/gpu.py). */
+function GpuSection() {
+  const [g, setG] = useState<Gpu | null>(null);
+  const [err, setErr] = useState("");
+  const [note, setNote] = useState("");
+  const load = useCallback(() => api<Gpu>("/gpu").then(setG).catch(() => {}), []);
+  useEffect(() => { load(); }, [load]);
+  const busy = !!g && ["download", "extract", "test"].includes(g.job.state);
+  useEffect(() => {
+    if (!busy) return;
+    const t = setInterval(load, 1000);
+    return () => clearInterval(t);
+  }, [busy, load]);
+  if (!g) return null;
+  const gb = (n: number) => (n / 1e9).toFixed(1);
+  const enable = () => { setErr(""); setNote(""); api("/gpu/install", { method: "POST" }).then(load).catch((e) => setErr(e.message)); };
+  const remove = () => {
+    setErr("");
+    api<{ restart_needed: boolean }>("/gpu/remove", { method: "POST" })
+      .then((r) => { setNote(r.restart_needed ? "It is removed when you restart Scrybinder." : "Removed."); load(); })
+      .catch((e) => setErr(e.message));
+  };
+  const j = g.job;
+  const offered = g.supported && g.wheel && !g.installed && !g.pending_removal;
+  return (
+    <section className="mt-4 rounded-2xl border border-line bg-surface p-5">
+      <h2 className="font-semibold">GPU acceleration</h2>
+      <p className="mt-1 text-sm text-mute">
+        The visual model runs on: <b className="text-ink">{g.device ?? "not loaded yet"}</b>
+        {g.gpu && <> · NVIDIA {g.gpu.replace(/^NVIDIA /, "")}</>}
+      </p>
+      {!g.supported && <p className="mt-2 text-xs text-mute">The installed Windows app can add GPU support from here. From source use <code>uv sync --extra vision-cuda</code>.</p>}
+      {g.supported && !g.wheel && !g.installed && <p className="mt-2 text-xs text-mute">No NVIDIA GPU with a recent driver (CUDA 12.8 or newer) was found, so the model runs on the CPU.</p>}
+      {offered && (
+        <>
+          <p className="mt-2 text-xs text-mute">
+            The installer runs the visual model on the CPU. To use your NVIDIA GPU (much faster to build the index), Scrybinder downloads the CUDA build of PyTorch
+            (<b>{gb(g.wheel!.size)} GB</b>, PyTorch {g.wheel!.torch} from download.pytorch.org, checksum verified) into your data folder, tests it, and uses it after a restart. You can remove it at any time.
+          </p>
+          <button className="btn-primary mt-4" disabled={busy} onClick={enable}>{busy ? "Working…" : `Enable GPU acceleration (${gb(g.wheel!.size)} GB download)`}</button>
+        </>
+      )}
+      {g.installed && (
+        <>
+          <p className="mt-2 text-sm">{g.active ? (g.device?.startsWith("GPU") ? <span className="text-ok">In use.</span> : g.device === "CPU" ? <span className="text-danger">Installed, but PyTorch fell back to the CPU: check your NVIDIA driver (or remove it).</span> : "Installed. It is used when the visual model loads.") : "Installed. Restart Scrybinder to use it."} <span className="text-xs text-mute">PyTorch {g.installed.torch} ({g.installed.tag})</span></p>
+          <button className="btn-ghost mt-3" disabled={busy} onClick={remove}>Remove GPU support</button>
+        </>
+      )}
+      {g.pending_removal && !g.installed && <p className="mt-2 text-sm">It is removed when you restart Scrybinder.</p>}
+      {(busy || j.state === "done" || j.state === "error") && j.state !== "idle" && (
+        <div className="mt-4 text-sm" role="status">
+          <div className={j.state === "error" ? "text-danger" : j.state === "done" ? "text-ok" : ""}>
+            {j.state === "download" && `Downloading ${gb(j.done)} / ${gb(j.total)} GB…`}
+            {j.state === "extract" && "Unpacking…"}
+            {j.state === "test" && "Testing it on your GPU…"}
+            {j.state === "done" && "Done. Restart Scrybinder to use the GPU."}
+            {j.state === "error" && "It could not be installed; Scrybinder stays on the CPU."}
+          </div>
+          {j.state === "download" && j.total > 0 && (
+            <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-raised"><div className="h-full bg-accent transition-all" style={{ width: `${(j.done / j.total) * 100}%` }} /></div>
+          )}
+          {j.error && <p className="mt-1 text-xs text-danger">{j.error}</p>}
+        </div>
+      )}
+      {note && <p className="mt-2 text-xs text-mute">{note}</p>}
+      {err && <p className="mt-2 text-xs text-danger">{err}</p>}
+    </section>
+  );
+}
 
 const LABEL: Record<string, string> = { download: "Downloading bulk data…", import: "Importing cards…", done: "Done", error: "Error" };
 
@@ -94,6 +170,7 @@ export default function Settings({ status, refresh }: { status: Status | null; r
         )}
         {err && <p className="mt-2 text-xs text-danger">{err}</p>}
       </section>
+      <GpuSection />
       <p className="mt-6 text-xs text-mute">Scrybinder {status?.version} · Card data and images © Scryfall (scryfall.com). Scrybinder is an unofficial project and is not affiliated with Wizards of the Coast. Magic: The Gathering is a trademark of Wizards of the Coast.</p>
     </div>
   );

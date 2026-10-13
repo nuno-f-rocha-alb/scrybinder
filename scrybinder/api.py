@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 
 import time
 
-from . import __version__, collection, db as dbmod, formats, scryfall
+from . import __version__, collection, db as dbmod, formats, gpu as gpumod, scryfall
 from .scan.session import MAX_SIDE, MAX_SIDE_PAGE, Scanner, decode
 
 UI_DIST = Path(__file__).resolve().parent.parent / "ui" / "dist"
@@ -153,6 +153,37 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
     def index_stop():
         ix_stop.set()
         return {"stopping": ixjob["state"] in ("prepare", "build")}
+
+    # --- GPU acceleration for installed builds: download the CUDA build of PyTorch (see gpu.py) ---
+    gpujob = {"state": "idle", "done": 0, "total": 0, "error": None}
+    gpu_lock = threading.Lock()
+
+    @app.get("/api/gpu")
+    def gpu_status():
+        return gpumod.status(gpujob)
+
+    @app.post("/api/gpu/install")
+    def gpu_install():
+        if not gpumod.supported():
+            raise HTTPException(400, "GPU acceleration can be added to the installed app on Windows only (from source: uv sync --extra vision-cuda)")
+        wheel = gpumod.choose_wheel(gpumod.driver_cuda_version())
+        if wheel is None:
+            raise HTTPException(400, "no NVIDIA GPU with a driver that supports CUDA 12.8 or newer was found")
+        if gpumod.installed() is not None or gpumod.ACTIVE or (gpumod.gpu_dir() / "remove-on-start").exists():
+            raise HTTPException(409, "already installed: remove it first (then restart) to install it again")
+        with gpu_lock:
+            if gpujob["state"] in ("download", "extract", "test"):
+                raise HTTPException(409, "it is already being installed")
+            gpujob.update(state="download", done=0, total=wheel["size"], error=None)
+        threading.Thread(target=gpumod.install, args=(gpujob, wheel), daemon=True).start()
+        return {"started": True}
+
+    @app.post("/api/gpu/remove")
+    def gpu_remove():
+        if gpujob["state"] in ("download", "extract", "test"):
+            raise HTTPException(409, "wait for the download to finish")
+        gpujob.update(state="idle", error=None)
+        return {"restart_needed": gpumod.remove()}
 
     age = scryfall.bulk_age_days(db)
     if auto_bulk and age is not None and age > scryfall.AUTO_BULK_DAYS:  # daily prices: refresh on start-up when older than 24 h
