@@ -102,7 +102,7 @@ def test_exports_reference(db):
     collection.add(db, scryfall_id="dfc-1", quantity=2, finish="foil", condition="LP", language="pt",
                    location="Box 1", purchase_price=0.5)
     assert formats.export_moxfield(db).splitlines()[1].split(",")[:7] == [
-        "2", "0", "Delver of Secrets // Insectile Aberration", "isd", "Good (Lightly Played)", "pt", "foil"]
+        "2", "0", "Delver of Secrets // Insectile Aberration", "isd", "Good (Lightly Played)", "Portuguese", "foil"]
     cm = list(csv.DictReader(io.StringIO(formats.export_cardmarket(db))))[0]
     assert (cm["cardmarketId"], cm["quantity"], cm["condition"], cm["language"], cm["isFoil"], cm["price"]) == (
         "1", "2", "EX", "8", "true", "")  # no eur_foil in the test bulk -> empty price, not invented
@@ -380,3 +380,37 @@ def test_default_data_dir_per_platform(tmp_path, monkeypatch):
     assert dbmod.default_data_dir() == tmp_path / "app" / "data"                # portable: next to the exe
     monkeypatch.setenv("SCRYBINDER_DATA", str(tmp_path / "x"))
     assert dbmod.default_data_dir() == tmp_path / "x"
+
+
+MOX = ('"Count","Tradelist Count","Name","Edition","Condition","Language","Foil","Tags","Last Modified",'
+       '"Collector Number","Alter","Proxy","Purchase Price"\n'
+       '"2","2","Delver of Secrets // Insectile Aberration","isd","Good (Lightly Played)","Portuguese","foil","",'
+       '"2024-01-20 23:09:50.153000","51","True","False","1.50"\n'
+       '"1","1","Delver of Secrets // Insectile Aberration","isd","Near Mint","English","","","","51","False","False",""\n'
+       '"1","1","Nope","zzz","Near Mint","English","","","","1","False","False",""\n'
+       '"1","1","Delver of Secrets // Insectile Aberration","isd","Near Mint","Klingon","","","","51","False","False",""\n')
+
+
+def test_moxfield_import_and_roundtrip(db):
+    res = formats.import_moxfield(db, MOX, location="Box")
+    assert (res["imported"], res["cards"], [s[0] for s in res["skipped"]]) == (2, 3, [4, 5])
+    rows = {(r["finish"], r["condition"], r["language"]): r for r in collection.search(db)["rows"]}
+    foil = rows[("foil", "LP", "pt")]
+    assert (foil["quantity"], foil["altered"], foil["purchase_price"], foil["location"]) == (2, 1, 1.5, "Box")
+    assert ("nonfoil", "NM", "en") in rows
+    out = formats.export_moxfield(db)
+    assert "Portuguese" in out and "Klingon" not in out
+    again = formats.import_moxfield(db, out, location="Box")
+    assert again["skipped"] == [] and collection.search(db)["total_cards"] == 6  # quantities add up
+    with pytest.raises(ValueError):
+        formats.import_moxfield(db, "a,b\n1,2\n")
+
+    row = '"1","1","D","isd","Near Mint","English","%s","","","51","","",""\n'
+    bad = formats.import_moxfield(db, MOX.splitlines()[0] + "\n" + row % "holo" + row.replace('"1"', '"x"', 1) % "")
+    assert [s[0] for s in bad["skipped"]] == [2, 3] and bad["imported"] == 0
+
+
+def test_import_route_formats(client):
+    client.get(f"/api/status?t={TOKEN}")
+    assert client.post("/api/import/nope", content=b"x").status_code == 404
+    assert client.post("/api/import/moxfield?location=Z", content=MOX.encode()).json()["cards"] == 3

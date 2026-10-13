@@ -369,10 +369,12 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
         return {"id": _wrap(collection.move, db, row_id, body.get("location", ""), body.get("quantity"))}
 
     # --- import / export ---
-    @app.post("/api/import/manabox")
-    async def imp(request: Request, location: str = ""):
+    @app.post("/api/import/{fmt}")
+    async def imp(fmt: str, request: Request, location: str = ""):
+        if fmt not in formats.IMPORTERS:
+            raise HTTPException(404)
         text = (await request.body()).decode("utf-8-sig", errors="replace")
-        return _wrap(formats.import_manabox, db, text, location)
+        return _wrap(formats.IMPORTERS[fmt], db, text, location)
 
     @app.get("/api/export/{fmt}")
     def exp(fmt: str, location: str | None = None):
