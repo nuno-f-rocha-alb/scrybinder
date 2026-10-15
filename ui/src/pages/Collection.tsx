@@ -223,7 +223,7 @@ export default function Collection({ initialSet, initialLocation }: { initialSet
           </div>
         </Modal>
       )}
-      {toDeck && <DeckPicker oracleId={toDeck.oracle_id} scryfallId={toDeck.scryfall_id} name={toDeck.name} onClose={() => setToDeck(null)}
+      {toDeck && <DeckPicker oracleId={toDeck.oracle_id} scryfallId={toDeck.scryfall_id} finish={toDeck.finish} name={toDeck.name} onClose={() => setToDeck(null)}
         onDone={(n) => { setToDeck(null); load(); toast(`${toDeck.name} added to ${n}`); }} />}
       {menu.node}
       {node}

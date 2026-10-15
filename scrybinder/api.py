@@ -297,7 +297,14 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
                           f" JOIN deck_cards dc ON dc.id=a.deck_card_id WHERE a.collection_id=c.id AND dc.deck_id IS NOT ?)), 0)"
                           f" FROM collection c WHERE c.scryfall_id=cards.id AND c.proxy=0) AS free FROM cards"  # free: not held by another deck
                           f" WHERE {where} AND digital=0 ORDER BY released_at DESC", (deck, arg))
-        return [dict(r) for r in rows]
+        out = [dict(r) for r in rows]
+        owned = {}  # per printing and finish, so the list can say "1 non-foil"
+        for sid, fin, q in db.execute("SELECT scryfall_id, finish, SUM(quantity) FROM collection WHERE proxy=0 AND scryfall_id IN"
+                                      f" ({','.join('?' * len(out)) or 'NULL'}) GROUP BY scryfall_id, finish", [r["id"] for r in out]):
+            owned.setdefault(sid, {})[fin] = q
+        for r in out:
+            r["owned_finish"] = owned.get(r["id"], {})
+        return out
 
     @app.get("/api/image/{card_id}")
     def image(card_id: str, size: str = "normal"):
@@ -541,12 +548,12 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
     @app.post("/api/decks/{deck_id}/cards")
     def decks_add_card(deck_id: int, body: dict = Body(...)):
         return {"id": _wrap(decks.add_card, db, deck_id, body.get("oracle_id"), body.get("quantity", 1),
-                            body.get("board", "main"), body.get("scryfall_id"), body.get("tags") or ())}
+                            body.get("board", "main"), body.get("scryfall_id"), body.get("tags") or (), body.get("finish"))}
 
     @app.patch("/api/decks/{deck_id}/cards/{card_id}")
     def decks_update_card(deck_id: int, card_id: int, body: dict = Body(...)):
         return {"id": _wrap(decks.update_card, db, deck_id, card_id,
-                            **{k: v for k, v in body.items() if k in ("quantity", "board", "scryfall_id", "tags")})}
+                            **{k: v for k, v in body.items() if k in ("quantity", "board", "scryfall_id", "tags", "finish")})}
 
     @app.delete("/api/decks/{deck_id}/cards/{card_id}")
     def decks_remove_card(deck_id: int, card_id: int):

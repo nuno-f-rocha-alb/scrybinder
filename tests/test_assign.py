@@ -231,3 +231,23 @@ def test_an_empty_location_can_be_made_and_removed(db):
     for bad in ("", "   ", None, "x" * 61):
         with pytest.raises(ValueError):
             collection.create_location(db, bad)
+
+
+def test_a_deck_card_has_a_finish_of_its_printing(db):
+    oid, sid, row, d1, d2 = _setup(db)
+    foil, plain = decks.add_card(db, d1, oid, 1, scryfall_id=sid, finish="foil"), decks.add_card(db, d1, oid, 1, scryfall_id=sid, finish="nonfoil")
+    assert foil != plain  # the same printing in two finishes: two rows
+    assert decks.add_card(db, d1, oid, 1, scryfall_id=sid, finish="foil") == foil  # the same finish adds up
+    assert {c["id"]: (c["finish"], c["quantity"]) for c in decks.get(db, d1)["cards"]} == {foil: ("foil", 2), plain: ("nonfoil", 1)}
+    for bad in ("shiny", "etched"):  # not a finish / a finish the printing does not have
+        with pytest.raises(ValueError):
+            decks.add_card(db, d1, oid, 1, scryfall_id=sid, finish=bad)
+    with pytest.raises(ValueError):  # a finish needs a printing
+        decks.add_card(db, d1, oid, 1, finish="foil")
+    assert decks.update_card(db, d1, foil, finish="nonfoil") == plain  # changing the finish onto an existing row merges them
+    assert _card(db, d1, plain)["quantity"] == 3
+    other = db.execute("SELECT id FROM cards WHERE oracle_id=? AND id != ? LIMIT 1", (oid, sid)).fetchone()
+    if other:  # another printing without a finish given drops it
+        decks.update_card(db, d1, plain, scryfall_id=other[0])
+        assert _card(db, d1, plain)["finish"] is None
+    assert decks.duplicate(db, d1) != d1

@@ -1,5 +1,6 @@
-"""Deck lists as plain text: `[N][x] Name [(SET) number] [*F*] [#tag] [^Tag^]`, compatible with Moxfield / Archidekt / MTGO.
+"""Deck lists as plain text: `[N][x] Name [(SET) number] [*F*|*E*] [#tag] [^Tag^]` (*F* foil, *E* etched), compatible with Moxfield / Archidekt / MTGO.
 Sections are headers (Commander, Deck, Sideboard, Maybeboard) or, without any header, blank-line blocks (main, then side)."""
+import json
 import re
 import unicodedata
 
@@ -15,7 +16,7 @@ MAX_LINES = 2000
 
 
 def parse(text: str) -> list[dict]:
-    """Lines of a deck list: {line, text, board, quantity, name, set, number, tags}. Blank and comment lines are dropped."""
+    """Lines of a deck list: {line, text, board, quantity, name, set, number, finish, tags}. Blank and comment lines are dropped."""
     lines = text.lstrip("﻿").splitlines()
     headers = any(_HEADER.match(l.strip()) for l in lines)
     out, board, blocks, seen = [], "main", 0, False
@@ -36,13 +37,15 @@ def parse(text: str) -> list[dict]:
             line_board, s = "side", s[3:].strip()
         tags = [t.strip().lower() for t in re.findall(r"\^([^^]+)\^", s)] + [t.lower() for t in re.findall(r"(?<!\S)#([\w-]+)", s)]
         s = re.sub(r"\^[^^]+\^|(?<!\S)#[\w-]+|\[[^\]]*\]", " ", s)
+        fm = _FOIL.search(s)
+        finish = {"f": "foil", "e": "etched"}.get(fm.group(0)[1].lower()) if fm else None
         s = _FOIL.sub(" ", s).strip()
         m = _LINE.match(s)
         qty, rest = m.groups() if m else (None, "")
         pm = _PRINTING.search(rest)
         name = (rest[:pm.start()] if pm else rest).strip()
         out.append({"line": i, "text": raw.strip(), "board": line_board, "quantity": int(qty) if qty else 1, "name": name,
-                    "set": pm.group(1).lower() if pm else None, "number": pm.group(2) if pm else None, "tags": tags})
+                    "set": pm.group(1).lower() if pm else None, "number": pm.group(2) if pm else None, "finish": finish, "tags": tags})
         seen = True
     return out
 
@@ -63,7 +66,8 @@ def _names(db) -> dict:
 
 
 def resolve(db, items: list[dict]) -> tuple[list[dict], list[dict]]:
-    """(resolved, skipped): each resolved item gets oracle_id and scryfall_id (the printing, when set and number match)."""
+    """(resolved, skipped): each resolved item gets oracle_id and scryfall_id (the printing, when set and number match);
+    its finish stays only when that printing comes in it."""
     names, ok, skipped = _names(db), [], []
     for it in items:
         bad = None
@@ -93,7 +97,11 @@ def resolve(db, items: list[dict]) -> tuple[list[dict], list[dict]]:
         if oid is None:
             skipped.append({"line": it["line"], "text": it["text"], "reason": f"unknown card: {it['name']}"})
             continue
-        ok.append({**it, "oracle_id": oid, "scryfall_id": sid})
+        finish = it.get("finish")
+        if finish and sid:
+            fin = db.execute("SELECT finishes FROM cards WHERE id=?", (sid,)).fetchone()
+            finish = finish if fin and finish in json.loads(fin["finishes"] or "[]") else None
+        ok.append({**it, "oracle_id": oid, "scryfall_id": sid, "finish": finish if sid else None})
     return ok, skipped
 
 
@@ -106,13 +114,13 @@ def import_text(db, deck_id: int, text: str, dry_run: bool = False) -> dict:
     ok, skipped = resolve(db, items)
     if not dry_run:
         for it in ok:
-            decks.add_card(db, deck_id, it["oracle_id"], it["quantity"], it["board"], it["scryfall_id"], it["tags"])
+            decks.add_card(db, deck_id, it["oracle_id"], it["quantity"], it["board"], it["scryfall_id"], it["tags"], it["finish"])
     return {"lines": len(ok) + len(skipped), "cards": sum(i["quantity"] for i in ok), "skipped": skipped,
             "preview": [{"line": i["line"], "board": i["board"], "quantity": i["quantity"], "name": i["name"]} for i in ok]}
 
 
 def export_text(db, deck_id: int, maybe: bool = False) -> str:
-    """`N Name (SET) number [#tag]` per card, in Commander / Deck / Sideboard (/ Maybeboard) sections."""
+    """`N Name (SET) number [*F*|*E*] [#tag]` per card, in Commander / Deck / Sideboard (/ Maybeboard) sections."""
     decks._deck(db, deck_id)
     printings = {r[0]: (r[1], r[2]) for r in db.execute(
         "SELECT c.id, c.set_code, c.collector_number FROM cards c WHERE c.id IN"
@@ -122,6 +130,7 @@ def export_text(db, deck_id: int, maybe: bool = False) -> str:
         line = f"{c['quantity']} {c['name']}"
         if c["scryfall_id"] in printings:
             line += " ({}) {}".format(printings[c["scryfall_id"]][0].upper(), printings[c["scryfall_id"]][1])
+            line += {"foil": " *F*", "etched": " *E*"}.get(c["finish"], "")
         sections[c["board"]].append(line + "".join(f" ^{t}^" if " " in t else f" #{t}" for t in c["tags"]))
     titles = (("commander", "Commander"), ("main", "Deck"), ("side", "Sideboard"), ("maybe", "Maybeboard"))
     return "\n\n".join(f"{t}\n" + "\n".join(sections[b]) for b, t in titles if sections[b] and (b != "maybe" or maybe)) + "\n"

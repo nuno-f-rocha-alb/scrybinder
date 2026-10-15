@@ -3,7 +3,7 @@ import { createPortal } from "react-dom";
 import { IconAlertTriangle, IconArrowLeft, IconBox, IconCheck, IconCopy, IconDownload, IconPlus, IconTrash, IconUpload, IconX } from "@tabler/icons-react";
 import { api, eur, qs } from "../api";
 import { BOARDS, BOARD_LABEL, Board, CardFilter, Deck as DeckT, DeckCard as DeckCardT, DeckStats, FORMATS, Format, GROUPS, GroupBy, Legality, OracleRow, Preview, SORTS, SortBy, VIEWS, View, groupCards, matchesFilter, resultPreview, toPreview } from "../decks";
-import { CardImg, Modal, cardmarketUrl, openExternal, scryfallUrl, useToast } from "../components/ui";
+import { CardImg, FinishTag, Modal, cardmarketUrl, openExternal, scryfallUrl, useToast } from "../components/ui";
 import { MenuItem, useContextMenu } from "../components/contextmenu";
 import PrintingDialog from "../components/printings";
 import DeckPicker from "../components/deckpicker";
@@ -33,10 +33,11 @@ function PreviewPanel({ p }: { p: Preview | null }) {
       {p && (
         <div className="mt-3 space-y-1.5 text-sm">
           <div className="flex items-start justify-between gap-2">
-            <div className="font-medium leading-snug">{p.name}</div>
+            <div className="font-medium leading-snug">{p.name} <FinishTag finish={p.finish} /></div>
             <ManaCost cost={p.mana_cost} />
           </div>
           <div className="text-xs text-mute">{p.type_line}</div>
+          {p.edition && <div className="text-xs text-mute">{p.edition}{p.finish === "foil" ? " · foil" : p.finish === "etched" ? " · etched" : ""}</div>}
           <div className="flex items-center justify-between text-xs text-mute tabular-nums">
             <span>{eur(p.price)}</span>
             {p.owned !== undefined && <span>You own {p.owned}</span>}
@@ -247,10 +248,10 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
       {missingFor && <AddMissingDialog deckId={id} cardIds={[missingFor.id]} count={missingFor.missing} onClose={() => setMissingFor(null)}
         onDone={(n) => { setMissingFor(null); toast(`${n} ${n === 1 ? "copy" : "copies"} added to your collection`); reload(); }} />}
       {switchId !== null && deck.cards.find((c) => c.id === switchId) && (() => { const c = deck.cards.find((x) => x.id === switchId)!;
-        return <PrintingDialog deckId={id} oracleId={c.oracle_id} name={c.name} current={c.scryfall_id} onClose={() => setSwitchId(null)}
-          onPick={(sid) => { setSwitchId(null); patchCard(c, { scryfall_id: sid }); }} />; })()}
+        return <PrintingDialog deckId={id} oracleId={c.oracle_id} name={c.name} current={c.scryfall_id} currentFinish={c.finish} onClose={() => setSwitchId(null)}
+          onPick={(sid, finish) => { setSwitchId(null); patchCard(c, { scryfall_id: sid, finish }); }} />; })()}
       {pickId !== null && deck.cards.find((c) => c.id === pickId) && (() => { const c = deck.cards.find((x) => x.id === pickId)!;
-        return <DeckPicker oracleId={c.oracle_id} scryfallId={c.scryfall_id} name={c.name} excludeId={id} onClose={() => setPickId(null)}
+        return <DeckPicker oracleId={c.oracle_id} scryfallId={c.scryfall_id} finish={c.finish} name={c.name} excludeId={id} onClose={() => setPickId(null)}
           onDone={(n) => { setPickId(null); toast(`${c.name} added to ${n}`); }} />; })()}
       {menu.node}
       {importing && <ImportDialog deckId={id} onClose={() => setImporting(false)} onDone={(r) => { setImporting(false); setImported(r); reload(); }} />}

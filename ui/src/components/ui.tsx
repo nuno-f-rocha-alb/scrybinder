@@ -98,6 +98,16 @@ export function Modal({ onClose, title, children }: { onClose: () => void; title
   );
 }
 
+/** "Foil" / "Etched" on a card that is wanted in that finish (nothing for non-foil, as in the collection). */
+export function FinishTag({ finish }: { finish?: string | null }) {
+  return finish === "foil" || finish === "etched" ? <Badge foil>{finish === "foil" ? "Foil" : "Etched"}</Badge> : null;
+}
+
+/** The edition a deck card prefers, short ("SLD #2783"); nothing when none is chosen. Pair it with FinishTag. */
+export function EditionTag({ setCode, number, title }: { setCode?: string | null; number?: string | null; title?: string | null }) {
+  return setCode ? <span className="shrink-0 text-[11px] uppercase tabular-nums text-mute" title={title ?? undefined}>{setCode} #{number}</span> : null;
+}
+
 /** Shown when an operation would take copies away from decks: says which, and offers to free them and carry on. */
 export function Blocked({ message, onRelease, onCancel }: { message: string; onRelease: () => void; onCancel: () => void }) {
   return (
