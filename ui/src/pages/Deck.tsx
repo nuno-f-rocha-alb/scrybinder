@@ -1,9 +1,12 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { IconAlertTriangle, IconArrowLeft, IconBox, IconCheck, IconCopy, IconDownload, IconPlus, IconTrash, IconUpload, IconX } from "@tabler/icons-react";
 import { api, eur, qs } from "../api";
-import { BOARDS, BOARD_LABEL, Board, CardFilter, Deck as DeckT, DeckStats, FORMATS, Format, GROUPS, GroupBy, Legality, OracleRow, Preview, SORTS, SortBy, VIEWS, View, groupCards, matchesFilter, resultPreview, toPreview } from "../decks";
-import { CardImg, Modal, useToast } from "../components/ui";
+import { BOARDS, BOARD_LABEL, Board, CardFilter, Deck as DeckT, DeckCard as DeckCardT, DeckStats, FORMATS, Format, GROUPS, GroupBy, Legality, OracleRow, Preview, SORTS, SortBy, VIEWS, View, groupCards, matchesFilter, resultPreview, toPreview } from "../decks";
+import { CardImg, Modal, cardmarketUrl, openExternal, scryfallUrl, useToast } from "../components/ui";
+import { MenuItem, useContextMenu } from "../components/contextmenu";
+import PrintingDialog from "../components/printings";
+import DeckPicker from "../components/deckpicker";
 import { ManaCost, StatusBadge } from "../components/mana";
 import { GridControls, useCardGrid } from "../components/cardgrid";
 import { DeckView, useZoom } from "../components/deckviews";
@@ -60,25 +63,71 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
   const [sort, setSort] = useChoice<SortBy>("sort", "name", SORTS.map((x) => x.id));
   const [every, setEvery] = useChoice<"1" | "0">("every", "0", ["0", "1"]);
   const grid = useCardGrid();
-  const { zoom, close, onZoom } = useZoom();
+  const { zoom, close, onZoom, show } = useZoom();
   const [tab, setTab] = useState<"cards" | "stats">("cards");
   const [filter, setFilter] = useState<CardFilter | null>(null);
   const [showProblems, setShowProblems] = useState(false);
   const [assignId, setAssignId] = useState<number | null>(null);
   const [importing, setImporting] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [switchId, setSwitchId] = useState<number | null>(null);
+  const [pickId, setPickId] = useState<number | null>(null);
+  const [missingFor, setMissingFor] = useState<DeckCardT | null>(null);
+  const menu = useContextMenu();
+  const hovered = useRef<number | null>(null);  // the id of the card under the pointer or focus: the target of the Alt+number shortcuts
+  const quickRef = useRef<(id: number, n: number) => void>(() => {});
   const [imported, setImported] = useState<ImportReport | null>(null);
 
   const reload = useCallback(() => Promise.all([api<DeckT>(`/decks/${id}`), api<Legality>(`/decks/${id}/legality`), api<DeckStats>(`/decks/${id}/stats`)])
     .then(([d, l, s]) => { setDeck(d); setName(d.name); setLegality(l); setStats(s); setErr(""); }).catch((e) => setErr(e.message)), [id]);
   useEffect(() => { reload(); }, [reload]);
   const act = (p: Promise<unknown>) => { p.then(reload).catch((e) => toast(e.message, true)); };
+  const patchCard = (c: DeckCardT, body: object) => act(api(`/decks/${id}/cards/${c.id}`, { method: "PATCH", body: JSON.stringify(body) }));
+  quickRef.current = (cardId, n) => {  // Alt+1 one more, Alt+2 one less (the last removes it), Alt+3 sideboard, Alt+4 maybeboard
+    const c = deck?.cards.find((x) => x.id === cardId);  // the current card, not the one the pointer entered
+    if (!c) return;
+    if (n === 1) patchCard(c, { quantity: c.quantity + 1 });
+    else if (n === 2) { if (c.quantity === 1) hovered.current = null; c.quantity === 1 ? act(api(`/decks/${id}/cards/${c.id}`, { method: "DELETE" })) : patchCard(c, { quantity: c.quantity - 1 }); }
+    else patchCard(c, { board: n === 3 ? "side" : "maybe" });
+  };
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => {
+      const c = hovered.current, n = ({ Digit1: 1, Digit2: 2, Digit3: 3, Digit4: 4 } as Record<string, number>)[e.code];
+      if (c === null || !n || !e.altKey || e.ctrlKey || e.metaKey || /^(INPUT|TEXTAREA|SELECT)$/.test((e.target as HTMLElement).tagName)) return;
+      e.preventDefault();
+      quickRef.current(c, n);
+    };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, []);
   const shown = preview ?? (deck?.cards[0] ? toPreview(deck.cards[0]) : null);
 
   if (err && !deck) return <div><button className="btn-ghost mb-4" onClick={onBack}><IconArrowLeft className="size-4" />Decks</button><p className="text-danger">{err}</p></div>;
   if (!deck) return <p className="text-mute">Loading…</p>;
   const statusSlot = document.getElementById("status-root");
   const missingCount = deck.cards.reduce((n, c) => n + (c.board === "maybe" ? 0 : c.missing), 0);
+
+  const cardMenu = (c: DeckCardT): MenuItem[] => [
+    { label: "Switch printing…", onSelect: () => setSwitchId(c.id) },
+    "sep",
+    { label: "Add one", hint: "Alt+1", onSelect: () => quickRef.current(c.id, 1) },
+    { label: c.quantity === 1 ? "Remove from deck" : "Remove one", hint: "Alt+2", danger: true, onSelect: () => quickRef.current(c.id, 2) },
+    "sep",
+    ...(c.board !== "main" ? [{ label: "Move to main deck", onSelect: () => patchCard(c, { board: "main" }) }] : []),
+    ...(c.board !== "side" ? [{ label: "Move to sideboard", hint: "Alt+3", onSelect: () => quickRef.current(c.id, 3) }] : []),
+    ...(c.board !== "maybe" ? [{ label: "Move to maybeboard", hint: "Alt+4", onSelect: () => quickRef.current(c.id, 4) }] : []),
+    ...(deck.format === "commander" && c.board !== "commander" ? [{ label: "Set as commander", onSelect: () => patchCard(c, { board: "commander" }) }] : []),
+    "sep",
+    { label: "Add to another deck…", onSelect: () => setPickId(c.id) },
+    ...(c.missing > 0 && c.board !== "maybe" ? [{ label: `Add the missing ${c.missing} to collection…`, onSelect: () => setMissingFor(c) }] : []),
+    { label: "Copies and tags…", onSelect: () => setAssignId(c.id) },
+    "sep",
+    { label: "View details", onSelect: () => show(c) },
+    { label: "Copy card name", onSelect: () => navigator.clipboard.writeText(c.name).then(() => toast("Name copied")).catch(() => toast("Could not copy", true)) },
+    { label: "Set as deck image", onSelect: () => { patchDeck({ cover_card_id: c.id }); toast("Deck image set"); } },
+    ...(c.image_id ? ["sep" as const, { label: "Open on Scryfall", onSelect: () => openExternal(scryfallUrl(c.image_id!)) }] : []),
+    ...(c.cardmarket_id ? [{ label: "Open on Cardmarket", onSelect: () => openExternal(cardmarketUrl(c.cardmarket_id!)) }] : []),
+  ];
 
   const exportList = async () => {
     const bridge = (window as { pywebview?: { api?: { save_text?: (n: string, t: string) => Promise<string | null> } } }).pywebview?.api;
@@ -172,7 +221,7 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
           </div>
         )}
         {cards.length === 0 && <div className="rounded-2xl border border-dashed border-line p-12 text-center text-mute">{filter ? "No cards match this filter." : "This deck is empty. Search above to add cards."}</div>}
-        <DeckView groups={groupCards(cards, group, sort)} view={view} every={every === "1"} layout={grid} ctx={{ deckId: id, act, setPreview, onZoom, onAssign: (c) => setAssignId(c.id) }} />
+        <DeckView groups={groupCards(cards, group, sort)} view={view} every={every === "1"} layout={grid} ctx={{ deckId: id, act, setPreview, onZoom, onAssign: (c) => setAssignId(c.id), hover: (c) => { hovered.current = c?.id ?? null; }, onMenu: (c, e) => menu.open(e, cardMenu(c)) }} />
         </>}
 
 {/* the summary lives in a slot under the scrolling area (App), so it is always at the bottom of the window whatever the cards */}
@@ -195,6 +244,15 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
       </div>
       {adding && <AddMissingDialog deckId={id} count={missingCount} onClose={() => setAdding(false)}
         onDone={(n) => { setAdding(false); toast(`${n} ${n === 1 ? "copy" : "copies"} added to your collection`); reload(); }} />}
+      {missingFor && <AddMissingDialog deckId={id} cardIds={[missingFor.id]} count={missingFor.missing} onClose={() => setMissingFor(null)}
+        onDone={(n) => { setMissingFor(null); toast(`${n} ${n === 1 ? "copy" : "copies"} added to your collection`); reload(); }} />}
+      {switchId !== null && deck.cards.find((c) => c.id === switchId) && (() => { const c = deck.cards.find((x) => x.id === switchId)!;
+        return <PrintingDialog deckId={id} oracleId={c.oracle_id} name={c.name} current={c.scryfall_id} onClose={() => setSwitchId(null)}
+          onPick={(sid) => { setSwitchId(null); patchCard(c, { scryfall_id: sid }); }} />; })()}
+      {pickId !== null && deck.cards.find((c) => c.id === pickId) && (() => { const c = deck.cards.find((x) => x.id === pickId)!;
+        return <DeckPicker oracleId={c.oracle_id} scryfallId={c.scryfall_id} name={c.name} excludeId={id} onClose={() => setPickId(null)}
+          onDone={(n) => { setPickId(null); toast(`${c.name} added to ${n}`); }} />; })()}
+      {menu.node}
       {importing && <ImportDialog deckId={id} onClose={() => setImporting(false)} onDone={(r) => { setImporting(false); setImported(r); reload(); }} />}
       {imported && (
         <Modal title="Deck list imported" onClose={() => setImported(null)}>
