@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
-import { IconAlertTriangle, IconArrowLeft, IconBox, IconCheck, IconCopy, IconDownload, IconTrash, IconUpload, IconX } from "@tabler/icons-react";
+import { IconAlertTriangle, IconArrowLeft, IconBox, IconCheck, IconCopy, IconDownload, IconPlus, IconTrash, IconUpload, IconX } from "@tabler/icons-react";
 import { api, eur, qs } from "../api";
 import { BOARDS, BOARD_LABEL, Board, CardFilter, Deck as DeckT, DeckStats, FORMATS, Format, GROUPS, GroupBy, Legality, OracleRow, Preview, SORTS, SortBy, VIEWS, View, groupCards, matchesFilter, resultPreview, toPreview } from "../decks";
 import { CardImg, Modal, useToast } from "../components/ui";
@@ -8,6 +8,7 @@ import { GridControls, useCardGrid } from "../components/cardgrid";
 import { DeckView, useZoom } from "../components/deckviews";
 import { LegalityPanel, StatsPanel } from "../components/deckstats";
 import AssignDialog from "../components/assign";
+import AddMissingDialog from "../components/addmissing";
 import AddCards from "../components/addcards";
 import ImportDialog, { Skipped } from "../components/decklist";
 import type { ImportReport } from "../components/decklist";
@@ -64,6 +65,7 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
   const [showProblems, setShowProblems] = useState(false);
   const [assignId, setAssignId] = useState<number | null>(null);
   const [importing, setImporting] = useState(false);
+  const [adding, setAdding] = useState(false);
   const [imported, setImported] = useState<ImportReport | null>(null);
 
   const reload = useCallback(() => Promise.all([api<DeckT>(`/decks/${id}`), api<Legality>(`/decks/${id}/legality`), api<DeckStats>(`/decks/${id}/stats`)])
@@ -74,6 +76,7 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
 
   if (err && !deck) return <div><button className="btn-ghost mb-4" onClick={onBack}><IconArrowLeft className="size-4" />Decks</button><p className="text-danger">{err}</p></div>;
   if (!deck) return <p className="text-mute">Loading…</p>;
+  const missingCount = deck.cards.reduce((n, c) => n + (c.board === "maybe" ? 0 : c.missing), 0);
 
   const exportList = async () => {
     const bridge = (window as { pywebview?: { api?: { save_text?: (n: string, t: string) => Promise<string | null> } } }).pywebview?.api;
@@ -111,6 +114,9 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
             onClick={() => api<{ assigned: number }>(`/decks/${id}/assign-free`, { method: "POST" }).then((r) => { toast(r.assigned ? `Assigned ${r.assigned} ${r.assigned === 1 ? "copy" : "copies"}` : "No free copies to assign"); reload(); }).catch((e) => toast(e.message, true))}>
             <IconBox className="size-4" />Assign free copies
           </button>
+          {missingCount > 0 && <button className="btn-ghost" title="Add the copies you are missing to your collection (not the proxies)" onClick={() => setAdding(true)}>
+            <IconPlus className="size-4" />Add missing to collection
+          </button>}
           <button className="btn-ghost" title="Add the cards of a list (Moxfield, Archidekt, MTGO style) to this deck" onClick={() => setImporting(true)}>
             <IconUpload className="size-4" />Import list
           </button>
@@ -182,6 +188,8 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
           </span>
         </div>
       </div>
+      {adding && <AddMissingDialog deckId={id} count={missingCount} onClose={() => setAdding(false)}
+        onDone={(n) => { setAdding(false); toast(`${n} ${n === 1 ? "copy" : "copies"} added to your collection`); reload(); }} />}
       {importing && <ImportDialog deckId={id} onClose={() => setImporting(false)} onDone={(r) => { setImporting(false); setImported(r); reload(); }} />}
       {imported && (
         <Modal title="Deck list imported" onClose={() => setImported(null)}>

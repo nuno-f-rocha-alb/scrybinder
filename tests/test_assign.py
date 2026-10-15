@@ -174,3 +174,29 @@ def test_collection_rows_say_which_decks_hold_them(db):
     decks.assign(db, d2, decks.add_card(db, d2, oid, 1), [{"collection_id": row, "quantity": 1}])
     held = collection.search(db)["rows"][0]["decks"]
     assert [(d["name"], d["quantity"]) for d in held] == [("D1", 1), ("D2", 1)]
+
+
+def test_add_missing_puts_the_missing_copies_in_the_collection(db):
+    oid, sid, row, d1, d2 = _setup(db, qty=1)
+    c1 = decks.add_card(db, d1, oid, 3)
+    px = decks.add_card(db, d1, oid, 1, board="side", tags=["proxy"])
+    mb = decks.add_card(db, d1, oid, 1, board="maybe")
+    assert decks.add_missing(db, d1, [px, mb]) == 0  # a proxy and the maybeboard are never added
+    assert decks.add_missing(db, d1, location="Box") == 2  # 3 wanted, 1 owned
+    assert db.execute("SELECT SUM(quantity) FROM collection WHERE scryfall_id=?", (sid,)).fetchone()[0] == 3
+    assert db.execute("SELECT COUNT(*) FROM collection WHERE location='Box'").fetchone()[0] == 1
+    a = _card(db, d1, c1)
+    assert (a["status"], a["assigned"], a["missing"]) == ("assigned", 3, 0)
+    assert decks.add_missing(db, d1) == 0
+
+
+def test_add_missing_for_chosen_cards_assigns_only_those(db):
+    oid, sid, row, d1, d2 = _setup(db, qty=2)
+    other = db.execute("SELECT id FROM cards WHERE oracle_id != ? LIMIT 1", (oid,)).fetchone()
+    oid2 = db.execute("SELECT oracle_id FROM cards WHERE id=?", (other[0],)).fetchone()[0]
+    collection.add(db, scryfall_id=other[0], quantity=1)
+    c1, c2 = decks.add_card(db, d1, oid, 3), decks.add_card(db, d1, oid2, 1)
+    assert decks.add_missing(db, d1, [c1]) == 1
+    assert (_card(db, d1, c1)["assigned"], _card(db, d1, c2)["assigned"]) == (3, 0)  # the other card's free copy is left alone
+    with pytest.raises(ValueError):
+        decks.add_missing(db, d1, "x")
