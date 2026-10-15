@@ -9,7 +9,7 @@ export type CardStatus = "assigned" | "available" | "elsewhere" | "missing" | "p
 export type DeckCard = {
   id: number; oracle_id: string; scryfall_id: string | null; quantity: number; board: Board; name: string; mana_cost: string;
   cmc: number; type_line: string | null; colors: string[]; color_identity: string[]; owned: number; assigned: number; price: number | null;
-  image_id: string | null; cardmarket_id: number | null; set_code: string | null; set_name: string | null; collector_number: string | null; finish: "nonfoil" | "foil" | "etched" | null; tags: string[]; status: CardStatus; missing: number; available: number;
+  image_id: string | null; cardmarket_id: number | null; owned_prints: OwnedPrint[]; set_code: string | null; set_name: string | null; collector_number: string | null; finish: "nonfoil" | "foil" | "etched" | null; tags: string[]; status: CardStatus; missing: number; available: number;
   elsewhere: { deck_id: number; name: string; quantity: number }[]; assignments: { collection_id: number; quantity: number }[];
 };
 export type DeckSummary = { cards: number; assigned: number; available: number; missing: number; proxies: number; cost_to_complete: number };
@@ -113,7 +113,14 @@ export function groupCards(cards: DeckCard[], by: GroupBy = "type", sort: SortBy
   return out;
 }
 
-/** "SLD #2783": the edition the deck prefers, nothing when it has none chosen. */
+/** What a deck card is, printing-wise: the copies of your collection assigned to it (that is what you really have), else the printing the deck
+ * prefers (nothing when none is chosen). One entry per printing and finish. */
+export type OwnedPrint = { scryfall_id: string; finish: "nonfoil" | "foil" | "etched"; set_code: string; collector_number: string; set_name: string; quantity: number };
+export type ShownPrint = { set_code: string; collector_number: string; set_name: string | null; finish: string | null };
+export const shownPrints = (c: DeckCard): ShownPrint[] =>
+  c.owned_prints?.length ? c.owned_prints : c.set_code ? [{ set_code: c.set_code, collector_number: c.collector_number!, set_name: c.set_name, finish: c.finish }] : [];
+export const printLabel = (p: ShownPrint): string => `${p.set_name} (${p.set_code.toUpperCase()}) #${p.collector_number}`;
+/** "Set (SLD) #2783": the edition the deck prefers, nothing when it has none chosen. */
 export const editionOf = (c: DeckCard): string | null => (c.set_code ? `${c.set_name} (${c.set_code.toUpperCase()}) #${c.collector_number}` : null);
-export const toPreview = (c: DeckCard): Preview => ({ image_id: c.image_id, finish: c.finish, edition: editionOf(c), name: c.name, type_line: c.type_line, mana_cost: c.mana_cost, price: c.price, owned: c.owned, status: c.status, tags: c.tags });
+export const toPreview = (c: DeckCard): Preview => ({ image_id: c.image_id, finish: shownPrints(c)[0]?.finish ?? c.finish, edition: shownPrints(c)[0] ? printLabel(shownPrints(c)[0]) : null, name: c.name, type_line: c.type_line, mana_cost: c.mana_cost, price: c.price, owned: c.owned, status: c.status, tags: c.tags });
 export const resultPreview = (r: OracleRow): Preview => ({ image_id: r.id, name: r.name, type_line: r.type_line, mana_cost: r.mana_cost, price: r.price, owned: r.owned });
