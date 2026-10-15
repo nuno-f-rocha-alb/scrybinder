@@ -293,3 +293,16 @@ def test_a_card_can_have_several_lines_each_with_its_own_printing(db):
     assert _card(db, d1, c)["quantity"] == 4 and not any(x["id"] == b for x in decks.get(db, d1)["cards"])
     with pytest.raises(KeyError):
         decks.duplicate_line(db, d2, a)
+
+
+def test_a_deck_card_shows_the_printing_and_finish_of_its_assigned_copies(db):
+    oid, sid, row, d1, d2 = _setup(db, qty=2)
+    foil = collection.add(db, scryfall_id=sid, quantity=1, finish="foil")
+    c = decks.add_card(db, d1, oid, 3)  # no printing chosen
+    assert _card(db, d1, c)["owned_prints"] == []
+    decks.assign(db, d1, c, [{"collection_id": row, "quantity": 2}, {"collection_id": foil, "quantity": 1}])
+    got = _card(db, d1, c)
+    assert [(p["scryfall_id"], p["finish"], p["quantity"]) for p in got["owned_prints"]] == [(sid, "nonfoil", 2), (sid, "foil", 1)]  # the most copies first
+    assert got["image_id"] == sid and got["assignments"] == [{"collection_id": row, "quantity": 2}, {"collection_id": foil, "quantity": 1}]
+    decks.assign(db, d1, c, [])  # nothing assigned: nothing to show again
+    assert _card(db, d1, c)["owned_prints"] == []
