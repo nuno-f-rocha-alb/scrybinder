@@ -5,11 +5,13 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 ## [Unreleased]
 
 ### Added
+- Decks: every group of cards can be folded with a click on its title ("Fold all" / "Unfold all" next to the view options; the choice is remembered), and the bar to add cards stays at the top while you scroll the deck.
 - Card details: "View details" (in the card menus of the decks, the collection, the Add page and a deck's card search) opens the card with its image, prices, rules text, printing, all its printings, legality in every format and its rulings (fetched from Scryfall the first time, then kept), with Prev / Next and the arrow keys.
 - Decks: several lines of the same card, each with its own printing (for example basic lands in different arts). "Separate line" in the add bar and "Add one as a new line" in the card menu create a line of its own instead of adding to the existing one.
 - Decks: a card now has a finish. Switch printing has a button per finish each printing comes in (Select, Select foil, Select etched), says how many of each finish you own, shows the card large when you point at it, and the deck shows the edition (set and number) and the finish of each card. Deck lists exported and imported keep both: `(SET) number` and `*F*` / `*E*` for foil and etched.
 
 ### Fixed
+- In the list view of a deck the lands (which have no mana cost) lined up one column to the left of the other cards.
 - Reversible cards (the same card on both faces, for example Blood Crypt ECL #349) are printings of their card again: they were missing from the printing lists. Existing collections are fixed at the next start.
 - Decks: "Add this printing to collection…" (in the copies dialog and the card menu) adds copies of the printing and finish a card asks for, also when you own the card in another printing.
 - Switch printing no longer shows a "Foil" badge on printings that merely exist in foil.

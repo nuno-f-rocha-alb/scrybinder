@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { IconMinus, IconPlus, IconTrash } from "@tabler/icons-react";
+import { IconChevronDown, IconChevronRight, IconMinus, IconPlus, IconTrash } from "@tabler/icons-react";
 import { api, eur } from "../api";
 import { BOARDS, BOARD_LABEL, DeckCard, Group, Preview, View, toPreview } from "../decks";
 import { CardImg, EditionTag, FinishTag } from "./ui";
@@ -67,7 +67,7 @@ function ListRow({ c, ctx }: { c: DeckCard; ctx: Ctx }) {
         {c.missing > 0 && <span className="shrink-0 text-xs text-danger">{c.missing} missing</span>}
         <span className="hidden items-center gap-2 sm:flex"><Tags c={c} /></span>
       </div>
-      <ManaCost cost={c.mana_cost} />
+      <span className="justify-self-end"><ManaCost cost={c.mana_cost} /></span>
       <AssignBtn c={c} ctx={ctx} className="px-1 text-left hover:bg-line"><StatusBadge status={c.status} title={elsewhereHint(c)} /></AssignBtn>
       <span className="hidden text-right text-xs text-mute tabular-nums md:block">{eur(c.price)}</span>
       <select className="field hidden !w-auto !px-1.5 !py-0.5 text-xs md:block" aria-label={`Board of ${c.name}`} value={c.board} onClick={(e) => e.stopPropagation()}
@@ -145,23 +145,29 @@ function Strip({ c, ctx, layout, last, copy }: { c: DeckCard; ctx: Ctx; layout: 
   );
 }
 
-const Heading = ({ g }: { g: Group }) => (
-  <h2 className="mb-1.5 flex items-center gap-2 border-b border-line pb-1 text-sm font-semibold">
-    {g.pip && <ManaCost cost={g.pip} />}{g.label}<span className="text-xs font-normal text-mute">{g.count}</span>
+/** The title of a group; a click folds it (a folded group shows only this line). */
+const Heading = ({ g, folded, onToggle }: { g: Group; folded: boolean; onToggle: () => void }) => (
+  <h2 className={`flex items-center border-b border-line text-sm font-semibold ${folded ? "mb-3" : "mb-1.5"}`}>
+    <button className="flex min-w-0 flex-1 cursor-pointer items-center gap-2 rounded pb-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-accent" aria-expanded={!folded} onClick={onToggle}
+      title={folded ? "Show these cards" : "Hide these cards"}>
+      {folded ? <IconChevronRight className="size-4 shrink-0 text-mute" aria-hidden /> : <IconChevronDown className="size-4 shrink-0 text-mute" aria-hidden />}
+      {g.pip && <ManaCost cost={g.pip} />}{g.label}<span className="text-xs font-normal text-mute">{g.count}</span>
+    </button>
   </h2>
 );
 
 /** The groups of a deck in the chosen view. Every view is responsive: columns and stacks flow into the space there is. */
-export function DeckView({ groups, view, every, ctx, layout }: { groups: Group[]; view: View; every: boolean; ctx: Ctx; layout: Layout }) {
+export function DeckView({ groups, view, every, ctx, layout, folded, onToggle }: { groups: Group[]; view: View; every: boolean; ctx: Ctx; layout: Layout; folded: Set<string>; onToggle: (key: string) => void }) {
+  const head = (g: Group) => <Heading g={g} folded={folded.has(g.key)} onToggle={() => onToggle(g.key)} />;
   if (view === "list") {
-    return <>{groups.map((g) => <section key={g.key} className="mb-5" aria-label={g.label}><Heading g={g} />
-      <ul>{g.cards.map((c) => <ListRow key={c.id} c={c} ctx={ctx} />)}</ul></section>)}</>;
+    return <>{groups.map((g) => <section key={g.key} className="mb-5" aria-label={g.label}>{head(g)}
+      {!folded.has(g.key) && <ul>{g.cards.map((c) => <ListRow key={c.id} c={c} ctx={ctx} />)}</ul>}</section>)}</>;
   }
   if (view === "compact") {
     return (
       <div className="columns-[260px] gap-6">
-        {groups.map((g) => <section key={g.key} className="mb-4 break-inside-avoid" aria-label={g.label}><Heading g={g} />
-          <ul>{g.cards.map((c) => <CompactRow key={c.id} c={c} ctx={ctx} />)}</ul></section>)}
+        {groups.map((g) => <section key={g.key} className="mb-4 break-inside-avoid" aria-label={g.label}>{head(g)}
+          {!folded.has(g.key) && <ul>{g.cards.map((c) => <CompactRow key={c.id} c={c} ctx={ctx} />)}</ul>}</section>)}
       </div>
     );
   }
@@ -172,10 +178,10 @@ export function DeckView({ groups, view, every, ctx, layout }: { groups: Group[]
           const items = g.cards.flatMap((c) => (every ? Array.from({ length: c.quantity }, (_, i) => ({ c, i })) : [{ c, i: -1 }]));
           return (
             <section key={g.key} aria-label={g.label} style={{ width: layout.tilePx }} className="shrink-0">
-              <Heading g={g} />
-              <div className="flex flex-col gap-[3px]">
+              {head(g)}
+              {!folded.has(g.key) && <div className="flex flex-col gap-[3px]">
                 {items.map(({ c, i }, n) => <Strip key={`${c.id}:${i}`} c={c} ctx={ctx} layout={layout} last={n === items.length - 1} copy={i < 0 ? undefined : i} />)}
-              </div>
+              </div>}
             </section>
           );
         })}
@@ -187,8 +193,8 @@ export function DeckView({ groups, view, every, ctx, layout }: { groups: Group[]
     <div ref={layout.setGridEl}>
       {groups.map((g) => (
         <section key={g.key} className="mb-6" aria-label={g.label}>
-          <Heading g={g} />
-          <div className="grid gap-4" style={layout.style}>{g.cards.map((c) => <Tile key={c.id} c={c} ctx={ctx} layout={layout} crop={view === "grid"} />)}</div>
+          {head(g)}
+          {!folded.has(g.key) && <div className="grid gap-4" style={layout.style}>{g.cards.map((c) => <Tile key={c.id} c={c} ctx={ctx} layout={layout} crop={view === "grid"} />)}</div>}
         </section>
       ))}
     </div>

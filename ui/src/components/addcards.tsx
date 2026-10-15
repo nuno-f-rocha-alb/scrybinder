@@ -47,7 +47,7 @@ export default function AddCards({ deck, onAdd, setPreview, toast }: { deck: Dec
   const filtered = !!(text || type || colors.length || lo || hi || owned || sort !== "name");
 
   return (
-    <div className="mb-5 rounded-xl border border-line bg-surface p-3">
+    <div className="sticky top-0 z-30 mb-5 rounded-xl border border-line bg-surface p-3 shadow-lg shadow-black/30">
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-[220px] flex-1">
           <IconSearch className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-mute" aria-hidden />
