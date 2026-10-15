@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import { createPortal } from "react-dom";
 import { IconAlertTriangle, IconArrowLeft, IconBox, IconCheck, IconCopy, IconDownload, IconPlus, IconTrash, IconUpload, IconX } from "@tabler/icons-react";
 import { api, eur, qs } from "../api";
 import { BOARDS, BOARD_LABEL, Board, CardFilter, Deck as DeckT, DeckStats, FORMATS, Format, GROUPS, GroupBy, Legality, OracleRow, Preview, SORTS, SortBy, VIEWS, View, groupCards, matchesFilter, resultPreview, toPreview } from "../decks";
@@ -76,6 +77,7 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
 
   if (err && !deck) return <div><button className="btn-ghost mb-4" onClick={onBack}><IconArrowLeft className="size-4" />Decks</button><p className="text-danger">{err}</p></div>;
   if (!deck) return <p className="text-mute">Loading…</p>;
+  const statusSlot = document.getElementById("status-root");
   const missingCount = deck.cards.reduce((n, c) => n + (c.board === "maybe" ? 0 : c.missing), 0);
 
   const exportList = async () => {
@@ -173,7 +175,9 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
         <DeckView groups={groupCards(cards, group, sort)} view={view} every={every === "1"} layout={grid} ctx={{ deckId: id, act, setPreview, onZoom, onAssign: (c) => setAssignId(c.id) }} />
         </>}
 
-        <div className="sticky bottom-0 -mx-6 -mb-6 mt-6 flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-line bg-surface/95 px-6 py-3 text-sm backdrop-blur">
+{/* the summary lives in a slot under the scrolling area (App), so it is always at the bottom of the window whatever the cards */}
+        {statusSlot ? createPortal(
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-t border-line bg-surface px-6 py-3 text-sm">
           <span className="font-medium tabular-nums">{main} <span className="font-normal text-mute">main deck</span> / {stats?.totals.side ?? 0} <span className="font-normal text-mute">sideboard</span></span>
           {deck.format === "casual" ? <span className="text-mute">Casual</span> : (
             <button className={`inline-flex cursor-pointer items-center gap-1 rounded-md px-1.5 py-0.5 hover:bg-raised ${errors ? "text-danger" : "text-ok"}`} aria-expanded={showProblems} onClick={() => setShowProblems((v) => !v)}
@@ -187,6 +191,7 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
             {Object.entries(stats?.types ?? {}).map(([t, n]) => <span key={t}>{n} {t}</span>)}
           </span>
         </div>
+        , statusSlot) : null}
       </div>
       {adding && <AddMissingDialog deckId={id} count={missingCount} onClose={() => setAdding(false)}
         onDone={(n) => { setAdding(false); toast(`${n} ${n === 1 ? "copy" : "copies"} added to your collection`); reload(); }} />}

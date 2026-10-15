@@ -47,8 +47,8 @@ export default function App() {
         </SidebarSection>
         <SidebarFooter>Card data and images © Scryfall<br />Scrybinder is not affiliated with Wizards of the Coast.</SidebarFooter>
       </Sidebar>
-      <div className="relative min-w-0 flex-1">
-      <main className="h-full overflow-y-auto">
+      <div className="relative flex min-w-0 flex-1 flex-col">
+      <main className="min-h-0 flex-1 overflow-y-auto">
         {status && (needBulk || status.bulk_stale) && page !== "settings" && (
           <button onClick={() => setPage("settings")}
             className="flex w-full cursor-pointer items-center gap-2 border-b border-gold/30 bg-gold/10 px-6 py-2.5 text-left text-sm text-gold">
@@ -67,6 +67,7 @@ export default function App() {
           {page === "settings" && <Settings status={status} refresh={refresh} />}
         </div>
       </main>
+      <div id="status-root" />  {/* a page can pin a bar here, under the scrolling area */}
       <div id="drawer-root" className="pointer-events-none absolute inset-0 z-40" />
       </div>
     </div>

@@ -10,6 +10,9 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 - Decks: choose the printing of a card from a list of all its printings (image, set, price, finishes, how many you own), with "Use cheapest" and a hint when you own another printing.
 - A Code of Conduct (Contributor Covenant 2.1) and an accessibility statement with the known limitations and how to report a barrier, linked from the README.
 
+### Fixed
+- The summary bar of a deck is always pinned to the bottom of the window, whatever the number of cards.
+
 ## [0.5.1] — 2026-10-15
 
 ### Added
