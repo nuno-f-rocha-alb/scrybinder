@@ -46,7 +46,7 @@ export default function AssignDialog({ deckId, card, onClose, onChanged }: { dec
     .then(() => { setPicking(false); onChanged(); }).catch((e) => { setPicking(false); setErr(e.message); });
   const other = card.scryfall_id && !rows.some((r) => r.scryfall_id === card.scryfall_id) ? rows[0] : undefined;  // a printing you own that the deck does not prefer
 
-  return picking ? <PrintingDialog oracleId={card.oracle_id} name={card.name} current={card.scryfall_id} onPick={setPrinting} onClose={() => setPicking(false)} /> : (
+  return picking ? <PrintingDialog deckId={deckId} oracleId={card.oracle_id} name={card.name} current={card.scryfall_id} onPick={setPrinting} onClose={() => setPicking(false)} /> : (
     <Modal title={`Copies and tags of ${card.name}`} onClose={onClose}>
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <h2 className="text-lg font-semibold">{card.name}</h2><StatusBadge status={card.status} />

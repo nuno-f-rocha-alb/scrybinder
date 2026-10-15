@@ -288,12 +288,15 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
         return _wrap(oracle.search, db, q, text, colors, type, cmc_min, cmc_max, owned, legal, deck, sort, limit, offset)
 
     @app.get("/api/cards/prints")
-    def prints(oracle_id: str = "", name: str = ""):
+    def prints(oracle_id: str = "", name: str = "", deck: int | None = None):
         where, arg = ("oracle_id=?", oracle_id) if oracle_id else ("UPPER(name)=UPPER(?)", name)  # uses the cards_name_upper index
         rows = db.execute(f"SELECT id, name, set_code, set_name, collector_number, released_at, rarity, finishes,"
                           f" frame, full_art, border_color, promo_types, eur, eur_foil, eur_etched, lang, cardmarket_id,"
-                          f" (SELECT COALESCE(SUM(quantity), 0) FROM collection WHERE scryfall_id=cards.id AND proxy=0) AS owned FROM cards"
-                          f" WHERE {where} AND digital=0 ORDER BY released_at DESC", (arg,))
+                          f" (SELECT COALESCE(SUM(quantity), 0) FROM collection WHERE scryfall_id=cards.id AND proxy=0) AS owned,"
+                          f" (SELECT COALESCE(SUM(c.quantity), 0) - COALESCE(SUM((SELECT SUM(a.quantity) FROM deck_assignments a"
+                          f" JOIN deck_cards dc ON dc.id=a.deck_card_id WHERE a.collection_id=c.id AND dc.deck_id IS NOT ?)), 0)"
+                          f" FROM collection c WHERE c.scryfall_id=cards.id AND c.proxy=0) AS free FROM cards"  # free: not held by another deck
+                          f" WHERE {where} AND digital=0 ORDER BY released_at DESC", (deck, arg))
         return [dict(r) for r in rows]
 
     @app.get("/api/image/{card_id}")
