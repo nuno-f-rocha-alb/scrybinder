@@ -565,3 +565,47 @@ def test_binder_cells_are_read_or_flagged_never_confidently_wrong(db):
         wrong_confident += top not in (None, Path(c["path"]).stem) and res["confidence"] == "high"
     print(f"cells read right: {right}/{len(cells)}; confidently wrong: {wrong_confident}")
     assert wrong_confident == 0 and right >= 3  # OCR only (no visual index in the fixtures) on a synthetic page
+
+
+def test_live_camera_rereading_the_same_card_does_not_add_a_copy(db, tmp_path, monkeypatch):
+    from scrybinder.scan import session
+    ids = [r[0] for r in db.execute("SELECT id FROM cards ORDER BY id LIMIT 2")]
+    res = {"ocr": {"name": "x", "name_match": 100, "number": None, "set": None, "rotated": False}, "candidates": [], "confidence": "high"}
+    monkeypatch.setattr(session, "identify_image", lambda ident, i, warped=False: (i, True, dict(res)))
+    img = np.zeros((880, 630, 3), np.uint8)
+    for list_mode in (True, False):
+        scanner = session.Scanner(db, tmp_path / str(list_mode))
+        scanner.list_mode = list_mode
+        items = lambda: scanner.reads if list_mode else scanner.pending  # noqa: E731
+
+        def read(card_id, live=True):
+            res["candidates"] = [{"id": card_id, "finishes": '["nonfoil", "foil"]'}]
+            scanner.process(img, "c", warped=True, live=live)
+
+        read(ids[0])
+        beeps = scanner.beep
+        read(ids[0])
+        read(ids[0])                                   # still on the stand: nothing changes
+        assert [r["qty"] for r in items()] == [1] and scanner.beep == beeps
+        assert len(list(scanner.dir.glob("*.jpg"))) == 1
+        read(ids[1])                                   # a clear swap still opens an entry
+        read(ids[0])                                   # and going back too
+        assert [r["qty"] for r in items()] == [1, 1, 1]
+        read(ids[0], live=False)                       # photos and folders still add up
+        assert [r["qty"] for r in items()] == [1, 1, 2]
+        scanner.split_next = True
+        read(ids[0])                                   # the foil of the same card is a new entry
+        assert len(items()) == 4
+
+
+def test_live_unreadable_card_on_the_stand_does_not_repeat(db, tmp_path, monkeypatch):
+    from scrybinder.scan import session
+    res = {"ocr": {"name": "", "name_match": 0, "number": None, "set": None, "rotated": False}, "candidates": [], "confidence": "none"}
+    monkeypatch.setattr(session, "identify_image", lambda ident, i, warped=False: (i, True, dict(res)))
+    img = np.zeros((880, 630, 3), np.uint8)
+    for list_mode in (True, False):
+        scanner = session.Scanner(db, tmp_path / str(list_mode))
+        scanner.list_mode = list_mode
+        for _ in range(3):
+            scanner.process(img, "c", warped=True, live=True)
+        assert len(scanner.reads if list_mode else scanner.pending) == 1
