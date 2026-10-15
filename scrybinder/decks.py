@@ -216,13 +216,16 @@ def _finish_ok(db, scryfall_id, finish):
         raise ValueError("that printing does not come in that finish")
 
 
-def _find(db, deck_id, oracle_id, scryfall_id, board, finish=None):
-    return db.execute("SELECT id FROM deck_cards WHERE deck_id=? AND oracle_id=? AND COALESCE(scryfall_id,'')=? AND COALESCE(finish,'')=? AND board=?",
-                      (deck_id, oracle_id, scryfall_id or "", finish or "", board)).fetchone()
+def _find(db, deck_id, oracle_id, scryfall_id, board, finish=None, exclude=None):
+    """The line of the deck with this card, printing, finish and board (not `exclude`, the line being changed); lines of the same
+    card may repeat on purpose, this finds the first."""
+    return db.execute("SELECT id FROM deck_cards WHERE deck_id=? AND oracle_id=? AND COALESCE(scryfall_id,'')=? AND COALESCE(finish,'')=? AND board=? AND id IS NOT ?"
+                      " ORDER BY id LIMIT 1", (deck_id, oracle_id, scryfall_id or "", finish or "", board, exclude)).fetchone()
 
 
-def add_card(db, deck_id: int, oracle_id: str, quantity: int = 1, board: str = "main", scryfall_id=None, tags=(), finish=None) -> int:
-    """Add a card; the same card on the same board with the same printing and finish sums the quantity."""
+def add_card(db, deck_id: int, oracle_id: str, quantity: int = 1, board: str = "main", scryfall_id=None, tags=(), finish=None, new_line=False) -> int:
+    """Add a card; the same card on the same board with the same printing and finish sums the quantity, unless `new_line` asks for a
+    line of its own (to give it another printing)."""
     _deck(db, deck_id)
     _check(board=board)
     quantity = _int(quantity)
@@ -234,7 +237,7 @@ def add_card(db, deck_id: int, oracle_id: str, quantity: int = 1, board: str = "
     _finish_ok(db, scryfall_id, finish)
     tags = _tags(tags)
     with db:
-        row = _find(db, deck_id, oracle_id, scryfall_id, board, finish)
+        row = None if new_line else _find(db, deck_id, oracle_id, scryfall_id, board, finish)
         if row:
             db.execute("UPDATE deck_cards SET quantity=quantity+? WHERE id=?", (quantity, row["id"]))
             cid = row["id"]
@@ -245,6 +248,15 @@ def add_card(db, deck_id: int, oracle_id: str, quantity: int = 1, board: str = "
             _set_tags(db, cid, tags)
         _touch(db, deck_id)
     return cid
+
+
+def duplicate_line(db, deck_id: int, card_id: int) -> int:
+    """One more copy of a card as a line of its own (same printing, finish, board and tags): the deck gets one card more, and the
+    new line can take another printing."""
+    cur = db.execute("SELECT * FROM deck_cards WHERE id=? AND deck_id=?", (card_id, deck_id)).fetchone()
+    if not cur:
+        raise KeyError(card_id)
+    return add_card(db, deck_id, cur["oracle_id"], 1, cur["board"], cur["scryfall_id"], sorted(_card_tags(db, card_id)), cur["finish"], new_line=True)
 
 
 def _card_tags(db, card_id: int) -> set[str]:
@@ -285,7 +297,8 @@ def update_card(db, deck_id: int, card_id: int, **fields) -> int:
     _finish_ok(db, sid, fin)
     tags = _tags(fields["tags"]) if "tags" in fields else None
     with db:
-        other = _find(db, deck_id, cur["oracle_id"], sid, board, fin)
+        moved = (sid, fin, board) != (cur["scryfall_id"], cur["finish"], cur["board"])  # only a change of printing, finish or board can land on another line
+        other = _find(db, deck_id, cur["oracle_id"], sid, board, fin, exclude=card_id) if moved else None
         if other and other["id"] != card_id:  # moved onto an existing card: merge into it
             db.execute("UPDATE deck_cards SET quantity=quantity+? WHERE id=?", (qty, other["id"]))
             db.execute("INSERT OR IGNORE INTO deck_card_tags SELECT ?, tag FROM deck_card_tags WHERE deck_card_id=?",

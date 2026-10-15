@@ -115,6 +115,7 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
     { label: "Switch printing…", onSelect: () => setSwitchId(c.id) },
     "sep",
     { label: "Add one", hint: "Alt+1", onSelect: () => quickRef.current(c.id, 1) },
+    { label: "Add one as a new line", onSelect: () => act(api(`/decks/${id}/cards/${c.id}/duplicate`, { method: "POST" })) },
     { label: c.quantity === 1 ? "Remove from deck" : "Remove one", hint: "Alt+2", danger: true, onSelect: () => quickRef.current(c.id, 2) },
     "sep",
     ...(c.board !== "main" ? [{ label: "Move to main deck", onSelect: () => patchCard(c, { board: "main" }) }] : []),
@@ -202,7 +203,7 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
         {tab === "stats" && (stats ? <StatsPanel stats={stats} active={filter} onFilter={pick} /> : <p className="text-mute">Loading…</p>)}
 
         {tab === "cards" && <>
-        <AddCards deck={deck} setPreview={setPreview} toast={toast} onAdd={(oracle_id, board) => act(api(`/decks/${id}/cards`, { method: "POST", body: JSON.stringify({ oracle_id, board }) }))} />
+        <AddCards deck={deck} setPreview={setPreview} toast={toast} onAdd={(oracle_id, board, new_line) => act(api(`/decks/${id}/cards`, { method: "POST", body: JSON.stringify({ oracle_id, board, new_line }) }))} />
 
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <label className="flex items-center gap-1.5 text-xs text-mute">View

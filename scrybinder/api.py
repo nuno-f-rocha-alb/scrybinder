@@ -561,7 +561,8 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
     @app.post("/api/decks/{deck_id}/cards")
     def decks_add_card(deck_id: int, body: dict = Body(...)):
         return {"id": _wrap(decks.add_card, db, deck_id, body.get("oracle_id"), body.get("quantity", 1),
-                            body.get("board", "main"), body.get("scryfall_id"), body.get("tags") or (), body.get("finish"))}
+                            body.get("board", "main"), body.get("scryfall_id"), body.get("tags") or (), body.get("finish"),
+                            bool(body.get("new_line")))}
 
     @app.patch("/api/decks/{deck_id}/cards/{card_id}")
     def decks_update_card(deck_id: int, card_id: int, body: dict = Body(...)):
@@ -589,6 +590,10 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
     @app.post("/api/decks/{deck_id}/add-missing")
     def decks_add_missing(deck_id: int, body: dict = Body(default={})):
         return {"added": _wrap(decks.add_missing, db, deck_id, body.get("card_ids"), str(body.get("location") or ""))}
+
+    @app.post("/api/decks/{deck_id}/cards/{card_id}/duplicate")
+    def decks_duplicate_line(deck_id: int, card_id: int):
+        return {"id": _wrap(decks.duplicate_line, db, deck_id, card_id)}
 
     @app.post("/api/decks/{deck_id}/cards/{card_id}/add-copy")
     def decks_add_copy(deck_id: int, card_id: int, body: dict = Body(default={})):

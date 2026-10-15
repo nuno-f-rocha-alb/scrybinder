@@ -129,7 +129,8 @@ def _migrate(db):
             db.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
     db.execute("CREATE INDEX IF NOT EXISTS cards_ill ON cards(illustration_id)")
     db.execute("DROP INDEX IF EXISTS deck_cards_key")  # replaced: the same card in two finishes are two rows
-    db.execute("CREATE UNIQUE INDEX IF NOT EXISTS deck_cards_key2 ON deck_cards(deck_id, oracle_id, COALESCE(scryfall_id, ''), COALESCE(finish, ''), board)")
+    db.execute("DROP INDEX IF EXISTS deck_cards_key2")  # a deck may have several lines of the same card (one per art)
+    db.execute("CREATE INDEX IF NOT EXISTS deck_cards_find ON deck_cards(deck_id, oracle_id)")
 
 
 def _fix_reversible(db):

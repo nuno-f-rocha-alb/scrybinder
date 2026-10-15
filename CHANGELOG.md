@@ -6,6 +6,7 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ### Added
 - Card details: "View details" (in the card menus of the decks, the collection, the Add page and a deck's card search) opens the card with its image, prices, rules text, printing, all its printings, legality in every format and its rulings (fetched from Scryfall the first time, then kept), with Prev / Next and the arrow keys.
+- Decks: several lines of the same card, each with its own printing (for example basic lands in different arts). "Separate line" in the add bar and "Add one as a new line" in the card menu create a line of its own instead of adding to the existing one.
 - Decks: a card now has a finish. Switch printing has a button per finish each printing comes in (Select, Select foil, Select etched), says how many of each finish you own, shows the card large when you point at it, and the deck shows the edition (set and number) and the finish of each card. Deck lists exported and imported keep both: `(SET) number` and `*F*` / `*E*` for foil and etched.
 
 ### Fixed
