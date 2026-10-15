@@ -21,6 +21,7 @@ Inside that folder:
 | `index/` | the visual index (vectors, `rows.db`, manifest) |
 | `gpu/` | the CUDA build of PyTorch, only if you enabled GPU acceleration in Settings (~2 GB; Remove GPU support deletes it) |
 | `captures/` | scan captures and `reads.json` (the unsaved scan list) |
+| `debug/` | the last 30 whole camera frames (a raw JPEG, the same with the detected card outline drawn, and the outline's corners), saved each time the camera captures a card and by *Save a debug frame* on the Scan page; for reports about cards that are not detected |
 | `trash/` | JSON copies of rows removed by bulk delete |
 | `app.log` | what the app does and every error, including those of background threads and the web server (rotated, 1 MB, 3 old copies) |
 | `crash.log` | the Python stack of every thread when the process dies from a native crash (a driver, a DLL); empty when nothing crashed |
