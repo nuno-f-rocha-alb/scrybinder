@@ -108,8 +108,8 @@ class Scanner:
             self.split_next = False
             self.beep += 1
             fin = self._finish_for(cands[0].get("finishes") if cands else None, "foil" if foil else "nonfoil")
-            same = None if foil or not pid else next((r for r in reversed(self.reads)
-                                                      if r["scryfall_id"] == pid and r["finish"] == fin), None)
+            last = self.reads[-1] if self.reads else None  # only the card right before: another card in between starts a new entry
+            same = last if last and not foil and pid and last["scryfall_id"] == pid and last["finish"] == fin else None
             if same:
                 same["qty"] += 1
             else:
@@ -192,11 +192,11 @@ class Scanner:
                 (self.dir / f"{sid}.jpg").unlink(missing_ok=True)
             return entry
         with self._lock:  # check and append in the same block: simultaneous captures (webcam) do not duplicate the entry
-            same = None if self.split_next or not predicted else next(
-                (p for p in reversed(self.pending) if p["predicted_id"] == predicted), None)
+            last = self.pending[-1] if self.pending else None  # only the card right before: another card in between starts a new entry
+            same = last if last and not self.split_next and predicted and last["predicted_id"] == predicted else None
             self.split_next = False
             self.beep += 1
-            if same:  # same printing already waiting: only the quantity goes up (a foil is opened with split_next)
+            if same:  # the same printing as the card right before: only the quantity goes up (a foil is opened with split_next)
                 same["qty"] += 1
             else:
                 self.pending.append(item)
