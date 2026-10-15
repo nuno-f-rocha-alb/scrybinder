@@ -162,8 +162,28 @@ def set_progress(db, location=None, q="", hide_empty=True, group=False) -> list[
 
 
 def locations(db) -> list[dict]:
+    """Every location with its number of cards: the ones in use and the ones made on purpose (0 cards while empty)."""
     return [dict(r) for r in db.execute(
-        "SELECT location, SUM(quantity) AS cards FROM collection GROUP BY location ORDER BY location")]
+        "SELECT location, SUM(quantity) AS cards FROM (SELECT location, quantity FROM collection UNION ALL SELECT name, 0 FROM locations)"
+        " GROUP BY location ORDER BY location")]
+
+
+def create_location(db, name) -> str:
+    """Make a location that can be empty, to move cards into later. Returns the name (trimmed)."""
+    name = name.strip() if isinstance(name, str) else ""
+    if not name or len(name) > 60:
+        raise ValueError("a location needs a name of up to 60 characters")
+    with db:
+        db.execute("INSERT OR IGNORE INTO locations VALUES (?)", (name,))
+    return name
+
+
+def delete_location(db, name: str) -> None:
+    """Remove a location made on purpose; a location that holds cards cannot be removed."""
+    if db.execute("SELECT 1 FROM collection WHERE location=?", (name,)).fetchone():
+        raise ValueError("that location still has cards: move them first")
+    with db:
+        db.execute("DELETE FROM locations WHERE name=?", (name,))
 
 
 BULK_FIELDS = {"finish", "condition", "language", "location", "altered", "signed", "misprint", "proxy", "notes",

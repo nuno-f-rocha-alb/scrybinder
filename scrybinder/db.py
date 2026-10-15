@@ -59,6 +59,7 @@ CREATE TABLE IF NOT EXISTS collection (
     UNIQUE (scryfall_id, finish, condition, language, location, altered, signed, misprint, proxy)
 );
 CREATE INDEX IF NOT EXISTS collection_loc ON collection(location);
+CREATE TABLE IF NOT EXISTS locations (name TEXT PRIMARY KEY);  -- locations made on purpose: they exist while empty
 
 CREATE TABLE IF NOT EXISTS sets (code TEXT PRIMARY KEY, name TEXT, icon_svg_uri TEXT, set_type TEXT, released_at TEXT);
 
