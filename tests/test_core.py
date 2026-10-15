@@ -446,3 +446,29 @@ def test_old_databases_get_their_reversible_cards_fixed_once(db):
     db.execute("DELETE FROM meta WHERE key='reversible_fixed'")
     dbmod._fix_reversible(db)
     assert db.execute("SELECT oracle_id FROM cards WHERE id='rev'").fetchone()[0] == "o-x"
+
+
+def test_card_details_and_cached_rulings(client, db, monkeypatch):
+    from datetime import datetime, timedelta, timezone
+    from scrybinder import carddetails, scryfall
+    client.get(f"/api/status?t={TOKEN}")
+    d = client.get("/api/cards/dfc-1/details").json()
+    assert d["set_code"] == "isd" and d["collector_number"] == "51" and d["finishes"] == ["nonfoil", "foil"] and d["owned"] == 0
+    assert isinstance(d["legalities"], dict) and d["name"].startswith("Delver")
+    assert client.get("/api/cards/nope/details").status_code == 404
+    calls = []
+    fake = lambda cid: calls.append(cid) or [{"published_at": "2011-01-01", "comment": "x", "source": "wotc"}]
+    assert carddetails.rulings(db, "dfc-1", fake)[0]["comment"] == "x"
+    assert carddetails.rulings(db, "dfc-1", fake) and calls == ["dfc-1"]  # the second time it comes from the cache
+    old = (datetime.now(timezone.utc) - timedelta(days=60)).isoformat()
+    db.execute("UPDATE rulings SET fetched=?", (old,))
+    def down(cid):
+        raise OSError("offline")
+    assert carddetails.rulings(db, "dfc-1", down)[0]["comment"] == "x"  # stale beats nothing when Scryfall cannot be reached
+    db.execute("DELETE FROM rulings")
+    with pytest.raises(OSError):
+        carddetails.rulings(db, "dfc-1", down)
+    monkeypatch.setattr(scryfall, "fetch_rulings", down)
+    assert client.get("/api/cards/dfc-1/rulings").status_code == 502
+    monkeypatch.setattr(scryfall, "fetch_rulings", fake)
+    assert client.get("/api/cards/dfc-1/rulings").json()[0]["source"] == "wotc"

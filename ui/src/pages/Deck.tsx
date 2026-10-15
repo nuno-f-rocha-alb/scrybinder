@@ -7,6 +7,7 @@ import { CardImg, FinishTag, Modal, cardmarketUrl, openExternal, scryfallUrl, us
 import { MenuItem, useContextMenu } from "../components/contextmenu";
 import PrintingDialog from "../components/printings";
 import DeckPicker from "../components/deckpicker";
+import CardDetails from "../components/carddetails";
 import { ManaCost, StatusBadge } from "../components/mana";
 import { GridControls, useCardGrid } from "../components/cardgrid";
 import { DeckView, useZoom } from "../components/deckviews";
@@ -64,7 +65,7 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
   const [sort, setSort] = useChoice<SortBy>("sort", "name", SORTS.map((x) => x.id));
   const [every, setEvery] = useChoice<"1" | "0">("every", "0", ["0", "1"]);
   const grid = useCardGrid();
-  const { zoom, close, onZoom, show } = useZoom();
+  const { zoom, close, onZoom } = useZoom();
   const [tab, setTab] = useState<"cards" | "stats">("cards");
   const [filter, setFilter] = useState<CardFilter | null>(null);
   const [showProblems, setShowProblems] = useState(false);
@@ -74,6 +75,7 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
   const [switchId, setSwitchId] = useState<number | null>(null);
   const [pickId, setPickId] = useState<number | null>(null);
   const [missingFor, setMissingFor] = useState<DeckCardT | null>(null);
+  const [detailsId, setDetailsId] = useState<number | null>(null);
   const [copyFor, setCopyFor] = useState<DeckCardT | null>(null);
   const menu = useContextMenu();
   const hovered = useRef<number | null>(null);  // the id of the card under the pointer or focus: the target of the Alt+number shortcuts
@@ -126,7 +128,7 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
     ...(c.scryfall_id ? [{ label: "Add this printing to the collection…", onSelect: () => setCopyFor(c) }] : []),
     { label: "Copies and tags…", onSelect: () => setAssignId(c.id) },
     "sep",
-    { label: "View details", onSelect: () => show(c) },
+    { label: "View details", onSelect: () => setDetailsId(c.id) },
     { label: "Copy card name", onSelect: () => navigator.clipboard.writeText(c.name).then(() => toast("Name copied")).catch(() => toast("Could not copy", true)) },
     { label: "Set as deck image", onSelect: () => { patchDeck({ cover_card_id: c.id }); toast("Deck image set"); } },
     ...(c.image_id ? ["sep" as const, { label: "Open on Scryfall", onSelect: () => openExternal(scryfallUrl(c.image_id!)) }] : []),
@@ -252,6 +254,11 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
         onDone={(n) => { setMissingFor(null); toast(`${n} ${n === 1 ? "copy" : "copies"} added to your collection`); reload(); }} />}
       {copyFor && <AddMissingDialog deckId={id} count={0} printing={{ cardId: copyFor.id, label: `${editionOf(copyFor)}${copyFor.finish === "foil" ? " · foil" : copyFor.finish === "etched" ? " · etched" : ""}` }} onClose={() => setCopyFor(null)}
         onDone={(n) => { setCopyFor(null); toast(`${n} ${n === 1 ? "copy" : "copies"} added to your collection`); reload(); }} />}
+      {detailsId !== null && (() => {
+        const i = deck.cards.findIndex((x) => x.id === detailsId), at = deck.cards[i];
+        const to = (k: number) => () => setDetailsId(deck.cards[k].id);
+        return at?.image_id ? <CardDetails printId={at.image_id} onClose={() => setDetailsId(null)} prev={i > 0 ? to(i - 1) : undefined} next={i < deck.cards.length - 1 ? to(i + 1) : undefined} /> : null;
+      })()}
       {switchId !== null && deck.cards.find((c) => c.id === switchId) && (() => { const c = deck.cards.find((x) => x.id === switchId)!;
         return <PrintingDialog deckId={id} oracleId={c.oracle_id} name={c.name} current={c.scryfall_id} currentFinish={c.finish} onClose={() => setSwitchId(null)}
           onPick={(sid, finish) => { setSwitchId(null); patchCard(c, { scryfall_id: sid, finish }); }} />; })()}
