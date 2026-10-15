@@ -472,3 +472,14 @@ def test_card_details_and_cached_rulings(client, db, monkeypatch):
     assert client.get("/api/cards/dfc-1/rulings").status_code == 502
     monkeypatch.setattr(scryfall, "fetch_rulings", fake)
     assert client.get("/api/cards/dfc-1/rulings").json()[0]["source"] == "wotc"
+
+
+def test_index_status_does_not_count_placeholder_images(client, db):
+    client.get(f"/api/status?t={TOKEN}")
+    before = client.get("/api/status").json()["index"]["eligible"]
+    assert before > 0
+    db.execute("UPDATE cards SET image_status='placeholder' WHERE id='dfc-1'")
+    db.execute("UPDATE card_faces SET image_normal='x' WHERE card_id='dfc-1'")  # it has an image URL, but Scryfall only has a placeholder
+    c2 = TestClient(create_app(db, token=TOKEN, allowed_hosts={"testserver"}))
+    c2.get(f"/api/status?t={TOKEN}")
+    assert c2.get("/api/status").json()["index"]["eligible"] < before
