@@ -4,6 +4,9 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Fixed
+- Card details of a deck: Prev / Next and the arrow keys follow the list as it is shown (its groups, sort and filter), not the order the cards are stored in.
+
 ## [0.6.1] — 2026-10-15
 
 ### Added

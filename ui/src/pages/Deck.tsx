@@ -260,9 +260,10 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
       {copyFor && <AddMissingDialog deckId={id} count={0} printing={{ cardId: copyFor.id, label: `${editionOf(copyFor)}${copyFor.finish === "foil" ? " · foil" : copyFor.finish === "etched" ? " · etched" : ""}` }} onClose={() => setCopyFor(null)}
         onDone={(n) => { setCopyFor(null); toast(`${n} ${n === 1 ? "copy" : "copies"} added to your collection`); reload(); }} />}
       {detailsId !== null && (() => {
-        const i = deck.cards.findIndex((x) => x.id === detailsId), at = deck.cards[i];
-        const to = (k: number) => () => setDetailsId(deck.cards[k].id);
-        return at?.image_id ? <CardDetails printId={at.image_id} onClose={() => setDetailsId(null)} prev={i > 0 ? to(i - 1) : undefined} next={i < deck.cards.length - 1 ? to(i + 1) : undefined} /> : null;
+        const order = groups.flatMap((g) => g.cards);  // Prev / Next follow the list as it is shown: its groups, sort and filter
+        const i = order.findIndex((x) => x.id === detailsId), at = deck.cards.find((x) => x.id === detailsId);
+        const to = (k: number) => () => setDetailsId(order[k].id);
+        return at?.image_id ? <CardDetails printId={at.image_id} onClose={() => setDetailsId(null)} prev={i > 0 ? to(i - 1) : undefined} next={i >= 0 && i < order.length - 1 ? to(i + 1) : undefined} /> : null;
       })()}
       {switchId !== null && deck.cards.find((c) => c.id === switchId) && (() => { const c = deck.cards.find((x) => x.id === switchId)!;
         return <PrintingDialog deckId={id} oracleId={c.oracle_id} name={c.name} current={c.scryfall_id} currentFinish={c.finish} onClose={() => setSwitchId(null)}
