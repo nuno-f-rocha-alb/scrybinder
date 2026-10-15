@@ -197,7 +197,7 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
         {tab === "stats" && (stats ? <StatsPanel stats={stats} active={filter} onFilter={pick} /> : <p className="text-mute">Loading…</p>)}
 
         {tab === "cards" && <>
-        <AddCards deck={deck} setPreview={setPreview} onAdd={(oracle_id, board) => act(api(`/decks/${id}/cards`, { method: "POST", body: JSON.stringify({ oracle_id, board }) }))} />
+        <AddCards deck={deck} setPreview={setPreview} toast={toast} onAdd={(oracle_id, board) => act(api(`/decks/${id}/cards`, { method: "POST", body: JSON.stringify({ oracle_id, board }) }))} />
 
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <label className="flex items-center gap-1.5 text-xs text-mute">View

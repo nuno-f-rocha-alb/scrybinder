@@ -290,7 +290,7 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
     @app.get("/api/cards/prints")
     def prints(oracle_id: str = "", name: str = "", deck: int | None = None):
         where, arg = ("oracle_id=?", oracle_id) if oracle_id else ("UPPER(name)=UPPER(?)", name)  # uses the cards_name_upper index
-        rows = db.execute(f"SELECT id, name, set_code, set_name, collector_number, released_at, rarity, finishes,"
+        rows = db.execute(f"SELECT id, oracle_id, name, set_code, set_name, collector_number, released_at, rarity, finishes,"
                           f" frame, full_art, border_color, promo_types, eur, eur_foil, eur_etched, lang, cardmarket_id,"
                           f" (SELECT COALESCE(SUM(quantity), 0) FROM collection WHERE scryfall_id=cards.id AND proxy=0) AS owned,"
                           f" (SELECT COALESCE(SUM(c.quantity), 0) - COALESCE(SUM((SELECT SUM(a.quantity) FROM deck_assignments a"
