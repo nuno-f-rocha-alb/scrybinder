@@ -621,3 +621,17 @@ def test_camera_waits_0_3_s_for_a_still_card(db, tmp_path):
     q = np.array([[100, 100], [400, 100], [400, 520], [100, 520]], np.float32)
     assert not s.update(q, 0.0) and not s.update(q, 0.25)  # too soon
     assert s.update(q, 0.31)                               # still for 0.3 s: fires
+
+def test_identify_reads_the_bottom_strip_once_alongside_the_name(db, monkeypatch):
+    from scrybinder.scan import identify as ident_mod
+    name = db.execute("SELECT name FROM cards WHERE digital=0 AND LENGTH(name) > 6 LIMIT 1").fetchone()[0]
+    calls = []
+
+    def fake_bottom(card):
+        calls.append(card)
+        return {"numbers": [], "tokens": [], "text": ""}
+
+    monkeypatch.setattr(ident_mod, "read_bottom", fake_bottom)
+    monkeypatch.setattr(ident_mod, "name_reads", lambda card: iter([(name, 95.0)]))
+    res = ident_mod.Identifier(db, use_visual=False).identify(np.zeros((880, 630, 3), np.uint8))
+    assert len(calls) == 1 and res["candidates"] and res["candidates"][0]["name"] == name
