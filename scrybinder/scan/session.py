@@ -52,7 +52,7 @@ def _topk(item: dict) -> str:
 
 
 class Scanner:
-    def __init__(self, db, captures_dir: Path | None = None, hold=0.4, debug_dir: Path | None = None):
+    def __init__(self, db, captures_dir: Path | None = None, hold=0.3, debug_dir: Path | None = None):
         self.db = db
         self.ident = Identifier(db)
         self.dir = captures_dir or DATA_DIR / "captures"
