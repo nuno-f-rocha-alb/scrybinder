@@ -4,6 +4,7 @@ import { api, eur, FINISH, LANGS } from "../api";
 import { DeckCard } from "../decks";
 import { Badge, Modal } from "./ui";
 import { StatusBadge } from "./mana";
+import PrintingDialog from "./printings";
 
 type Copy = {
   id: number; scryfall_id: string; quantity: number; finish: string; condition: string; language: string; location: string;
@@ -20,6 +21,7 @@ export default function AssignDialog({ deckId, card, onClose, onChanged }: { dec
   const [want, setWant] = useState<Record<number, number>>({});
   const [err, setErr] = useState("");
   const [tag, setTag] = useState("");
+  const [picking, setPicking] = useState(false);
   const proxy = card.tags.includes("proxy");
   const url = `/decks/${deckId}/cards/${card.id}`;
 
@@ -40,12 +42,22 @@ export default function AssignDialog({ deckId, card, onClose, onChanged }: { dec
   const patchTags = (tags: string[]) => api(url, { method: "PATCH", body: JSON.stringify({ tags }) }).then(() => onChanged()).catch((e) => setErr(e.message));
   const addTag = () => { const t = tag.trim().toLowerCase(); if (t && !card.tags.includes(t)) patchTags([...card.tags, t]); setTag(""); };
 
-  return (
+  const setPrinting = (scryfall_id: string) => api(url, { method: "PATCH", body: JSON.stringify({ scryfall_id }) })
+    .then(() => { setPicking(false); onChanged(); }).catch((e) => { setPicking(false); setErr(e.message); });
+  const other = card.scryfall_id && !rows.some((r) => r.scryfall_id === card.scryfall_id) ? rows[0] : undefined;  // a printing you own that the deck does not prefer
+
+  return picking ? <PrintingDialog deckId={deckId} oracleId={card.oracle_id} name={card.name} current={card.scryfall_id} onPick={setPrinting} onClose={() => setPicking(false)} /> : (
     <Modal title={`Copies and tags of ${card.name}`} onClose={onClose}>
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <h2 className="text-lg font-semibold">{card.name}</h2><StatusBadge status={card.status} />
+        <button className="btn-ghost !py-1 text-xs" onClick={() => setPicking(true)}>Switch printing…</button>
         <span className="ml-auto text-sm text-mute tabular-nums">The deck has {card.quantity} · {card.owned} owned</span>
       </div>
+
+      {other && <p className="mb-4 rounded-xl border border-dashed border-line p-3 text-sm text-mute">
+        You own another printing: <span className="uppercase">{other.set_code}</span> #{other.collector_number}.{" "}
+        <button className="text-accent hover:underline" onClick={() => setPrinting(other.scryfall_id)}>Use this printing</button>
+      </p>}
 
       <section aria-label="Tags" className="mb-5">
         <h3 className="mb-2 text-sm font-semibold">Tags</h3>
