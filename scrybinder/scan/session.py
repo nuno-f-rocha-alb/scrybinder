@@ -4,6 +4,7 @@ import logging
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import cv2
@@ -309,6 +310,7 @@ class Scanner:
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
         stab = Stability(hold=self.hold)
+        reader = ThreadPoolExecutor(max_workers=1)  # one read at a time, in the order of the captures: parallel reads could finish out of order
         frames = 0
         try:
             log.info("Camera %s opened: asked 1920x1080, got %sx%s, backend %s", index, cap.get(cv2.CAP_PROP_FRAME_WIDTH),
@@ -331,12 +333,14 @@ class Scanner:
                 self._preview = cv2.imencode(".jpg", cv2.resize(view, None, fx=0.5, fy=0.5), [cv2.IMWRITE_JPEG_QUALITY, 70])[1].tobytes()
                 if fire:
                     self.save_debug("fired", frame, quad)
-                    card = warp_card(frame, quad)  # OCR takes ~1 s: run it in another thread so the preview does not block
-                    threading.Thread(target=self.process, args=(card, "webcam"), kwargs={"warped": True, "live": True}, daemon=True).start()
+                    card = warp_card(frame, quad)  # OCR takes ~1 s: read it in the worker so the preview does not block
+                    reader.submit(self.process, card, "webcam", True, True).add_done_callback(
+                        lambda f: f.exception() and log.error("Reading a camera capture failed", exc_info=f.exception()))
         except Exception as e:  # a failure here used to end the thread without a word
             log.exception("Camera %s failed after %s frames", index, frames)
             self.message = f"The camera failed: {e}"
         finally:
+            reader.shutdown(wait=False, cancel_futures=True)
             cap.release()
             self._frame = self._quad = self._preview = None  # nothing to save or show once the camera is off (a restart must not show the last picture)
             log.info("Camera %s closed after %s frames", index, frames)

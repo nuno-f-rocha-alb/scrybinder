@@ -107,3 +107,66 @@ def test_the_preview_is_one_jpeg_per_request_not_a_stream(db):
     assert r.status_code == 200 and r.headers["content-type"] == "image/jpeg" and r.headers["cache-control"] == "no-store"
     assert r.content == b"\xff\xd8jpeg\xff\xd9"
     assert c.get("/api/scan/preview").status_code in (404, 405)  # the continuous stream is gone
+
+
+def test_camera_captures_are_read_in_the_order_they_were_taken(db, tmp_path, monkeypatch):
+    """A slow read of the first capture must not finish after the next ones (it used to: one thread per capture)."""
+    import time
+    done, shots = [], []
+
+    class Cap:
+        reads = 0
+
+        def __init__(self, *a):
+            pass
+
+        def isOpened(self):
+            return True
+
+        def set(self, *a):
+            pass
+
+        def get(self, p):
+            return 1280.0
+
+        def getBackendName(self):
+            return "FAKE"
+
+        def read(self):
+            Cap.reads += 1
+            if Cap.reads > 3:  # the three captures are in the queue: wait for them, then stop
+                for _ in range(100):
+                    if len(done) == 3:
+                        break
+                    time.sleep(0.05)
+                s._stop.set()
+            return True, frame()
+
+        def release(self):
+            pass
+
+    class Fires:
+        def __init__(self, hold=0.4):
+            self.fired = False
+
+        def update(self, quad, now, signature=None):
+            return True
+
+    def process(img, label, warped=False, live=False):
+        n = next(i for i, x in enumerate(shots) if x is img)
+        time.sleep(0.3 if n == 0 else 0)  # the first one is the slowest
+        done.append(n)
+
+    def warp(f, q):
+        img = frame()
+        shots.append(img)
+        return img
+
+    s = session.Scanner(db, tmp_path / "captures", debug_dir=tmp_path / "debug")
+    monkeypatch.setattr(session.cv2, "VideoCapture", Cap)
+    monkeypatch.setattr(session, "find_card", lambda f: QUAD)
+    monkeypatch.setattr(session, "Stability", Fires)
+    monkeypatch.setattr(session, "warp_card", warp)
+    monkeypatch.setattr(s, "process", process)
+    s._run_webcam(0)
+    assert done == [0, 1, 2]
