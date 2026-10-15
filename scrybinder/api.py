@@ -59,7 +59,8 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
             return _ix_cache["v"]
         st = ixmod.status(ixmod.index_dir(Embedder()))
         st["eligible"] = db.execute("SELECT COUNT(*) FROM card_faces f JOIN cards c ON c.id=f.card_id WHERE " + ixmod.SCOPE
-                                    + " AND f.image_normal IS NOT NULL").fetchone()[0]
+                                    + " AND f.image_normal IS NOT NULL AND COALESCE(c.image_status,'') NOT IN (?,?)",  # the ones add_rows can index
+                                    ixmod.SKIP_STATUS).fetchone()[0]
         _ix_cache.update(t=time.monotonic(), v=st)
         return st
 
