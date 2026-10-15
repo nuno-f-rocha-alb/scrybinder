@@ -12,7 +12,7 @@ import numpy as np
 from .. import collection
 from ..db import DATA_DIR
 from .identify import Identifier
-from .vision import Stability, card_from_photo, find_card, find_cards, inner_card, warp_card
+from .vision import Stability, card_from_photo, card_signature, find_card, find_cards, inner_card, warp_card
 
 log = logging.getLogger(__name__)
 
@@ -312,7 +312,7 @@ class Scanner:
                 frames += 1
                 quad = find_card(frame)
                 self._frame, self._quad = frame, quad
-                fire = stab.update(quad, time.monotonic())
+                fire = stab.update(quad, time.monotonic(), lambda: card_signature(frame, quad))
                 view = frame.copy()
                 if quad is not None:
                     cv2.polylines(view, [quad.astype(np.int32)], True, (90, 220, 120) if stab.fired else (60, 180, 255), 4)

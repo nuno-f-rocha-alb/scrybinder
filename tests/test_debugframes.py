@@ -69,7 +69,7 @@ def test_the_camera_saves_a_debug_frame_each_time_it_fires(db, tmp_path, monkeyp
         def __init__(self, hold=0.4):
             self.fired = False
 
-        def update(self, quad, now):
+        def update(self, quad, now, signature=None):
             return True
 
     s = session.Scanner(db, tmp_path / "captures", debug_dir=tmp_path / "debug")

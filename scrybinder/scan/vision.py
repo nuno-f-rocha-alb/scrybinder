@@ -271,10 +271,24 @@ def card_from_photo(img: np.ndarray) -> tuple[np.ndarray, bool]:
     return cv2.resize(img, (CARD_W, CARD_H), interpolation=cv2.INTER_CUBIC), False
 
 
+SIG_W, SIG_H = 32, 44
+SWAP_DIFF = 0.35  # mean difference of two signatures; measured on real frames: the same card 0.10, different cards 0.60 to 0.95
+
+
+def card_signature(frame: np.ndarray, quad: np.ndarray) -> np.ndarray:
+    """A tiny normalised picture of what is inside the outline (grey, 32x44, zero mean and unit variance): two views of the same card
+    are close whatever the light, two different cards are far apart. Used to tell a swapped card from the same one."""
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY) if frame.ndim == 3 else frame
+    dst = np.array([[0, 0], [SIG_W - 1, 0], [SIG_W - 1, SIG_H - 1], [0, SIG_H - 1]], np.float32)
+    small = cv2.warpPerspective(gray, cv2.getPerspectiveTransform(np.asarray(quad, np.float32), dst), (SIG_W, SIG_H), flags=cv2.INTER_AREA)
+    small = small.astype(np.float32)
+    return (small - small.mean()) / (small.std() + 1e-3)
+
+
 class Stability:
-    """Fires once when the quadrilateral stays still for `hold` s. It re-arms when the card leaves for `gap` s, or when a quadrilateral
-    of the same size as the captured card appears somewhere else (a card swapped without leaving the view). A different size is the
-    detector changing its mind (the text box, the lower half of the same card), not a new card."""
+    """Fires once when the quadrilateral stays still for `hold` s. It re-arms when the card leaves for `gap` s, or when the outline now
+    has the size of the captured card and holds a different picture (a card swapped in the same place or without leaving the view).
+    An outline of another size is the detector changing its mind (the text box, the lower half of the same card), not a new card."""
 
     def __init__(self, hold=0.4, tol=6.0, gap=0.8):
         self.hold, self.tol, self.gap = hold, tol, gap
@@ -282,9 +296,13 @@ class Stability:
         self.since = None       # since when it has been still
         self.fired = False      # this card was already captured
         self.fired_area = 0.0   # the area of the quadrilateral that was captured: every card has the same size
+        self.fired_sig = None   # what was inside it (card_signature)
+        self.new_sig = None     # a different picture seen in the same place, and since when: it must stop changing before it counts
+        self.new_since = None
         self.lost_at = None     # since when there has been no card
 
-    def update(self, quad, now: float) -> bool:
+    def update(self, quad, now: float, signature=None) -> bool:
+        """`signature` is a function returning card_signature of the current outline (computed only when it is needed)."""
         if quad is None:
             self.anchor = self.since = None
             self.lost_at = self.lost_at if self.lost_at is not None else now
@@ -298,7 +316,18 @@ class Stability:
                 self.fired = False  # big jump to a card-sized quadrilateral without the card leaving the field = card swapped
             self.anchor, self.since = quad.copy(), now
             return False
+        area = float(cv2.contourArea(quad))
+        if self.fired and signature is not None and self.fired_sig is not None and 0.75 <= area / max(self.fired_area, 1.0) <= 1.33:
+            sig = signature()
+            if float(np.abs(sig - self.fired_sig).mean()) <= SWAP_DIFF:
+                self.new_sig = self.new_since = None  # still the card that was captured
+            elif self.new_sig is None or float(np.abs(sig - self.new_sig).mean()) > SWAP_DIFF / 2:
+                self.new_sig, self.new_since = sig, now  # another picture, still changing (a hand, a card sliding in): wait
+            elif now - self.new_since >= self.hold:
+                self.fired = False  # the same place and size, another picture, and it stopped: the card was swapped without a gap
         if not self.fired and now - self.since >= self.hold:
-            self.fired, self.fired_area = True, float(cv2.contourArea(quad))
+            self.fired, self.fired_area = True, area
+            self.fired_sig = signature() if signature is not None else None
+            self.new_sig = self.new_since = None
             return True
         return False
