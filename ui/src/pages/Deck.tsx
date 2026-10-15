@@ -72,6 +72,8 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
   const [assignId, setAssignId] = useState<number | null>(null);
   const [importing, setImporting] = useState(false);
   const [adding, setAdding] = useState(false);
+  const [folded, setFolded] = useState<Set<string>>(() => { try { return new Set<string>(JSON.parse(localStorage.getItem("scrybinder.folded") ?? "[]")); } catch { return new Set<string>(); } });
+  const setFoldedKeys = (next: Set<string>) => { setFolded(next); try { localStorage.setItem("scrybinder.folded", JSON.stringify([...next])); } catch { /* no storage */ } };
   const [switchId, setSwitchId] = useState<number | null>(null);
   const [pickId, setPickId] = useState<number | null>(null);
   const [missingFor, setMissingFor] = useState<DeckCardT | null>(null);
@@ -148,6 +150,8 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
   const errors = legality?.problems.filter((p) => p.severity === "error").length ?? 0;
   const main = (stats?.totals.main ?? 0) + (stats?.totals.commander ?? 0);
   const cards = filter ? deck.cards.filter((c) => matchesFilter(c, filter)) : deck.cards;
+  const groups = groupCards(cards, group, sort);
+  const allFolded = groups.length > 0 && groups.every((g) => folded.has(g.key));
   const pick = (f: CardFilter) => {  // a click on a chart: show those cards, or clear the filter when it is already the one
     if (filter?.kind === f.kind && filter.value === f.value) setFilter(null);
     else { setFilter(f); setTab("cards"); }
@@ -217,6 +221,7 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
             </label>
           )}
           {(view === "grid" || view === "stacks" || view === "spoiler") && <GridControls g={grid} />}
+          <button className="btn-ghost !py-1 text-xs" title="Fold or unfold every group" onClick={() => setFoldedKeys(allFolded ? new Set() : new Set(groups.map((g) => g.key)))}>{allFolded ? "Unfold all" : "Fold all"}</button>
         </div>
 
         {filter && (
@@ -226,7 +231,7 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
           </div>
         )}
         {cards.length === 0 && <div className="rounded-2xl border border-dashed border-line p-12 text-center text-mute">{filter ? "No cards match this filter." : "This deck is empty. Search above to add cards."}</div>}
-        <DeckView groups={groupCards(cards, group, sort)} view={view} every={every === "1"} layout={grid} ctx={{ deckId: id, act, setPreview, onZoom, onAssign: (c) => setAssignId(c.id), hover: (c) => { hovered.current = c?.id ?? null; }, onMenu: (c, e) => menu.open(e, cardMenu(c)) }} />
+        <DeckView groups={groups} folded={folded} onToggle={(k) => { const n = new Set(folded); n.has(k) ? n.delete(k) : n.add(k); setFoldedKeys(n); }} view={view} every={every === "1"} layout={grid} ctx={{ deckId: id, act, setPreview, onZoom, onAssign: (c) => setAssignId(c.id), hover: (c) => { hovered.current = c?.id ?? null; }, onMenu: (c, e) => menu.open(e, cardMenu(c)) }} />
         </>}
 
 {/* the summary lives in a slot under the scrolling area (App), so it is always at the bottom of the window whatever the cards */}
