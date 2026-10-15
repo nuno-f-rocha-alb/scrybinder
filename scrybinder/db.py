@@ -129,6 +129,17 @@ def _migrate(db):
     db.execute("CREATE INDEX IF NOT EXISTS deck_cards_find ON deck_cards(deck_id, oracle_id)")
 
 
+def _fix_reversible(db):
+    """Reversible cards were stored without an oracle_id, so no printing list found them. Once, give them the oracle_id of the card
+    named like their first face (a later bulk import does it from the faces)."""
+    if db.execute("SELECT 1 FROM meta WHERE key='reversible_fixed'").fetchone():
+        return
+    with db:
+        db.execute("UPDATE cards SET oracle_id = (SELECT k.oracle_id FROM cards k WHERE UPPER(k.name) = UPPER(substr(cards.name, 1, instr(cards.name, ' // ') - 1))"
+                   " AND k.oracle_id IS NOT NULL LIMIT 1) WHERE oracle_id IS NULL AND layout = 'reversible_card' AND instr(name, ' // ') > 0")
+        db.execute("INSERT OR REPLACE INTO meta VALUES ('reversible_fixed', '1')")
+
+
 def _adopt_legacy_db(path: Path):
     """The project used to be called Cardex: keep an existing collection by renaming its database files."""
     old = path.with_name("cardex.db")
@@ -152,4 +163,5 @@ def connect(path: Path | str | None = None) -> sqlite3.Connection:
     db.execute("PRAGMA journal_mode=WAL")
     db.executescript(SCHEMA)
     _migrate(db)
+    _fix_reversible(db)
     return db

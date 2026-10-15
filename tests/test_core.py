@@ -418,3 +418,31 @@ def test_import_route_formats(client):
     client.get(f"/api/status?t={TOKEN}")
     assert client.post("/api/import/nope", content=b"x").status_code == 404
     assert client.post("/api/import/moxfield?location=Z", content=MOX.encode()).json()["cards"] == 3
+
+
+def test_reversible_cards_belong_to_the_card_of_their_first_face(db, tmp_path):
+    """Scryfall gives a reversible card no oracle_id of its own (only its faces have one): it must still be a printing of that card."""
+    import json
+    from scrybinder import scryfall
+    face = {"name": "Blood Crypt", "oracle_id": "o-bc", "oracle_text": "Pay 2 life.", "type_line": "Land — Swamp Mountain", "mana_cost": "",
+            "image_uris": {"small": "s", "normal": "n"}}
+    card = lambda i, n: {"id": i, "oracle_id": "o-bc", "name": "Blood Crypt", "set": "xxx", "set_name": "X", "collector_number": n, "released_at": "2026-01-01",
+                         "rarity": "rare", "layout": "normal", "lang": "en", "finishes": ["nonfoil"], "type_line": "Land — Swamp Mountain", "oracle_text": "Pay 2 life.", "prices": {}}
+    rev = {**card("rev-1", "349"), "layout": "reversible_card", "name": "Blood Crypt // Blood Crypt", "type_line": "Land — Swamp Mountain // Land — Swamp Mountain",
+           "card_faces": [face, face]}
+    del rev["oracle_id"]
+    f = tmp_path / "b.json"
+    f.write_text(json.dumps([card("n-1", "262"), rev]), encoding="utf-8")
+    scryfall.import_bulk(db, f)
+    assert db.execute("SELECT oracle_id FROM cards WHERE id='rev-1'").fetchone()[0] == "o-bc"
+    assert db.execute("SELECT name FROM oracle_cards WHERE oracle_id='o-bc'").fetchone()[0] == "Blood Crypt"  # not "Blood Crypt // Blood Crypt"
+    assert {r[0] for r in db.execute("SELECT id FROM cards WHERE oracle_id='o-bc'")} == {"n-1", "rev-1"}
+
+
+def test_old_databases_get_their_reversible_cards_fixed_once(db):
+    from scrybinder import db as dbmod
+    db.execute("INSERT INTO cards (id, oracle_id, name, layout, digital) VALUES ('base', 'o-x', 'Xyz', 'normal', 0)")
+    db.execute("INSERT INTO cards (id, oracle_id, name, layout, digital) VALUES ('rev', NULL, 'Xyz // Xyz', 'reversible_card', 0)")
+    db.execute("DELETE FROM meta WHERE key='reversible_fixed'")
+    dbmod._fix_reversible(db)
+    assert db.execute("SELECT oracle_id FROM cards WHERE id='rev'").fetchone()[0] == "o-x"
