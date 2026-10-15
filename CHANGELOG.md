@@ -4,6 +4,15 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Added
+- Log files in the data folder: `app.log` (what the app does and every exception, including those of background threads and the web server) and `crash.log` (the Python stack of every thread when the process dies from a native crash). The camera logs when it opens, its first frame and why it stops.
+- *Save a debug frame* on Scan → Camera, and every capture of the camera, save the whole frame with the outline the app found in `debug/` (the last 30 are kept), for reports about cards that are not detected.
+
+### Fixed
+- The live camera picture is no longer a continuous stream: in the installed app it went black while cards were still being read, and the page crashed when the camera was stopped.
+- A card standing in a card dock is no longer captured again and again when the detector flips between the whole card and a part of it, and a card swapped in the same place is now read (the capture compares what is inside the outline).
+- In the scan list, only identical cards in a row add up; a card read again after others is a new line instead of changing an entry far up the list. Identical lines still meet when the list goes into the collection. The line that just changed is outlined for a moment.
+
 ## [0.5.0] — 2026-10-13
 
 ### Added
