@@ -306,3 +306,20 @@ def test_a_deck_card_shows_the_printing_and_finish_of_its_assigned_copies(db):
     assert got["image_id"] == sid and got["assignments"] == [{"collection_id": row, "quantity": 2}, {"collection_id": foil, "quantity": 1}]
     decks.assign(db, d1, c, [])  # nothing assigned: nothing to show again
     assert _card(db, d1, c)["owned_prints"] == []
+
+def test_default_printing_and_filling_the_lines_without_one(db):
+    oid, sid, row, d1, d2 = _setup(db, qty=2)
+    cols = [r[1] for r in db.execute("PRAGMA table_info(cards)")]  # a second printing, cheaper than the one you own
+    db.execute(f"INSERT INTO cards ({','.join(cols)}) SELECT {','.join(repr('cheap') if k == 'id' else k for k in cols)} FROM cards WHERE id=?", (sid,))
+    db.execute("UPDATE cards SET eur=0.01 WHERE id='cheap'")
+    assert decks.default_printing(db, oid) == (sid, "nonfoil")  # you own it: that one, whatever it costs
+    other = db.execute("SELECT id, oracle_id FROM cards WHERE oracle_id != ? AND image_small IS NOT NULL LIMIT 1", (oid,)).fetchone()
+    assert decks.default_printing(db, other["oracle_id"])[0] == other["id"]  # not owned: the cheapest (the only one here)
+    assert decks.default_printing(db, "no-such-card") == (None, None)
+    a, b = decks.add_card(db, d1, oid, 1), decks.add_card(db, d1, other["oracle_id"], 1)  # two lines without a printing
+    foil = collection.add(db, scryfall_id="cheap", quantity=1, finish="foil")
+    decks.assign(db, d1, a, [{"collection_id": foil, "quantity": 1}])  # a is assigned a foil copy of the cheap printing
+    assert decks.fill_printings(db, d1) == 2
+    assert (_card(db, d1, a)["scryfall_id"], _card(db, d1, a)["finish"]) == ("cheap", "foil")  # it follows its assigned copy
+    assert _card(db, d1, b)["scryfall_id"] == other["id"]
+    assert decks.fill_printings(db, d1) == 0  # nothing left to fill

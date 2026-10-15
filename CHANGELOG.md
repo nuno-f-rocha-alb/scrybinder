@@ -4,6 +4,9 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Added
+- Decks: every card gets an edition by default: the one you own (most copies), else the cheapest. It applies to cards added from the search bar and to imported list lines without a set, and "Set editions" in the deck header fills the lines that have none yet (the printing of the copies assigned to them first).
+
 ### Fixed
 - Decks: a card follows the copies of your collection assigned to it: it shows their printing and finish (for example a foil you own) and their art when the deck has no printing chosen, instead of only what was picked on the line.
 

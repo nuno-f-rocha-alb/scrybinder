@@ -259,6 +259,35 @@ def add_card(db, deck_id: int, oracle_id: str, quantity: int = 1, board: str = "
     return cid
 
 
+def default_printing(db, oracle_id: str) -> tuple[str | None, str | None]:
+    """The printing (and finish) a card gets when none is chosen: the one you own most copies of (in your finish), else the cheapest
+    printing, newest first on a tie. (None, None) when the card has no usable printing."""
+    own = db.execute("SELECT c.scryfall_id, c.finish FROM collection c JOIN cards k ON k.id = c.scryfall_id"
+                     " WHERE k.oracle_id=? AND c.proxy=0 ORDER BY c.quantity DESC, k.released_at DESC, c.id LIMIT 1", (oracle_id,)).fetchone()
+    if own:
+        return own["scryfall_id"], own["finish"]
+    p = db.execute("SELECT id, finishes FROM cards WHERE oracle_id=? AND digital=0 AND image_small IS NOT NULL"
+                   " ORDER BY COALESCE(eur, eur_foil, eur_etched, 1e9), released_at DESC LIMIT 1", (oracle_id,)).fetchone()
+    return (p["id"], _first_finish(p["finishes"])) if p else (None, None)
+
+
+def fill_printings(db, deck_id: int) -> int:
+    """Give every line without a printing one: that of the copies assigned to it, else the default. Returns the lines changed."""
+    _deck(db, deck_id)
+    n = 0
+    for c in cards(db, deck_id):
+        if c["scryfall_id"]:
+            continue
+        if c["owned_prints"]:
+            sid, fin = c["owned_prints"][0]["scryfall_id"], c["owned_prints"][0]["finish"]
+        else:
+            sid, fin = default_printing(db, c["oracle_id"])
+        if sid:
+            update_card(db, deck_id, c["id"], scryfall_id=sid, finish=fin)
+            n += 1
+    return n
+
+
 def duplicate_line(db, deck_id: int, card_id: int) -> int:
     """One more copy of a card as a line of its own (same printing, finish, board and tags): the deck gets one card more, and the
     new line can take another printing."""
