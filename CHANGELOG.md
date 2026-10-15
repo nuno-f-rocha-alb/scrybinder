@@ -6,6 +6,7 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ### Fixed
 - Decks: a card follows the copies of your collection assigned to it: it shows their printing and finish (for example a foil you own) and their art when the deck has no printing chosen, instead of only what was picked on the line.
+- Settings: the visual index no longer counts, as printings still to index, the ones Scryfall only has a placeholder image for (they can never be indexed).
 
 ## [0.6.1] — 2026-10-15
 
