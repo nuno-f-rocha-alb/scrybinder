@@ -193,6 +193,7 @@ Known limits: Room/split cards (the artwork box does not exist), very strong hol
 |---|---|
 | **Building the visual index looks stuck** (the counter stays at 2000 or so) | On a CPU, computing the vectors of one block of 2,048 faces takes about 13 minutes (after its download). Newer versions show "computing vectors…" and the percentage. Try **Build pilot index** instead of the full one, or enable the GPU. Stop works and the work is kept in blocks. |
 | Windows says the app is from an unknown publisher | The builds are not code-signed. *More info → Run anyway*; compare the file's hash with `SHA256SUMS`. |
+| The app closes or misbehaves | It writes `app.log` (errors and what the camera did) and `crash.log` (the stack when the process dies from a native crash) in the data folder ([where](docs/DATA.md)). Attach them when you report a problem. |
 | Scan reads names but never uses the artwork | The visual index is not built (or PyTorch is missing in a source build). *Settings → Visual index*. |
 | **GPU acceleration** is not offered | It needs the installed Windows app, an NVIDIA GPU and a driver with CUDA 12.8 or newer. From source use `uv sync --extra vision-cuda`. |
 | Settings says PyTorch **fell back to the CPU** | The GPU build is installed but CUDA did not start (often a driver problem). Update the NVIDIA driver, or press *Remove GPU support*, or start with `SCRYBINDER_NO_GPU=1`. |

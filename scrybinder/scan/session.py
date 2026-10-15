@@ -1,5 +1,6 @@
 """Scan session: pending queue, sources (photos / folder / webcam), the temporary read list, confirmation and logging."""
 import json
+import logging
 import sys
 import threading
 import time
@@ -12,6 +13,8 @@ from .. import collection
 from ..db import DATA_DIR
 from .identify import Identifier
 from .vision import Stability, card_from_photo, find_card, find_cards, inner_card, warp_card
+
+log = logging.getLogger(__name__)
 
 IMG_EXT = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 MAX_SIDE_PAGE = 4500  # a page holds up to 9 cards: more pixels are needed for each one
@@ -285,17 +288,25 @@ class Scanner:
     def _run_webcam(self, index: int):
         cap = cv2.VideoCapture(index, cv2.CAP_DSHOW) if sys.platform == "win32" else cv2.VideoCapture(index)  # DirectShow is Windows-only
         if not cap.isOpened():
+            log.warning("Could not open camera %s", index)
             self.message = f"Could not open camera {index}."
             return
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
         stab = Stability(hold=self.hold)
+        frames = 0
         try:
+            log.info("Camera %s opened: asked 1920x1080, got %sx%s, backend %s", index, cap.get(cv2.CAP_PROP_FRAME_WIDTH),
+                     cap.get(cv2.CAP_PROP_FRAME_HEIGHT), cap.getBackendName())
             while not self._stop.is_set():
                 ok, frame = cap.read()
                 if not ok:
+                    log.warning("Camera %s stopped sending frames after %s frames", index, frames)
                     self.message = "The camera stopped sending frames."
                     break
+                if frames == 0:
+                    log.info("Camera %s first frame: shape %s, dtype %s", index, frame.shape, frame.dtype)
+                frames += 1
                 quad = find_card(frame)
                 fire = stab.update(quad, time.monotonic())
                 view = frame.copy()
@@ -305,8 +316,12 @@ class Scanner:
                 if fire:
                     card = warp_card(frame, quad)  # OCR takes ~1 s: run it in another thread so the preview does not block
                     threading.Thread(target=self.process, args=(card, "webcam", True), daemon=True).start()
+        except Exception as e:  # a failure here used to end the thread without a word
+            log.exception("Camera %s failed after %s frames", index, frames)
+            self.message = f"The camera failed: {e}"
         finally:
             cap.release()
+            log.info("Camera %s closed after %s frames", index, frames)
 
     def preview_jpeg(self) -> bytes | None:
         return self._preview
