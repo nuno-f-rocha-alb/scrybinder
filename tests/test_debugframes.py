@@ -69,7 +69,7 @@ def test_the_camera_saves_a_debug_frame_each_time_it_fires(db, tmp_path, monkeyp
         def __init__(self, hold=0.4):
             self.fired = False
 
-        def update(self, quad, now):
+        def update(self, quad, now, signature=None):
             return True
 
     s = session.Scanner(db, tmp_path / "captures", debug_dir=tmp_path / "debug")
@@ -82,6 +82,7 @@ def test_the_camera_saves_a_debug_frame_each_time_it_fires(db, tmp_path, monkeyp
     names = [p.name for p in (tmp_path / "debug").glob("*-fired.jpg")]
     assert len(names) >= 1
     assert s._frame is None and s.save_debug("manual") is None  # the camera is off: nothing to save
+    assert s.preview_jpeg() is None  # and no stale picture for the next start
 
 
 def test_debug_frame_route(db, tmp_path):
@@ -94,3 +95,15 @@ def test_debug_frame_route(db, tmp_path):
     s._frame, s._quad = frame(), QUAD
     r = c.post("/api/scan/debug-frame").json()
     assert r["path"].endswith("-manual.jpg") and r["folder"] == str(tmp_path / "debug")
+
+
+def test_the_preview_is_one_jpeg_per_request_not_a_stream(db):
+    app = create_app(db, token="t", allowed_hosts={"testserver"})
+    c = TestClient(app)
+    c.get("/api/status?t=t")
+    assert c.get("/api/scan/frame").status_code == 404  # no camera picture yet
+    app.state.scanner._preview = b"\xff\xd8jpeg\xff\xd9"
+    r = c.get("/api/scan/frame")
+    assert r.status_code == 200 and r.headers["content-type"] == "image/jpeg" and r.headers["cache-control"] == "no-store"
+    assert r.content == b"\xff\xd8jpeg\xff\xd9"
+    assert c.get("/api/scan/preview").status_code in (404, 405)  # the continuous stream is gone

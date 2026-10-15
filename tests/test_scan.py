@@ -64,6 +64,56 @@ def test_stability_swap_without_leaving_view():
     s.update(b, 0.5); assert s.update(b, 0.9)
 
 
+def test_stability_does_not_fire_again_when_the_detector_flips_between_shapes():
+    """A card in a dock: the outline found jumps between the whole card and a rectangle inside it. That is not a new card."""
+    s = vision.Stability(hold=0.4)
+    whole = np.array([[100, 100], [400, 100], [400, 520], [100, 520]], np.float32)       # 300 x 420
+    lower = np.array([[100, 280], [400, 280], [400, 520], [100, 520]], np.float32)       # 300 x 240: the lower half
+    text = np.array([[130, 330], [370, 330], [370, 480], [130, 480]], np.float32)        # the text box
+    s.update(whole, 0.0)
+    assert s.update(whole, 0.5)
+    fired = [s.update(q, 1.0 + 0.1 * i) for i, q in enumerate([lower, text, whole, lower, text, whole] * 6)]
+    assert not any(fired)  # 3.6 s of flipping and it never captures the same card again
+    s.update(None, 5.0)
+    s.update(None, 5.5)
+    assert not s.update(whole, 5.6)  # a flicker shorter than the gap does not re-arm either
+    s.update(None, 6.0)
+    s.update(None, 6.9)  # the card really left
+    assert not s.update(whole, 7.0) and s.update(whole, 7.5)
+
+
+def _picture(seed):
+    """A card-like texture in a frame: structured noise, different for every seed."""
+    rng = np.random.RandomState(seed)
+    tex = cv2.GaussianBlur(rng.randint(0, 255, (60, 43), np.uint8), (5, 5), 0)
+    frame = np.full((720, 1280, 3), 120, np.uint8)
+    frame[100:520, 100:400] = cv2.cvtColor(cv2.resize(tex, (300, 420)), cv2.COLOR_GRAY2BGR)
+    return frame
+
+
+def test_card_signature_tells_the_same_card_from_another_whatever_the_light():
+    quad = np.array([[100, 100], [400, 100], [400, 520], [100, 520]], np.float32)
+    a, b = _picture(1), _picture(2)
+    same = vision.card_signature(np.clip(a.astype(np.float32) * 1.3 + 15, 0, 255).astype(np.uint8), quad)  # brighter and more contrast
+    assert np.abs(vision.card_signature(a, quad) - same).mean() < vision.SWAP_DIFF / 2
+    assert np.abs(vision.card_signature(a, quad) - vision.card_signature(b, quad)).mean() > 2 * vision.SWAP_DIFF
+
+
+def test_stability_a_card_swapped_in_the_same_place_fires_once_it_stops_moving():
+    quad = np.array([[100, 100], [400, 100], [400, 520], [100, 520]], np.float32)
+    sig = {n: (lambda f=_picture(n): vision.card_signature(f, quad)) for n in (1, 2, 3)}
+    s = vision.Stability(hold=0.4)
+    s.update(quad, 0.0, sig[1])
+    assert s.update(quad, 0.5, sig[1])                                                # card 1
+    assert not any(s.update(quad, 0.6 + 0.1 * i, sig[1]) for i in range(10))          # still card 1: nothing
+    # the new card is being slid in: the picture changes every frame, nothing is captured
+    assert not any(s.update(quad, 2.0 + 0.1 * i, sig[2 + i % 2]) for i in range(10))
+    # it stops: after the hold it is captured, once
+    fired = [s.update(quad, 3.0 + 0.1 * i, sig[2]) for i in range(12)]
+    assert fired.count(True) == 1 and fired.index(True) >= 4                          # not before ~0.4 s of the new picture
+    assert not any(s.update(quad, 4.5 + 0.1 * i, sig[2]) for i in range(10))          # and not again
+
+
 def test_parse_bottom():
     p = identify.parse_bottom("103/342 R\nC15 • EN\n")
     assert p["numbers"] == ["103"] and "C15" in p["tokens"]

@@ -10,7 +10,7 @@ from pathlib import Path
 
 from fastapi import Body, FastAPI, HTTPException, Request
 from fastapi.concurrency import run_in_threadpool
-from fastapi.responses import FileResponse, JSONResponse, Response, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 import time
@@ -20,7 +20,6 @@ from .scan.session import MAX_SIDE, MAX_SIDE_PAGE, Scanner, decode
 
 UI_DIST = Path(__file__).resolve().parent.parent / "ui" / "dist"
 COOKIE = "scrybinder_session"
-CRLF = b"\r\n"
 
 
 def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None = None, auto_bulk: bool = False) -> FastAPI:
@@ -394,15 +393,14 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
             raise HTTPException(409, "start the camera first: there is no frame yet")
         return {"path": str(path), "folder": str(path.parent)}
 
-    @app.get("/api/scan/preview")
-    def scan_preview():
-        def gen():
-            while scanner.state()["running"]:
-                jpg = scanner.preview_jpeg()
-                if jpg:
-                    yield b"--f" + CRLF + b"Content-Type: image/jpeg" + CRLF + CRLF + jpg + CRLF
-                time.sleep(0.1)
-        return StreamingResponse(gen(), media_type="multipart/x-mixed-replace; boundary=f")
+    @app.get("/api/scan/frame")
+    def scan_frame():
+        """The latest camera frame as one JPEG. The page asks for it a few times a second: a continuous multipart stream in an
+        <img> crashed the page of the packaged app (WebView2, STATUS_BREAKPOINT) when the camera was stopped."""
+        jpg = scanner.preview_jpeg()
+        if not jpg:
+            raise HTTPException(404)
+        return Response(jpg, media_type="image/jpeg", headers={"Cache-Control": "no-store"})
 
     @app.get("/api/scan/capture/{pid}")
     def scan_capture(pid: int):
