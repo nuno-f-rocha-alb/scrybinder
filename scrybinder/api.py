@@ -291,7 +291,8 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
     def prints(oracle_id: str = "", name: str = ""):
         where, arg = ("oracle_id=?", oracle_id) if oracle_id else ("UPPER(name)=UPPER(?)", name)  # uses the cards_name_upper index
         rows = db.execute(f"SELECT id, name, set_code, set_name, collector_number, released_at, rarity, finishes,"
-                          f" frame, full_art, border_color, promo_types, eur, eur_foil, eur_etched, lang, cardmarket_id FROM cards"
+                          f" frame, full_art, border_color, promo_types, eur, eur_foil, eur_etched, lang, cardmarket_id,"
+                          f" (SELECT COALESCE(SUM(quantity), 0) FROM collection WHERE scryfall_id=cards.id AND proxy=0) AS owned FROM cards"
                           f" WHERE {where} AND digital=0 ORDER BY released_at DESC", (arg,))
         return [dict(r) for r in rows]
 
