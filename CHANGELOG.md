@@ -4,6 +4,10 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Added
+- Logs: every line of `scrybinder.log` (what the app prints: the web server, libraries) and a line at the start and at the normal end of each run in `crash.log` now have the time, like `app.log`. The "Loading weights" progress bars of the visual model are gone from the log. `app.log` now also says when the visual model is loaded (and how long it took), when the visual index opens or why it could not (with the full error), and when an index build starts, ends or fails.
+- A visual index that could not be opened (for example a module that could not be read right after an update) is tried again, up to three times 30 seconds apart, instead of leaving the scan on OCR until the app is restarted.
+
 ### Fixed
 - The results of the deck's add-cards bar can be closed: Escape, a click outside the bar or the X hide them (they come back when you search again or focus the box). With the bar fixed at the top they stayed over the cards.
 - The right-click menu ignores a stray event (a second context-menu event, a scroll or a focus change) in the first instants after it opens, instead of closing; what it ignored, and why it closed, is written to `app.log` with the time, to find out why it closed by itself on some cards. A compact-view row keeps its height when the − / + buttons appear.

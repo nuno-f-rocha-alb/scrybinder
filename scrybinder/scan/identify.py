@@ -1,11 +1,12 @@
 """OCR (Tesseract) of the rectified card + printing identification. With the visual index the artwork picks the
 illustrations and card + OCR rank the printings; without it, it falls back to OCR-only matching."""
+import logging
 import os
 import re
 import subprocess
 import sys
 import threading
-import traceback
+import time
 from pathlib import Path
 
 import cv2
@@ -168,24 +169,36 @@ class Identifier:
         self._use_visual = use_visual
         self._vis = None
         self._vis_tried = False
+        self._vis_fails, self._vis_retry_at = 0, 0.0  # a failed open (not "there is no index") is tried again a few times, 30 s apart
         self._vis_lock = threading.Lock()
         self._sets = None
 
     def reset_vis(self):
         """Forget the cached index decision (e.g. after building it from Settings) so the next scan reopens it."""
         with self._vis_lock:
-            self._vis, self._vis_tried = None, False
+            self._vis, self._vis_tried, self._vis_fails = None, False, 0
 
     def vis(self):
         """The visual index if it exists and the `vision` extra is installed; None = OCR-only mode."""
         with self._vis_lock:  # concurrent threads wait for the first open instead of falling back to OCR-only
-            if self._use_visual and not self._vis_tried:
+            retry = self._vis is None and 0 < self._vis_fails < 3 and time.monotonic() >= self._vis_retry_at
+            if self._use_visual and (not self._vis_tried or retry):
+                log = logging.getLogger("scrybinder.scan")
                 try:
                     self._vis = visual.Visual.try_open(db=self.db)
                     if self._vis:
+                        t0 = time.monotonic()
                         self._vis.warm()
+                        log.info("Visual index opened in %.1f s", time.monotonic() - t0)
+                        self._vis_fails = 0
+                    else:
+                        log.info("No visual index: scanning by OCR only")
                 except Exception as e:  # noqa: BLE001 — any model/GPU failure must not stop OCR scanning
-                    traceback.print_exc()  # includes the original cause (e.g. a missing module in the packaged app)
+                    self._vis_fails += 1
+                    self._vis_retry_at = time.monotonic() + 30
+                    again = "; it will be tried again" if self._vis_fails < 3 else ""
+                    # the original cause too (e.g. a module that could not be read from the packaged app), with the time, in app.log
+                    log.error("Visual index unavailable, OCR only (attempt %d)%s: %r", self._vis_fails, again, e, exc_info=True)
                     print(f"Visual index unavailable, OCR only: {e!r}", file=sys.stderr, flush=True)
                     self._vis = None
                 self._vis_tried = True
