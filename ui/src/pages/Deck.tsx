@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { IconAlertTriangle, IconArrowLeft, IconBox, IconCheck, IconCopy, IconDownload, IconPlus, IconTrash, IconUpload, IconX } from "@tabler/icons-react";
+import { IconAlertTriangle, IconArrowLeft, IconBox, IconCheck, IconCopy, IconDownload, IconPlus, IconStack2, IconTrash, IconUpload, IconX } from "@tabler/icons-react";
 import { api, eur, qs } from "../api";
 import { BOARDS, BOARD_LABEL, Board, CardFilter, Deck as DeckT, DeckCard as DeckCardT, DeckStats, editionOf, FORMATS, Format, GROUPS, GroupBy, Legality, OracleRow, Preview, SORTS, SortBy, VIEWS, View, groupCards, matchesFilter, resultPreview, toPreview } from "../decks";
 import { CardImg, FinishTag, Modal, cardmarketUrl, openExternal, scryfallUrl, useToast } from "../components/ui";
@@ -111,6 +111,7 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
   if (err && !deck) return <div><button className="btn-ghost mb-4" onClick={onBack}><IconArrowLeft className="size-4" />Decks</button><p className="text-danger">{err}</p></div>;
   if (!deck) return <p className="text-mute">Loading…</p>;
   const statusSlot = document.getElementById("status-root");
+  const noPrinting = deck.cards.filter((c) => !c.scryfall_id).length;  // lines that have no edition yet
   const missingCount = deck.cards.reduce((n, c) => n + (c.board === "maybe" ? 0 : c.missing), 0);
 
   const cardMenu = (c: DeckCardT): MenuItem[] => [
@@ -175,6 +176,10 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
             onClick={() => api<{ assigned: number }>(`/decks/${id}/assign-free`, { method: "POST" }).then((r) => { toast(r.assigned ? `Assigned ${r.assigned} ${r.assigned === 1 ? "copy" : "copies"}` : "No free copies to assign"); reload(); }).catch((e) => toast(e.message, true))}>
             <IconBox className="size-4" />Assign free copies
           </button>
+          {noPrinting > 0 && <button className="btn-ghost" title="Give every card without an edition one: that of the copies assigned to it, else the one you own, else the cheapest"
+            onClick={() => api<{ filled: number }>(`/decks/${id}/fill-printings`, { method: "POST" }).then((r) => { toast(`${r.filled} ${r.filled === 1 ? "card" : "cards"} got an edition`); reload(); }).catch((e) => toast(e.message, true))}>
+            <IconStack2 className="size-4" />Set editions ({noPrinting})
+          </button>}
           {missingCount > 0 && <button className="btn-ghost" title="Add the copies you are missing to your collection (not the proxies)" onClick={() => setAdding(true)}>
             <IconPlus className="size-4" />Add missing to collection
           </button>}

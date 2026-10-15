@@ -293,3 +293,33 @@ def test_a_card_can_have_several_lines_each_with_its_own_printing(db):
     assert _card(db, d1, c)["quantity"] == 4 and not any(x["id"] == b for x in decks.get(db, d1)["cards"])
     with pytest.raises(KeyError):
         decks.duplicate_line(db, d2, a)
+
+
+def test_a_deck_card_shows_the_printing_and_finish_of_its_assigned_copies(db):
+    oid, sid, row, d1, d2 = _setup(db, qty=2)
+    foil = collection.add(db, scryfall_id=sid, quantity=1, finish="foil")
+    c = decks.add_card(db, d1, oid, 3)  # no printing chosen
+    assert _card(db, d1, c)["owned_prints"] == []
+    decks.assign(db, d1, c, [{"collection_id": row, "quantity": 2}, {"collection_id": foil, "quantity": 1}])
+    got = _card(db, d1, c)
+    assert [(p["scryfall_id"], p["finish"], p["quantity"]) for p in got["owned_prints"]] == [(sid, "nonfoil", 2), (sid, "foil", 1)]  # the most copies first
+    assert got["image_id"] == sid and got["assignments"] == [{"collection_id": row, "quantity": 2}, {"collection_id": foil, "quantity": 1}]
+    decks.assign(db, d1, c, [])  # nothing assigned: nothing to show again
+    assert _card(db, d1, c)["owned_prints"] == []
+
+def test_default_printing_and_filling_the_lines_without_one(db):
+    oid, sid, row, d1, d2 = _setup(db, qty=2)
+    cols = [r[1] for r in db.execute("PRAGMA table_info(cards)")]  # a second printing, cheaper than the one you own
+    db.execute(f"INSERT INTO cards ({','.join(cols)}) SELECT {','.join(repr('cheap') if k == 'id' else k for k in cols)} FROM cards WHERE id=?", (sid,))
+    db.execute("UPDATE cards SET eur=0.01 WHERE id='cheap'")
+    assert decks.default_printing(db, oid) == (sid, "nonfoil")  # you own it: that one, whatever it costs
+    other = db.execute("SELECT id, oracle_id FROM cards WHERE oracle_id != ? AND image_small IS NOT NULL LIMIT 1", (oid,)).fetchone()
+    assert decks.default_printing(db, other["oracle_id"])[0] == other["id"]  # not owned: the cheapest (the only one here)
+    assert decks.default_printing(db, "no-such-card") == (None, None)
+    a, b = decks.add_card(db, d1, oid, 1), decks.add_card(db, d1, other["oracle_id"], 1)  # two lines without a printing
+    foil = collection.add(db, scryfall_id="cheap", quantity=1, finish="foil")
+    decks.assign(db, d1, a, [{"collection_id": foil, "quantity": 1}])  # a is assigned a foil copy of the cheap printing
+    assert decks.fill_printings(db, d1) == 2
+    assert (_card(db, d1, a)["scryfall_id"], _card(db, d1, a)["finish"]) == ("cheap", "foil")  # it follows its assigned copy
+    assert _card(db, d1, b)["scryfall_id"] == other["id"]
+    assert decks.fill_printings(db, d1) == 0  # nothing left to fill

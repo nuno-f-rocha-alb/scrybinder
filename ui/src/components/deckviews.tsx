@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { IconChevronDown, IconChevronRight, IconMinus, IconPlus, IconTrash } from "@tabler/icons-react";
 import { api, eur } from "../api";
-import { BOARDS, BOARD_LABEL, DeckCard, Group, Preview, View, toPreview } from "../decks";
+import { BOARDS, BOARD_LABEL, DeckCard, Group, Preview, View, shownPrints, toPreview } from "../decks";
 import { CardImg, EditionTag, FinishTag } from "./ui";
 import { ManaCost, STATUS_RING, StatusBadge, StatusDot } from "./mana";
 import { sourceFor } from "./cardgrid";
@@ -51,6 +51,13 @@ function AssignBtn({ c, ctx, className = "", children }: { c: DeckCard; ctx: Ctx
   );
 }
 
+/** The printing(s) of a line, with the finish: the assigned copies (or the printing the deck prefers); two shown, the rest as a count. */
+function PrintTags({ c }: { c: DeckCard }) {
+  const s = shownPrints(c);
+  return <>{s.slice(0, 2).map((p, i) => <span key={i} className="inline-flex shrink-0 items-center gap-1"><EditionTag setCode={p.set_code} number={p.collector_number} title={p.set_name} /><FinishTag finish={p.finish} /></span>)}
+    {s.length > 2 && <span className="shrink-0 text-[11px] text-mute" title={`${s.length} printings`}>+{s.length - 2}</span>}</>;
+}
+
 const elsewhereHint = (c: DeckCard) => (c.elsewhere.length ? `Assigned to: ${c.elsewhere.map((e) => e.name).join(", ")}` : undefined);
 const Tags = ({ c }: { c: DeckCard }) => <>{c.tags.map((t) => <span key={t} className="shrink-0 rounded-md bg-raised px-1.5 py-0.5 text-[10.5px] text-mute">{t}</span>)}</>;
 
@@ -63,7 +70,7 @@ function ListRow({ c, ctx }: { c: DeckCard; ctx: Ctx }) {
       <div onClick={(e) => e.stopPropagation()}><Stepper c={c} ctx={ctx} /></div>
       <div className="flex min-w-0 items-center gap-2 text-sm">
         <span className="truncate">{c.name}</span>
-        <EditionTag setCode={c.set_code} number={c.collector_number} title={c.set_name} /><FinishTag finish={c.finish} />
+        <PrintTags c={c} />
         {c.missing > 0 && <span className="shrink-0 text-xs text-danger">{c.missing} missing</span>}
         <span className="hidden items-center gap-2 sm:flex"><Tags c={c} /></span>
       </div>
@@ -86,7 +93,7 @@ function CompactRow({ c, ctx }: { c: DeckCard; ctx: Ctx }) {
       className="group flex items-center gap-2 rounded px-1.5 py-[3px] text-[13px] hover:bg-raised">
       <span className="w-5 shrink-0 text-right tabular-nums text-mute">{c.quantity}</span>
       <span className="min-w-0 flex-1 truncate">{c.name}</span>
-      <EditionTag setCode={c.set_code} number={c.collector_number} title={c.set_name} /><FinishTag finish={c.finish} />
+      <PrintTags c={c} />
       <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex group-focus-within:flex" onClick={(e) => e.stopPropagation()}>
         <button className={STEP} aria-label={`One less ${c.name}`} onClick={o.less}><IconMinus className="size-3" /></button>
         <button className={STEP} aria-label={`One more ${c.name}`} onClick={o.more}><IconPlus className="size-3" /></button>
@@ -107,8 +114,7 @@ function Tile({ c, ctx, layout, crop }: { c: DeckCard; ctx: Ctx; layout: Layout;
         : <div className={`flex w-full items-center justify-center bg-raised p-2 text-center text-xs text-mute ${crop ? "aspect-[63/62]" : "aspect-[63/88]"}`}>{c.name}</div>}
       <span className="absolute left-1.5 top-1.5 flex flex-col items-start gap-1">
         {c.quantity > 1 && <span className="rounded-md bg-bg/90 px-1.5 py-0.5 text-xs font-semibold tabular-nums">×{c.quantity}</span>}
-        {c.set_code && <span className="rounded-md bg-bg/90 px-1.5 py-0.5 text-[10.5px] uppercase tabular-nums">{c.set_code} #{c.collector_number}</span>}
-        <FinishTag finish={c.finish} />
+        {shownPrints(c).slice(0, 2).map((p, i) => <span key={i} className="flex items-center gap-1"><span className="rounded-md bg-bg/90 px-1.5 py-0.5 text-[10.5px] uppercase tabular-nums">{p.set_code} #{p.collector_number}</span><FinishTag finish={p.finish} /></span>)}
       </span>
       <span className="absolute right-1.5 top-1.5"><AssignBtn c={c} ctx={ctx}><StatusDot status={c.status} title={elsewhereHint(c)} /></AssignBtn></span>
       <span className="absolute inset-x-0 bottom-0 flex justify-center gap-1 bg-gradient-to-t from-black/80 to-transparent px-2 pb-1.5 pt-6 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
@@ -134,7 +140,7 @@ function Strip({ c, ctx, layout, last, copy }: { c: DeckCard; ctx: Ctx; layout: 
       {c.image_id ? <CardImg id={c.image_id} size={sourceFor(layout.tilePx)} className="!rounded-none" /> : <div className="h-full bg-raised p-1 text-xs">{c.name}</div>}
       <span className="absolute left-1 top-0.5 flex items-center gap-1">
         {copy === undefined && c.quantity > 1 && <span className="rounded bg-bg/90 px-1 text-[11px] font-semibold tabular-nums">×{c.quantity}</span>}
-        <FinishTag finish={c.finish} />
+        <FinishTag finish={shownPrints(c)[0]?.finish} />
       </span>
       <span className="absolute right-1 top-0.5"><AssignBtn c={c} ctx={ctx}><StatusDot status={c.status} title={elsewhereHint(c)} /></AssignBtn></span>
       <span className="absolute inset-x-0 bottom-0 hidden justify-center gap-1 bg-gradient-to-t from-black/80 to-transparent px-2 pb-1.5 pt-6 group-hover:flex group-focus-within:flex" onClick={(e) => e.stopPropagation()}>

@@ -29,24 +29,27 @@ export function useContextMenu() {
 
 function Menu({ m, onClose }: { m: Open; onClose: () => void }) {
   const ref = useRef<HTMLDivElement>(null);
-  const [pos, setPos] = useState({ left: m.x, top: m.y });
   const back = useRef<Element | null>(document.activeElement);  // focus goes back there when the menu closes
 
-  useLayoutEffect(() => {  // keep it inside the window
-    const r = ref.current!.getBoundingClientRect();
-    setPos({ left: Math.max(4, Math.min(m.x, window.innerWidth - r.width - 4)), top: Math.max(4, Math.min(m.y, window.innerHeight - r.height - 4)) });
-    ref.current!.querySelector<HTMLElement>("button:not(:disabled)")?.focus();
+  useLayoutEffect(() => {  // keep it inside the window, whatever the edge it was opened near; before it is painted and before it takes focus
+    const el = ref.current!;
+    el.style.maxHeight = `${window.innerHeight - 8}px`;  // a menu taller than the window scrolls inside itself
+    const r = el.getBoundingClientRect();
+    el.style.left = `${Math.max(4, Math.min(m.x, window.innerWidth - r.width - 4))}px`;
+    el.style.top = `${Math.max(4, Math.min(m.y, window.innerHeight - r.height - 4))}px`;
+    el.querySelector<HTMLElement>("button:not(:disabled)")?.focus({ preventScroll: true });  // focusing must not scroll the page: that closes the menu
   }, [m]);
   useEffect(() => {
     const out = (e: Event) => { if (!ref.current?.contains(e.target as Node)) onClose(); };
     window.addEventListener("mousedown", out);
     window.addEventListener("contextmenu", out, true);
-    window.addEventListener("scroll", onClose, true);
+    const scrolled = (e: Event) => { if (!ref.current?.contains(e.target as Node)) onClose(); };  // the page moved under it; its own scroll does not count
+    window.addEventListener("scroll", scrolled, true);
     window.addEventListener("resize", onClose);
     window.addEventListener("blur", onClose);
     return () => {
       window.removeEventListener("mousedown", out); window.removeEventListener("contextmenu", out, true);
-      window.removeEventListener("scroll", onClose, true); window.removeEventListener("resize", onClose); window.removeEventListener("blur", onClose);
+      window.removeEventListener("scroll", scrolled, true); window.removeEventListener("resize", onClose); window.removeEventListener("blur", onClose);
     };
   }, [onClose]);
   useEffect(() => () => (back.current as HTMLElement | null)?.focus?.(), []);
@@ -63,8 +66,8 @@ function Menu({ m, onClose }: { m: Open; onClose: () => void }) {
   };
 
   return createPortal(
-    <div ref={ref} role="menu" onKeyDown={keys} style={pos} onContextMenu={(e) => e.preventDefault()}
-      className="fixed z-[70] min-w-[220px] max-w-[320px] rounded-xl border border-line bg-surface p-1 shadow-2xl">
+    <div ref={ref} role="menu" onKeyDown={keys} style={{ left: m.x, top: m.y }} onContextMenu={(e) => e.preventDefault()}
+      className="fixed z-[70] min-w-[220px] max-w-[320px] overflow-y-auto rounded-xl border border-line bg-surface p-1 shadow-2xl">
       {m.items.map((it, i) => it === "sep"
         ? <div key={i} role="separator" className="my-1 h-px bg-line" />
         : <button key={i} role="menuitem" disabled={it.disabled} onClick={() => { onClose(); it.onSelect(); }}

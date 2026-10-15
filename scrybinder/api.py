@@ -59,7 +59,8 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
             return _ix_cache["v"]
         st = ixmod.status(ixmod.index_dir(Embedder()))
         st["eligible"] = db.execute("SELECT COUNT(*) FROM card_faces f JOIN cards c ON c.id=f.card_id WHERE " + ixmod.SCOPE
-                                    + " AND f.image_normal IS NOT NULL").fetchone()[0]
+                                    + " AND f.image_normal IS NOT NULL AND COALESCE(c.image_status,'') NOT IN (?,?)",  # the ones add_rows can index
+                                    ixmod.SKIP_STATUS).fetchone()[0]
         _ix_cache.update(t=time.monotonic(), v=st)
         return st
 
@@ -560,9 +561,16 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
 
     @app.post("/api/decks/{deck_id}/cards")
     def decks_add_card(deck_id: int, body: dict = Body(...)):
+        sid, fin = body.get("scryfall_id"), body.get("finish")
+        if sid is None and isinstance(body.get("oracle_id"), str):  # every card gets a printing: the one you own, else the cheapest
+            sid, fin = decks.default_printing(db, body["oracle_id"])
         return {"id": _wrap(decks.add_card, db, deck_id, body.get("oracle_id"), body.get("quantity", 1),
-                            body.get("board", "main"), body.get("scryfall_id"), body.get("tags") or (), body.get("finish"),
+                            body.get("board", "main"), sid, body.get("tags") or (), fin,
                             bool(body.get("new_line")))}
+
+    @app.post("/api/decks/{deck_id}/fill-printings")
+    def decks_fill_printings(deck_id: int):
+        return {"filled": _wrap(decks.fill_printings, db, deck_id)}
 
     @app.patch("/api/decks/{deck_id}/cards/{card_id}")
     def decks_update_card(deck_id: int, card_id: int, body: dict = Body(...)):

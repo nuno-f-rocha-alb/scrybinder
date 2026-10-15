@@ -88,6 +88,12 @@ def cards(db, deck_id: int) -> list[dict]:
     for cid, coll, q in db.execute("SELECT deck_card_id, collection_id, quantity FROM deck_assignments WHERE deck_card_id IN"
                                    " (SELECT id FROM deck_cards WHERE deck_id=?) ORDER BY collection_id", (deck_id,)):
         assignments.setdefault(cid, []).append({"collection_id": coll, "quantity": q})
+    held = {}  # what the assigned copies really are (printing and finish), so the deck follows the collection
+    for cid, sid, fin, setc, num, setn, q in db.execute(
+            "SELECT a.deck_card_id, c.scryfall_id, c.finish, k.set_code, k.collector_number, k.set_name, SUM(a.quantity) FROM deck_assignments a"
+            " JOIN collection c ON c.id = a.collection_id JOIN cards k ON k.id = c.scryfall_id WHERE a.deck_card_id IN"
+            " (SELECT id FROM deck_cards WHERE deck_id=?) GROUP BY a.deck_card_id, c.scryfall_id, c.finish ORDER BY SUM(a.quantity) DESC, c.id", (deck_id,)):
+        held.setdefault(cid, []).append({"scryfall_id": sid, "finish": fin, "set_code": setc, "collector_number": num, "set_name": setn, "quantity": q})
     for oid, did, name, q in db.execute(
             "SELECT k.oracle_id, dk.id, dk.name, SUM(a.quantity) FROM deck_assignments a"
             " JOIN deck_cards dc ON dc.id = a.deck_card_id JOIN decks dk ON dk.id = dc.deck_id"
@@ -104,6 +110,9 @@ def cards(db, deck_id: int) -> list[dict]:
         r["game_changer"] = bool(r["game_changer"])
         r["tags"] = tags.get(r["id"], [])
         r["assignments"] = assignments.get(r["id"], [])
+        r["owned_prints"] = held.get(r["id"], [])
+        if not r["scryfall_id"] and r["owned_prints"]:  # no printing chosen: the card looks like the copy you assigned
+            r["image_id"] = r["owned_prints"][0]["scryfall_id"]
         r["elsewhere"] = elsewhere.get(r["oracle_id"], [])
         free = pool.setdefault(r["oracle_id"], max(r["owned"] - r["assigned_all"], 0))
         need = max(r["quantity"] - r["assigned"], 0)
@@ -248,6 +257,35 @@ def add_card(db, deck_id: int, oracle_id: str, quantity: int = 1, board: str = "
             _set_tags(db, cid, tags)
         _touch(db, deck_id)
     return cid
+
+
+def default_printing(db, oracle_id: str) -> tuple[str | None, str | None]:
+    """The printing (and finish) a card gets when none is chosen: the one you own most copies of (in your finish), else the cheapest
+    printing, newest first on a tie. (None, None) when the card has no usable printing."""
+    own = db.execute("SELECT c.scryfall_id, c.finish FROM collection c JOIN cards k ON k.id = c.scryfall_id"
+                     " WHERE k.oracle_id=? AND c.proxy=0 ORDER BY c.quantity DESC, k.released_at DESC, c.id LIMIT 1", (oracle_id,)).fetchone()
+    if own:
+        return own["scryfall_id"], own["finish"]
+    p = db.execute("SELECT id, finishes FROM cards WHERE oracle_id=? AND digital=0 AND image_small IS NOT NULL"
+                   " ORDER BY COALESCE(eur, eur_foil, eur_etched, 1e9), released_at DESC LIMIT 1", (oracle_id,)).fetchone()
+    return (p["id"], _first_finish(p["finishes"])) if p else (None, None)
+
+
+def fill_printings(db, deck_id: int) -> int:
+    """Give every line without a printing one: that of the copies assigned to it, else the default. Returns the lines changed."""
+    _deck(db, deck_id)
+    n = 0
+    for c in cards(db, deck_id):
+        if c["scryfall_id"]:
+            continue
+        if c["owned_prints"]:
+            sid, fin = c["owned_prints"][0]["scryfall_id"], c["owned_prints"][0]["finish"]
+        else:
+            sid, fin = default_printing(db, c["oracle_id"])
+        if sid:
+            update_card(db, deck_id, c["id"], scryfall_id=sid, finish=fin)
+            n += 1
+    return n
 
 
 def duplicate_line(db, deck_id: int, card_id: int) -> int:

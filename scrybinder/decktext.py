@@ -114,7 +114,8 @@ def import_text(db, deck_id: int, text: str, dry_run: bool = False) -> dict:
     ok, skipped = resolve(db, items)
     if not dry_run:
         for it in ok:
-            decks.add_card(db, deck_id, it["oracle_id"], it["quantity"], it["board"], it["scryfall_id"], it["tags"], it["finish"])
+            sid, fin = (it["scryfall_id"], it["finish"]) if it["scryfall_id"] else decks.default_printing(db, it["oracle_id"])  # a line without a printing gets one
+            decks.add_card(db, deck_id, it["oracle_id"], it["quantity"], it["board"], sid, it["tags"], fin)
     return {"lines": len(ok) + len(skipped), "cards": sum(i["quantity"] for i in ok), "skipped": skipped,
             "preview": [{"line": i["line"], "board": i["board"], "quantity": i["quantity"], "name": i["name"]} for i in ok]}
 
