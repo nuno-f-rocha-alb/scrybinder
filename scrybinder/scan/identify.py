@@ -7,6 +7,7 @@ import subprocess
 import sys
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 import cv2
@@ -162,6 +163,9 @@ def _num(s) -> str | None:
     return d.lstrip("0") or ("0" if d else None)
 
 
+_POOL = ThreadPoolExecutor(max_workers=2, thread_name_prefix="bottom-ocr")  # Tesseract runs as a subprocess: the threads really overlap
+
+
 class Identifier:
     def __init__(self, db, use_visual=True):
         self.db = db
@@ -275,6 +279,7 @@ class Identifier:
         """card = rectified 630x880 image. Also tries 180° if the name reads weakly."""
         if self._names is None:
             self._load()
+        bottom = _POOL.submit(read_bottom, card)  # the bottom strip does not depend on the name: read it while the name is being read
         best = None
         for rotated in (False, True):
             img = cv2.rotate(card, cv2.ROTATE_180) if rotated else card
@@ -289,9 +294,12 @@ class Identifier:
                 break
         score, img, text, conf, names, rotated = best
         vis = self.vis()
+
+        def bottom_of(oriented):  # the early read is valid for the upright card only (a rotation redoes it)
+            return bottom.result() if oriented is card else read_bottom(oriented)
         if vis is None:
-            return self._ocr_only(img, text, conf, score, names, rotated)
-        return self._with_visual(vis, img, text, conf, score, names, rotated)
+            return self._ocr_only(img, text, conf, score, names, rotated, bottom_of)
+        return self._with_visual(vis, img, text, conf, score, names, rotated, bottom_of)
 
     def _set_codes(self) -> set:
         if self._sets is None:
@@ -308,8 +316,8 @@ class Identifier:
         return next((s for n, s in names if n == c["name"] or c["name"].startswith(n + " //")
                      or c["name"].endswith("// " + n)), 0)
 
-    def _ocr_only(self, img, text, conf, score, names, rotated) -> dict:
-        bottom = read_bottom(img) if names else {"numbers": [], "tokens": [], "text": ""}
+    def _ocr_only(self, img, text, conf, score, names, rotated, bottom_of=read_bottom) -> dict:
+        bottom = bottom_of(img) if names else {"numbers": [], "tokens": [], "text": ""}
         if names:
             bottom["spark"] = has_spark(img)
         cands = self.prints([n for n, _ in names[:2]]) if names else []
@@ -331,14 +339,14 @@ class Identifier:
                         "bottom_text": bottom["text"], "rotated": rotated, "spark": bottom.get("spark", False)},
                 "candidates": cands[:40], "confidence": confidence, **extra}
 
-    def _with_visual(self, vis, img, text, conf, score, names, rotated) -> dict:
+    def _with_visual(self, vis, img, text, conf, score, names, rotated, bottom_of=read_bottom) -> dict:
         w = visual.weights()
         priors = self._priors()
         scores, top_art, rot = vis.best_orientation(img, w, try_rotated=score < 85)
         if rot is not None:
             img = cv2.rotate(img, rot)
             rotated = rotated != (rot == cv2.ROTATE_180)  # the 'rotated' field still means 180°
-        bottom = read_bottom(img)
+        bottom = dict(bottom_of(img))  # a copy: the spark is added below
         bottom["spark"] = has_spark(img)
         cands = self.prints([n for n, _ in names[:2]]) if names else []
         have = {c["id"] for c in cands}
