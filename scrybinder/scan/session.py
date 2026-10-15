@@ -18,6 +18,7 @@ log = logging.getLogger(__name__)
 
 IMG_EXT = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 MAX_SIDE_PAGE = 4500  # a page holds up to 9 cards: more pixels are needed for each one
+SAME_CARD_NOTICE = "Same card as the previous one: not counted. If it is a foil, press N (next card is foil) before showing it."
 MAX_SIDE = 3000  # larger photos are downscaled: bounds memory and OCR time
 
 
@@ -59,6 +60,7 @@ class Scanner:
         self.pending: list[dict] = []
         self.beep = 0                      # increments on every capture: the UI plays a sound
         self.message = ""
+        self.notice = ""                   # a passing remark for the UI (e.g. a read ignored as the card still on the stand); cleared by the next capture
         self.split_next = False            # the next capture opens a new entry (e.g. the foil among identical regular cards)
         self.page_mode = False             # photos are binder pages (up to 3x3 cards) instead of one card each
         self.list_mode = False             # True: reads go to the temporary list (reads) and only enter the collection in commit_reads()
@@ -110,7 +112,9 @@ class Scanner:
             last = self.reads[-1] if self.reads else None  # only the card right before: another card in between starts a new entry
             same = last if last and not foil and (pid or live) and last["scryfall_id"] == pid and last["finish"] == fin else None  # live: an unreadable card on the stand repeats too
             if same and live:  # the camera read the card that is still on the stand: not a new copy (the entry has - / +)
+                self.notice = SAME_CARD_NOTICE
                 return same
+            self.notice = ""
             self.beep += 1
             if same:
                 same["qty"] += 1
@@ -199,8 +203,10 @@ class Scanner:
             same = last if last and not self.split_next and (predicted or live) and last["predicted_id"] == predicted else None
             self.split_next = False
             if same and live:  # still the card on the stand, not a new copy
+                self.notice = SAME_CARD_NOTICE
                 (self.dir / f"{sid}.jpg").unlink(missing_ok=True)
                 return same
+            self.notice = ""
             self.beep += 1
             if same:  # the same printing as the card right before: only the quantity goes up (a foil is opened with split_next)
                 same["qty"] += 1
@@ -221,7 +227,7 @@ class Scanner:
     def state(self) -> dict:
         with self._lock:
             return {"running": bool(self._thread and self._thread.is_alive()), "source": self.source,
-                    "message": self.message, "beep": self.beep, "split_next": self.split_next, "list_mode": self.list_mode, "page_mode": self.page_mode,
+                    "message": self.message, "notice": self.notice, "beep": self.beep, "split_next": self.split_next, "list_mode": self.list_mode, "page_mode": self.page_mode,
                     "pending": list(self.pending),
                     "reads": [{k: v for k, v in r.items() if k != "candidates"} | {"card": self.card_info(r["scryfall_id"])}
                               for r in self.reads]}
@@ -268,7 +274,7 @@ class Scanner:
             fn = lambda: self._run_webcam(int(target))  # noqa: E731
         else:
             raise ValueError("unknown source")
-        self.source, self.message = f"{kind}:{target}", ""
+        self.source, self.message, self.notice = f"{kind}:{target}", "", ""
         self._stop.clear()
         self._thread = threading.Thread(target=fn, daemon=True)
         self._thread.start()

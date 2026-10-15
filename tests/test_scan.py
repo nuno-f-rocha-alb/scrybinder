@@ -584,11 +584,14 @@ def test_live_camera_rereading_the_same_card_does_not_add_a_copy(db, tmp_path, m
 
         read(ids[0])
         beeps = scanner.beep
+        assert scanner.notice == ""
         read(ids[0])
-        read(ids[0])                                   # still on the stand: nothing changes
+        read(ids[0])                                   # still on the stand: nothing changes, and the UI is told why
+        assert "press N" in scanner.state()["notice"]
         assert [r["qty"] for r in items()] == [1] and scanner.beep == beeps
         assert len(list(scanner.dir.glob("*.jpg"))) == 1
         read(ids[1])                                   # a clear swap still opens an entry
+        assert scanner.notice == ""
         read(ids[0])                                   # and going back too
         assert [r["qty"] for r in items()] == [1, 1, 1]
         read(ids[0], live=False)                       # photos and folders still add up
