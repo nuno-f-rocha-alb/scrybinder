@@ -4,6 +4,9 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Fixed
+- The right-click menu no longer closes by itself when opened near the bottom of a short window: it is placed inside the window (scrolling inside itself when taller than it), takes focus without scrolling the page, and scrolling the menu does not close it.
+
 ## [0.6.1] — 2026-10-15
 
 ### Added
