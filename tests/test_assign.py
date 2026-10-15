@@ -273,3 +273,23 @@ def test_add_copy_of_the_chosen_printing_even_when_another_is_owned(db):
         decks.add_copy(db, d1, anyc)
     with pytest.raises(KeyError):
         decks.add_copy(db, d2, c)  # not a card of that deck
+
+
+def test_a_card_can_have_several_lines_each_with_its_own_printing(db):
+    oid, sid, row, d1, d2 = _setup(db)
+    cols = [r[1] for r in db.execute("PRAGMA table_info(cards)")]  # a second printing of the same card
+    db.execute(f"INSERT INTO cards ({','.join(cols)}) SELECT {','.join(repr('art-2') if k == 'id' else k for k in cols)} FROM cards WHERE id=?", (sid,))
+    a = decks.add_card(db, d1, oid, 4, "main")
+    assert decks.add_card(db, d1, oid, 1, "main") == a  # by default it sums into the line
+    b = decks.add_card(db, d1, oid, 1, "main", new_line=True)  # or it gets a line of its own
+    assert b != a and _card(db, d1, a)["quantity"] == 5
+    c = decks.duplicate_line(db, d1, a)  # one more copy as a new line, same board and tags
+    assert c not in (a, b) and _card(db, d1, c)["quantity"] == 1 and decks.get(db, d1)["summary"]["cards"] == 7
+    decks.update_card(db, d1, b, quantity=3)  # editing a line does not merge it into its twin
+    assert (_card(db, d1, a)["quantity"], _card(db, d1, b)["quantity"]) == (5, 3)
+    decks.update_card(db, d1, c, scryfall_id="art-2")  # another art for that line
+    assert _card(db, d1, c)["scryfall_id"] == "art-2"
+    decks.update_card(db, d1, b, scryfall_id="art-2")  # onto a line that already has that art: they merge
+    assert _card(db, d1, c)["quantity"] == 4 and not any(x["id"] == b for x in decks.get(db, d1)["cards"])
+    with pytest.raises(KeyError):
+        decks.duplicate_line(db, d2, a)

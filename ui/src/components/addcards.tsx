@@ -9,12 +9,13 @@ const COLORS = ["W", "U", "B", "R", "G", "C"];
 const NAME: Record<string, string> = { W: "White", U: "Blue", B: "Black", R: "Red", G: "Green", C: "Colourless" };
 
 /** Search for cards to add: by name, and with filters (rules text, type, colours, mana value, owned, sort). Enter adds the first result. */
-export default function AddCards({ deck, onAdd, setPreview, toast }: { deck: Deck; onAdd: (oracleId: string, board: Board) => void; setPreview: (p: Preview) => void; toast: (m: string, err?: boolean) => void }) {
+export default function AddCards({ deck, onAdd, setPreview, toast }: { deck: Deck; onAdd: (oracleId: string, board: Board, newLine: boolean) => void; setPreview: (p: Preview) => void; toast: (m: string, err?: boolean) => void }) {
   const menu = useContextMenu();
   const [q, setQ] = useState("");
   const [board, setBoard] = useState<Board>(deck.format === "commander" && !deck.cards.some((c) => c.board === "commander") ? "commander" : "main");
   const [legalOnly, setLegalOnly] = useState(true);
   const [more, setMore] = useState(false);
+  const [separate, setSeparate] = useState(() => { try { return localStorage.getItem("scrybinder.separate") === "1"; } catch { return false; } });
   const [text, setText] = useState("");
   const [type, setType] = useState("");
   const [colors, setColors] = useState<string[]>([]);
@@ -37,7 +38,8 @@ export default function AddCards({ deck, onAdd, setPreview, toast }: { deck: Dec
     return () => { live = false; clearTimeout(t); };
   }, [key, searching, deck.cards]);
 
-  const add = (r: OracleRow) => onAdd(r.oracle_id, board);
+  const add = (r: OracleRow) => onAdd(r.oracle_id, board, separate);
+  const setSep = (v: boolean) => { setSeparate(v); try { localStorage.setItem("scrybinder.separate", v ? "1" : "0"); } catch { /* no storage */ } };
   const toggle = (c: string) => setColors((cur) => (cur.includes(c) ? cur.filter((x) => x !== c) : c === "C" ? ["C"] : [...cur.filter((x) => x !== "C"), c]));
   const clear = () => { setText(""); setType(""); setColors([]); setLo(""); setHi(""); setOwned(false); setSort("name"); };
   const filtered = !!(text || type || colors.length || lo || hi || owned || sort !== "name");
@@ -54,6 +56,9 @@ export default function AddCards({ deck, onAdd, setPreview, toast }: { deck: Dec
         <select className="field w-auto" value={board} aria-label="Add to" onChange={(e) => setBoard(e.target.value as Board)}>
           {BOARDS.map((b) => <option key={b} value={b}>{BOARD_LABEL[b]}</option>)}
         </select>
+        <label className="flex cursor-pointer items-center gap-2 text-sm text-mute" title="A card already in the deck gets a line of its own instead of adding to the existing one, so each line can have another printing">
+          <input type="checkbox" checked={separate} onChange={(e) => setSep(e.target.checked)} className="accent-[var(--color-accent)]" />Separate line
+        </label>
         <label className="flex cursor-pointer items-center gap-2 text-sm text-mute" title="Only cards legal in this deck's format (and its commander's colours)">
           <input type="checkbox" checked={legalOnly} onChange={(e) => setLegalOnly(e.target.checked)} className="accent-[var(--color-accent)]" />Only legal
         </label>
@@ -90,7 +95,7 @@ export default function AddCards({ deck, onAdd, setPreview, toast }: { deck: Dec
           <ul className="mt-1 max-h-96 divide-y divide-line overflow-y-auto">
             {rows.map((r) => (
               <li key={r.oracle_id} onMouseEnter={() => setPreview(resultPreview(r))} onContextMenu={(e) => menu.open(e, [
-                ...BOARDS.map((b) => ({ label: `Add to ${BOARD_LABEL[b].toLowerCase()}`, onSelect: () => onAdd(r.oracle_id, b) })),
+                ...BOARDS.map((b) => ({ label: `Add to ${BOARD_LABEL[b].toLowerCase()}`, onSelect: () => onAdd(r.oracle_id, b, separate) })),
                 "sep" as const, ...nameAndLinks(r.name, r.id, null, toast)])} className="flex items-center gap-3 px-1 py-1.5 hover:bg-raised">
                 <button className="btn-ghost !px-2 !py-1" onClick={() => add(r)} aria-label={`Add ${r.name}`}><IconPlus className="size-4" /></button>
                 <span className="min-w-0 flex-1 truncate text-sm">{r.name}</span>
