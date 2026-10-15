@@ -32,10 +32,15 @@ def _price(v):
         return None
 
 
+def _oracle_id(c: dict):
+    """A reversible card has no oracle_id of its own: it lives on its faces (the first one stands for the card)."""
+    return c.get("oracle_id") or next((f["oracle_id"] for f in c.get("card_faces") or [] if f.get("oracle_id")), None)
+
+
 def card_row(c: dict) -> tuple:
     imgs = c.get("image_uris") or (c.get("card_faces") or [{}])[0].get("image_uris") or {}
     p = c.get("prices") or {}
-    return (c["id"], c.get("oracle_id"), c["name"], c.get("set"), c.get("set_name"), c.get("collector_number"),
+    return (c["id"], _oracle_id(c), c["name"], c.get("set"), c.get("set_name"), c.get("collector_number"),
             c.get("released_at"), c.get("rarity"), c.get("layout"), c.get("lang"), c.get("type_line"),
             int(bool(c.get("full_art"))), c.get("border_color"), c.get("frame"),
             json.dumps(c.get("frame_effects", [])), json.dumps(c.get("promo_types", [])),
@@ -63,13 +68,15 @@ _ORACLE_INSERT = f"INSERT OR REPLACE INTO oracle_cards ({','.join(_ORACLE)}) VAL
 
 def oracle_row(c: dict) -> tuple | None:
     """Rules data of a printing, or None for tokens/emblems/art cards and entries without an oracle_id."""
-    if not c.get("oracle_id") or c.get("layout") in _NO_ORACLE:
+    oid = _oracle_id(c)
+    if not oid or c.get("layout") in _NO_ORACLE:
         return None
     faces = c.get("card_faces") or []
     f0 = faces[0] if faces else {}
-    text = c.get("oracle_text") or " // ".join(f["oracle_text"] for f in faces if f.get("oracle_text"))
-    return (c["oracle_id"], c["name"], c.get("mana_cost") or f0.get("mana_cost") or "",
-            c.get("cmc") or 0, c.get("type_line") or f0.get("type_line"),
+    rev = c.get("layout") == "reversible_card"  # both faces are the card, only the art differs: use the first face
+    text = c.get("oracle_text") or (f0.get("oracle_text") or "" if rev else " // ".join(f["oracle_text"] for f in faces if f.get("oracle_text")))
+    return (oid, f0.get("name") or c["name"] if rev else c["name"], c.get("mana_cost") or f0.get("mana_cost") or "",
+            c.get("cmc") or f0.get("cmc") or 0, c.get("type_line") or f0.get("type_line"),
             json.dumps(c.get("colors") or f0.get("colors") or []), json.dumps(c.get("color_identity") or []),
             text, json.dumps(c.get("keywords") or []), json.dumps(c.get("produced_mana") or []),
             json.dumps(c.get("legalities") or {}), int(bool(c.get("game_changer"))), c.get("edhrec_rank"),
