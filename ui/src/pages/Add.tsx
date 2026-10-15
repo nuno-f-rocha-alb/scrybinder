@@ -3,6 +3,8 @@ import { IconSearch } from "@tabler/icons-react";
 import { api, CONDITIONS, eur, FINISH, LANGS, Print, qs } from "../api";
 import { Badge, CardImg, ExtLinks, Field, useToast } from "../components/ui";
 import { GridControls, sourceFor, useCardGrid } from "../components/cardgrid";
+import { nameAndLinks, useContextMenu } from "../components/contextmenu";
+import DeckPicker from "../components/deckpicker";
 
 type Hit = { oracle_id: string | null; name: string; prints: number; sample_id: string };
 const store = (k: string, d: string) => { try { return localStorage.getItem(k) ?? d; } catch { return d; } };
@@ -16,6 +18,8 @@ export default function Add() {
   const [form, setForm] = useState({ finish: "nonfoil", quantity: 1, condition: "NM", language: "en", location: store("scrybinder.loc", ""), price: "" });
   const [locs, setLocs] = useState<string[]>([]);
   const { toast, node } = useToast();
+  const menu = useContextMenu();
+  const [toDeck, setToDeck] = useState<Print | null>(null);
   const grid = useCardGrid();
 
   useEffect(() => { api<{ location: string }[]>("/locations").then((l) => setLocs(l.map((x) => x.location).filter(Boolean))); }, []);
@@ -44,6 +48,11 @@ export default function Add() {
         language: form.language, location: form.location, purchase_price: form.price === "" ? null : +form.price }) });
       toast(`Added: ${form.quantity}× ${picked.name} (${picked.set_code.toUpperCase()} #${picked.collector_number})`);
     } catch (e) { toast((e as Error).message, true); }
+  };
+  const quickAdd = (p: Print) => {  // one copy, near mint, English, in the location typed in the form
+    const fs = finishes(p);
+    api("/collection", { method: "POST", body: JSON.stringify({ scryfall_id: p.id, finish: fs.includes("nonfoil") ? "nonfoil" : fs[0] ?? "nonfoil", quantity: 1, location: form.location }) })
+      .then(() => toast(`Added: 1× ${p.name} (${p.set_code.toUpperCase()} #${p.collector_number})`)).catch((e) => toast(e.message, true));
   };
   const price = (p: Print) => (form.finish === "foil" ? p.eur_foil : form.finish === "etched" ? p.eur_etched : p.eur);
 
@@ -79,7 +88,11 @@ export default function Add() {
         <div className="mb-3 flex flex-wrap items-center justify-end gap-3"><GridControls g={grid} /></div>
         <div ref={grid.setGridEl} className="grid max-h-[75vh] content-start gap-4 overflow-y-auto pr-1" style={grid.style}>
           {prints.map((p) => (
-            <button key={p.id} onClick={() => pick(p)} aria-pressed={picked?.id === p.id}
+            <button key={p.id} onClick={() => pick(p)} onContextMenu={(e) => menu.open(e, [
+              { label: "Choose this printing", onSelect: () => pick(p) },
+              { label: "Add one to the collection", onSelect: () => quickAdd(p) },
+              { label: "Add to a deck…", onSelect: () => setToDeck(p) },
+              "sep", ...nameAndLinks(p.name, p.id, p.cardmarket_id, toast)])} aria-pressed={picked?.id === p.id}
               className={`cursor-pointer rounded-xl p-1.5 text-left transition ${picked?.id === p.id ? "bg-accent-soft ring-2 ring-accent" : "hover:bg-raised"}`}>
               <CardImg id={p.id} size={sourceFor(grid.tilePx)} />
               <div className="mt-1.5 flex flex-wrap items-center gap-1 text-xs">
@@ -116,6 +129,8 @@ export default function Add() {
           )}
         </aside>
       </div>
+      {toDeck && <DeckPicker oracleId={toDeck.oracle_id} scryfallId={toDeck.id} name={toDeck.name} onClose={() => setToDeck(null)} onDone={(n) => { setToDeck(null); toast(`${toDeck.name} added to ${n}`); }} />}
+      {menu.node}
       {node}
     </div>
   );

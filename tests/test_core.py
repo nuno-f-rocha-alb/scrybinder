@@ -132,6 +132,7 @@ def test_api_flow(client):
     assert client.get("/api/cards/prints", params={"oracle_id": s[0]["oracle_id"]}).json()[0]["owned"] == 0
     rid = client.post("/api/collection", json={"scryfall_id": "dfc-1", "quantity": 2, "location": "A"}).json()["id"]
     assert client.get("/api/cards/prints", params={"oracle_id": s[0]["oracle_id"]}).json()[0]["owned"] == 2  # the copies you own
+    assert client.get("/api/collection").json()["rows"][0]["oracle_id"] == s[0]["oracle_id"]  # the menus add a row's card to a deck
     assert client.get("/api/cards/prints", params={"oracle_id": s[0]["oracle_id"]}).json()[0]["free"] == 2  # none held by a deck
     assert client.post("/api/collection", json={"scryfall_id": "nao"}).status_code == 422
     assert client.patch(f"/api/collection/{rid}", json={"notes": "x"}).status_code == 200

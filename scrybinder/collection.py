@@ -123,7 +123,7 @@ def search(db, q="", set_code="", location=None, finish="", language="", sort="n
              "set": "k.set_code, CAST(k.collector_number AS INTEGER)"}.get(sort, "k.name")
     base = f"FROM collection c JOIN cards k ON k.id=c.scryfall_id {where}"
     rows = db.execute(
-        f"SELECT c.*, k.name, k.set_code, k.set_name, k.collector_number, k.rarity, k.cardmarket_id, "
+        f"SELECT c.*, k.oracle_id, k.name, k.set_code, k.set_name, k.collector_number, k.rarity, k.cardmarket_id, "
         f"{_PRICE} AS price {base} ORDER BY {order} LIMIT ? OFFSET ?", p + [limit, offset]).fetchall()
     tot = db.execute(f"SELECT COUNT(*) AS rows_, COALESCE(SUM(c.quantity),0) AS cards, "
                      f"COALESCE(SUM(c.quantity*({_PRICE})),0) AS value {base}", p).fetchone()
