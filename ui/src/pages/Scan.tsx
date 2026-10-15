@@ -190,7 +190,7 @@ export default function Scan() {
               <button className={st.split_next ? "btn-primary w-full" : "btn-ghost w-full"} onClick={split}>
                 {st.split_next ? (listMode ? "The next card is foil ✓" : "The next card opens a new entry ✓") : (listMode ? "Next card is foil" : "Next card is different (foil…)")} <kbd className="rounded bg-black/25 px-1.5 text-xs">N</kbd>
               </button>
-              <p className="text-xs text-mute">Identical cards in a row add to the quantity of the same entry. Press this before showing the foil.</p>
+              <p className="text-xs text-mute">The camera ignores the card that is still on the stand: adjust the quantity yourself (or swap to another card). Press this before showing the foil.</p>
             </div>
           )}
 

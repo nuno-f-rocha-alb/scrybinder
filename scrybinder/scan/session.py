@@ -101,15 +101,17 @@ class Scanner:
         fs = json.loads(finishes or "[]") or ["nonfoil"]
         return want if want in fs else fs[0]
 
-    def _add_read(self, item: dict) -> dict:
+    def _add_read(self, item: dict, live: bool = False) -> dict:
         cands, pid = item["candidates"], item["predicted_id"]
         with self._lock:  # check and append in the same block: simultaneous captures (webcam) do not duplicate the entry
             foil = self.split_next
             self.split_next = False
-            self.beep += 1
             fin = self._finish_for(cands[0].get("finishes") if cands else None, "foil" if foil else "nonfoil")
             last = self.reads[-1] if self.reads else None  # only the card right before: another card in between starts a new entry
-            same = last if last and not foil and pid and last["scryfall_id"] == pid and last["finish"] == fin else None
+            same = last if last and not foil and (pid or live) and last["scryfall_id"] == pid and last["finish"] == fin else None  # live: an unreadable card on the stand repeats too
+            if same and live:  # the camera read the card that is still on the stand: not a new copy (the entry has - / +)
+                return same
+            self.beep += 1
             if same:
                 same["qty"] += 1
             else:
@@ -178,7 +180,8 @@ class Scanner:
         return {"added": added, "rows": rows}
 
     # --- processing one image (same for photos, folder and webcam) ---
-    def process(self, img: np.ndarray, label: str = "", warped: bool = False) -> dict:
+    def process(self, img: np.ndarray, label: str = "", warped: bool = False, live: bool = False) -> dict:
+        """`live`: the capture comes from the camera, where a card read again right after itself is the same card still on the stand."""
         card, detected, res = identify_image(self.ident, img, warped)
         predicted = res["candidates"][0]["id"] if res["candidates"] else None
         with self._lock:
@@ -187,14 +190,17 @@ class Scanner:
         cv2.imwrite(str(self.dir / f"{sid}.jpg"), card, [cv2.IMWRITE_JPEG_QUALITY, 92])
         item = {"id": sid, "label": label, "detected": detected, **res, "predicted_id": predicted, "qty": 1}
         if self.list_mode:
-            entry = self._add_read(item)
+            entry = self._add_read(item, live)
             if entry["id"] != sid:  # merged into an existing entry: the new capture is not needed
                 (self.dir / f"{sid}.jpg").unlink(missing_ok=True)
             return entry
         with self._lock:  # check and append in the same block: simultaneous captures (webcam) do not duplicate the entry
             last = self.pending[-1] if self.pending else None  # only the card right before: another card in between starts a new entry
-            same = last if last and not self.split_next and predicted and last["predicted_id"] == predicted else None
+            same = last if last and not self.split_next and (predicted or live) and last["predicted_id"] == predicted else None
             self.split_next = False
+            if same and live:  # still the card on the stand, not a new copy
+                (self.dir / f"{sid}.jpg").unlink(missing_ok=True)
+                return same
             self.beep += 1
             if same:  # the same printing as the card right before: only the quantity goes up (a foil is opened with split_next)
                 same["qty"] += 1
@@ -320,7 +326,7 @@ class Scanner:
                 if fire:
                     self.save_debug("fired", frame, quad)
                     card = warp_card(frame, quad)  # OCR takes ~1 s: run it in another thread so the preview does not block
-                    threading.Thread(target=self.process, args=(card, "webcam", True), daemon=True).start()
+                    threading.Thread(target=self.process, args=(card, "webcam"), kwargs={"warped": True, "live": True}, daemon=True).start()
         except Exception as e:  # a failure here used to end the thread without a word
             log.exception("Camera %s failed after %s frames", index, frames)
             self.message = f"The camera failed: {e}"

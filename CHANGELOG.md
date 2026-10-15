@@ -4,6 +4,9 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Fixed
+- Camera scan: a card read again right after itself (it stays on the stand) no longer adds a copy or an entry, in the list and in the confirm queue; the quantity is adjusted with − / + or by swapping to another card. Photos and folders still add identical cards.
+
 ## [0.6.3] — 2026-10-15
 
 ### Added
