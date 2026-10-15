@@ -57,7 +57,7 @@ def test_resolve_by_printing_and_by_name(db):
     res = T.import_text(db, d, text)
     got = {c["name"]: c for c in decks.get(db, d)["cards"]}
     assert got[a["name"]]["scryfall_id"] == a["id"] and got[a["name"]]["quantity"] == 2  # printing from (SET) number
-    assert got[b["name"]]["scryfall_id"] is None  # name only: any printing, case does not matter
+    assert got[b["name"]]["scryfall_id"] == b["id"]  # name only: the default printing of the card (the only one here), case does not matter
     assert "Delver of Secrets // Insectile Aberration" in got  # the front face finds the double-faced card
     T.import_text(db, d, f"1 {a['name']} ({a['set_code']}) {a['collector_number']}\n")  # the same card and printing adds up
     assert {c["name"]: c["quantity"] for c in decks.get(db, d)["cards"]}[a["name"]] == 3
@@ -68,7 +68,7 @@ def test_a_printing_of_another_card_is_ignored_and_names_ignore_accents(db):
     d = decks.create(db, "T")
     T.import_text(db, d, f"1 {a['name']} ({b['set_code']}) {b['collector_number']}\n")  # the printing is b's: the name wins
     c = decks.get(db, d)["cards"][0]
-    assert (c["name"], c["scryfall_id"]) == (a["name"], None)
+    assert (c["name"], c["scryfall_id"]) == (a["name"], a["id"])  # b's printing is ignored: a's default printing
     assert T._norm("Lórien Revealed ’s") == T._norm("Lorien Revealed 's")
 
 
@@ -76,7 +76,7 @@ def test_set_without_that_number_falls_back_to_the_name(db):
     a = _cards(db)[0]
     d = decks.create(db, "T")
     T.import_text(db, d, f"1 {a['name']} ({a['set_code']}) 99999\n")
-    assert decks.get(db, d)["cards"][0]["scryfall_id"] is None
+    assert decks.get(db, d)["cards"][0]["scryfall_id"] == a["id"]  # no such number: the default printing
 
 
 def test_export_and_round_trip(db):
@@ -92,6 +92,7 @@ def test_export_and_round_trip(db):
                     f"Sideboard\n2 {c['name']}\n")
     again = decks.create(db, "Copy", "commander")
     T.import_text(db, again, T.export_text(db, d, maybe=True))
+    decks.fill_printings(db, d)  # the lines exported without a printing got their default one on import
     assert _deck_cards(db, again) == _deck_cards(db, d) and decktext_export
 
 
@@ -106,7 +107,7 @@ def test_deck_text_api(db):
     assert c.post(f"/api/decks/{d}/import", json={"text": 5}).status_code == 422
     assert c.post("/api/decks/999/import", json={"text": "1 A"}).status_code == 404
     out = c.get(f"/api/decks/{d}/export")
-    assert out.status_code == 200 and out.text == f"Deck\n2 {a['name']}\n" and "attachment" in out.headers["content-disposition"]
+    assert out.status_code == 200 and out.text == f"Deck\n2 {a['name']} ({a['set_code'].upper()}) {a['collector_number']}\n" and "attachment" in out.headers["content-disposition"]
     assert c.get("/api/decks/999/export").status_code == 404
 
 
