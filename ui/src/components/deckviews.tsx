@@ -90,7 +90,7 @@ function CompactRow({ c, ctx }: { c: DeckCard; ctx: Ctx }) {
   const o = useOps(ctx, c);
   return (
     <li {...bind(ctx, c)} onClick={() => ctx.onZoom(c)}
-      className="group flex items-center gap-2 rounded px-1.5 py-[3px] text-[13px] hover:bg-raised">
+      className="group flex min-h-[30px] items-center gap-2 rounded px-1.5 py-[3px] text-[13px] hover:bg-raised">
       <span className="w-5 shrink-0 text-right tabular-nums text-mute">{c.quantity}</span>
       <span className="min-w-0 flex-1 truncate">{c.name}</span>
       <PrintTags c={c} />
