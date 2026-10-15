@@ -82,7 +82,7 @@ export function Hit({ className = "", children }: { className?: string; children
   return <div className={`pointer-events-auto ${className}`} onMouseDown={(e) => e.stopPropagation()}>{children}</div>;
 }
 
-export function Modal({ onClose, title, children }: { onClose: () => void; title: string; children: React.ReactNode }) {
+export function Modal({ onClose, title, children, wide }: { onClose: () => void; title: string; children: React.ReactNode; wide?: boolean }) {
   useEffect(() => {
     const h = (e: KeyboardEvent) => e.key === "Escape" && onClose();
     window.addEventListener("keydown", h);
@@ -91,7 +91,7 @@ export function Modal({ onClose, title, children }: { onClose: () => void; title
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-sm" onMouseDown={onClose}>
       <div role="dialog" aria-modal aria-label={title} onMouseDown={(e) => e.stopPropagation()}
-        className="max-h-[92vh] w-full max-w-3xl overflow-y-auto rounded-2xl border border-line bg-surface p-6 shadow-2xl">
+        className={`max-h-[92vh] w-full ${wide ? "max-w-5xl" : "max-w-3xl"} overflow-y-auto rounded-2xl border border-line bg-surface p-6 shadow-2xl`}>
         {children}
       </div>
     </div>

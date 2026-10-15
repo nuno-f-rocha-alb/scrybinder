@@ -15,7 +15,7 @@ from fastapi.staticfiles import StaticFiles
 
 import time
 
-from . import __version__, collection, db as dbmod, decks, decktext, formats, gpu as gpumod, oracle, scryfall, updater as updmod
+from . import __version__, carddetails, collection, db as dbmod, decks, decktext, formats, gpu as gpumod, oracle, scryfall, updater as updmod
 from .scan.session import MAX_SIDE, MAX_SIDE_PAGE, Scanner, decode
 
 UI_DIST = Path(__file__).resolve().parent.parent / "ui" / "dist"
@@ -286,6 +286,19 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
                       owned: bool = False, legal: bool = False, deck: int | None = None, sort: str = "name",
                       limit: int = 50, offset: int = 0):
         return _wrap(oracle.search, db, q, text, colors, type, cmc_min, cmc_max, owned, legal, deck, sort, limit, offset)
+
+    @app.get("/api/cards/{card_id}/details")
+    def card_details(card_id: str):
+        return _wrap(carddetails.details, db, card_id)
+
+    @app.get("/api/cards/{card_id}/rulings")
+    def card_rulings(card_id: str):
+        try:
+            return _wrap(carddetails.rulings, db, card_id)
+        except HTTPException:
+            raise
+        except Exception:  # Scryfall could not be reached and there is no copy of the rulings yet
+            raise HTTPException(502, "The rulings could not be loaded (is there a connection to Scryfall?)")
 
     @app.get("/api/cards/prints")
     def prints(oracle_id: str = "", name: str = "", deck: int | None = None):

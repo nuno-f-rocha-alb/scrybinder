@@ -6,6 +6,7 @@ import { GridControls, sourceFor, useCardGrid } from "../components/cardgrid";
 import { BulkBar, BulkDelete, BulkEdit } from "./Bulk";
 import { MenuItem, nameAndLinks, useContextMenu } from "../components/contextmenu";
 import DeckPicker from "../components/deckpicker";
+import CardDetails from "../components/carddetails";
 
 const PAGE = 60;
 
@@ -32,6 +33,7 @@ export default function Collection({ initialSet, initialLocation }: { initialSet
   const [newLoc, setNewLoc] = useState<string | null>(null);  // the name being typed in the "New location" dialog
   const menu = useContextMenu();
   const [toDeck, setToDeck] = useState<Row | null>(null);
+  const [detailsAt, setDetailsAt] = useState<number | null>(null);  // index of the row whose details are open
 
   const load = useCallback(() => {
     api<Coll>("/collection?" + qs({ q, set: setCode, location, finish, sort, limit })).then(setData).catch((e) => toast(e.message, true));
@@ -79,6 +81,7 @@ export default function Collection({ initialSet, initialLocation }: { initialSet
   const rowMenu = (r: Row, i: number): MenuItem[] => [
     { label: "Edit…", onSelect: () => setEdit(r) },
     { label: "Add one copy", onSelect: () => api(`/collection/${r.id}`, { method: "PATCH", body: JSON.stringify({ quantity: r.quantity + 1 }) }).then(() => { load(); toast(`${r.quantity + 1}× ${r.name}`); }).catch((e) => toast(e.message, true)) },
+    { label: "View details", onSelect: () => setDetailsAt(i) },
     { label: "Add to a deck…", onSelect: () => setToDeck(r) },
     { label: "Select", onSelect: () => { setSelecting(true); setSel(new Set([r.id])); lastPick.current = i; } },
     "sep",
@@ -225,6 +228,8 @@ export default function Collection({ initialSet, initialLocation }: { initialSet
       )}
       {toDeck && <DeckPicker oracleId={toDeck.oracle_id} scryfallId={toDeck.scryfall_id} finish={toDeck.finish} name={toDeck.name} onClose={() => setToDeck(null)}
         onDone={(n) => { setToDeck(null); load(); toast(`${toDeck.name} added to ${n}`); }} />}
+      {detailsAt !== null && rows[detailsAt] && <CardDetails printId={rows[detailsAt].scryfall_id} onClose={() => setDetailsAt(null)}
+        prev={detailsAt > 0 ? () => setDetailsAt(detailsAt - 1) : undefined} next={detailsAt < rows.length - 1 ? () => setDetailsAt(detailsAt + 1) : undefined} />}
       {menu.node}
       {node}
     </div>

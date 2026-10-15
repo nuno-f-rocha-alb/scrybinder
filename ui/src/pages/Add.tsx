@@ -5,6 +5,7 @@ import { Badge, CardImg, ExtLinks, Field, useToast } from "../components/ui";
 import { GridControls, sourceFor, useCardGrid } from "../components/cardgrid";
 import { nameAndLinks, useContextMenu } from "../components/contextmenu";
 import DeckPicker from "../components/deckpicker";
+import CardDetails from "../components/carddetails";
 
 type Hit = { oracle_id: string | null; name: string; prints: number; sample_id: string };
 const store = (k: string, d: string) => { try { return localStorage.getItem(k) ?? d; } catch { return d; } };
@@ -20,6 +21,7 @@ export default function Add() {
   const { toast, node } = useToast();
   const menu = useContextMenu();
   const [toDeck, setToDeck] = useState<Print | null>(null);
+  const [details, setDetails] = useState<string | null>(null);
   const grid = useCardGrid();
 
   useEffect(() => { api<{ location: string }[]>("/locations").then((l) => setLocs(l.map((x) => x.location).filter(Boolean))); }, []);
@@ -91,6 +93,7 @@ export default function Add() {
             <button key={p.id} onClick={() => pick(p)} onContextMenu={(e) => menu.open(e, [
               { label: "Choose this printing", onSelect: () => pick(p) },
               { label: "Add one to the collection", onSelect: () => quickAdd(p) },
+              { label: "View details", onSelect: () => setDetails(p.id) },
               { label: "Add to a deck…", onSelect: () => setToDeck(p) },
               "sep", ...nameAndLinks(p.name, p.id, p.cardmarket_id, toast)])} aria-pressed={picked?.id === p.id}
               className={`cursor-pointer rounded-xl p-1.5 text-left transition ${picked?.id === p.id ? "bg-accent-soft ring-2 ring-accent" : "hover:bg-raised"}`}>
@@ -130,6 +133,7 @@ export default function Add() {
         </aside>
       </div>
       {toDeck && <DeckPicker oracleId={toDeck.oracle_id} scryfallId={toDeck.id} name={toDeck.name} onClose={() => setToDeck(null)} onDone={(n) => { setToDeck(null); toast(`${toDeck.name} added to ${n}`); }} />}
+      {details && <CardDetails printId={details} onClose={() => setDetails(null)} />}
       {menu.node}
       {node}
     </div>

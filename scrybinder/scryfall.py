@@ -193,6 +193,12 @@ def fetch_sets(db) -> int:
     return len(r["data"])
 
 
+def fetch_rulings(card_id: str) -> list[dict]:
+    """The rulings of a card, straight from Scryfall (a few lines of JSON): [{published_at, comment, source}]."""
+    r = httpx.get(f"https://api.scryfall.com/cards/{card_id}/rulings", headers=HEADERS, timeout=15).raise_for_status().json()
+    return [{"published_at": x.get("published_at"), "comment": x.get("comment"), "source": x.get("source")} for x in r.get("data", [])]
+
+
 def _get_retry(url: str, tries: int = 3):
     """GET with retries: transient failures (429, 5xx, timeout) must not leave a card without an image."""
     for i in range(tries):
