@@ -483,3 +483,14 @@ def test_index_status_does_not_count_placeholder_images(client, db):
     c2 = TestClient(create_app(db, token=TOKEN, allowed_hosts={"testserver"}))
     c2.get(f"/api/status?t={TOKEN}")
     assert c2.get("/api/status").json()["index"]["eligible"] < before
+
+
+def test_ui_log_writes_a_short_note(client, caplog):
+    import logging
+    client.get(f"/api/status?t={TOKEN}")
+    with caplog.at_level(logging.INFO, logger="scrybinder.ui"):
+        r = client.post("/api/ui-log", json={"event": "menu-ignored", "reason": "scroll", "ms": 12, "x": 5, "cls": "x" * 500, "nested": {"a": 1}})
+    assert r.status_code == 200
+    text = caplog.text
+    assert "menu-ignored" in text and "x" * 81 not in text  # long values are cut
+    assert client.post("/api/ui-log", json=[1, 2]).status_code == 422

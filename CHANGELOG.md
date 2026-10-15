@@ -4,6 +4,9 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Fixed
+- The right-click menu ignores a stray event (a second context-menu event, a scroll or a focus change) in the first instants after it opens, instead of closing; what it ignored, and why it closed, is written to `app.log` with the time, to find out why it closed by itself on some cards. A compact-view row keeps its height when the − / + buttons appear.
+
 ## [0.6.2] — 2026-10-15
 
 ### Added
