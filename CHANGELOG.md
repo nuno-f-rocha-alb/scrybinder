@@ -12,6 +12,7 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 - A Code of Conduct (Contributor Covenant 2.1) and an accessibility statement with the known limitations and how to report a barrier, linked from the README.
 
 ### Fixed
+- The mana curve chart grows to fill its card instead of leaving empty space under it.
 - The summary bar of a deck is always pinned to the bottom of the window, whatever the number of cards.
 
 ## [0.5.1] — 2026-10-15
