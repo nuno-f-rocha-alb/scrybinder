@@ -6,8 +6,16 @@ import { CardImg } from "./ui";
 import { ManaCost, STATUS_RING, StatusBadge, StatusDot } from "./mana";
 import { sourceFor } from "./cardgrid";
 
-export type Ctx = { deckId: number; act: (p: Promise<unknown>) => void; setPreview: (p: Preview) => void; onZoom: (c: DeckCard) => void; onAssign: (c: DeckCard) => void };
+export type Ctx = { deckId: number; act: (p: Promise<unknown>) => void; setPreview: (p: Preview) => void; onZoom: (c: DeckCard) => void; onAssign: (c: DeckCard) => void;
+  onMenu: (c: DeckCard, e: React.MouseEvent) => void; hover: (c: DeckCard | null) => void };
 export type Layout = { tile: number; tilePx: number; style: React.CSSProperties; setGridEl: (el: HTMLDivElement | null) => void };
+
+/** What every card element shares: the preview, the card under the pointer or focus (for the Alt+number shortcuts) and the right-click menu. */
+const bind = (ctx: Ctx, c: DeckCard) => ({
+  onMouseEnter: () => { ctx.setPreview(toPreview(c)); ctx.hover(c); }, onMouseLeave: () => ctx.hover(null),
+  onFocus: () => { ctx.setPreview(toPreview(c)); ctx.hover(c); }, onBlur: () => ctx.hover(null),
+  onContextMenu: (e: React.MouseEvent) => ctx.onMenu(c, e),
+});
 
 /** The same few operations on a deck card in every view: one more, one less (the last one removes it), a board. */
 function useOps(ctx: Ctx, c: DeckCard) {
@@ -50,7 +58,7 @@ const Tags = ({ c }: { c: DeckCard }) => <>{c.tags.map((t) => <span key={t} clas
 function ListRow({ c, ctx }: { c: DeckCard; ctx: Ctx }) {
   const o = useOps(ctx, c);
   return (
-    <li onMouseEnter={() => ctx.setPreview(toPreview(c))} onFocus={() => ctx.setPreview(toPreview(c))} onClick={() => ctx.onZoom(c)}
+    <li {...bind(ctx, c)} onClick={() => ctx.onZoom(c)}
       className="grid grid-cols-[84px_minmax(0,1fr)_auto_104px] items-center gap-3 rounded-md px-2 py-1 hover:bg-raised md:grid-cols-[84px_minmax(0,1fr)_auto_116px_64px_92px]">
       <div onClick={(e) => e.stopPropagation()}><Stepper c={c} ctx={ctx} /></div>
       <div className="flex min-w-0 items-center gap-2 text-sm">
@@ -73,7 +81,7 @@ function ListRow({ c, ctx }: { c: DeckCard; ctx: Ctx }) {
 function CompactRow({ c, ctx }: { c: DeckCard; ctx: Ctx }) {
   const o = useOps(ctx, c);
   return (
-    <li onMouseEnter={() => ctx.setPreview(toPreview(c))} onFocus={() => ctx.setPreview(toPreview(c))} onClick={() => ctx.onZoom(c)}
+    <li {...bind(ctx, c)} onClick={() => ctx.onZoom(c)}
       className="group flex items-center gap-2 rounded px-1.5 py-[3px] text-[13px] hover:bg-raised">
       <span className="w-5 shrink-0 text-right tabular-nums text-mute">{c.quantity}</span>
       <span className="min-w-0 flex-1 truncate">{c.name}</span>
@@ -90,7 +98,7 @@ function CompactRow({ c, ctx }: { c: DeckCard; ctx: Ctx }) {
 function Tile({ c, ctx, layout, crop }: { c: DeckCard; ctx: Ctx; layout: Layout; crop: boolean }) {
   const o = useOps(ctx, c);
   return (
-    <div tabIndex={0} onMouseEnter={() => ctx.setPreview(toPreview(c))} onFocus={() => ctx.setPreview(toPreview(c))} onClick={() => ctx.onZoom(c)}
+    <div tabIndex={0} {...bind(ctx, c)} onClick={() => ctx.onZoom(c)}
       aria-label={`${c.quantity} ${c.name}, ${c.status}`}
       className={`group relative overflow-hidden rounded-[4.5%] outline-none ring-2 ring-offset-0 transition focus-visible:ring-accent ${STATUS_RING[c.status]} hover:ring-accent`}>
       {c.image_id ? <CardImg id={c.image_id} size={sourceFor(layout.tilePx)} className={crop ? "!aspect-[63/62] object-top" : ""} />
@@ -113,7 +121,7 @@ function Strip({ c, ctx, layout, last, copy }: { c: DeckCard; ctx: Ctx; layout: 
   const strip = Math.round(layout.tilePx * 0.15), full = Math.round((layout.tilePx * 88) / 63);
   const o = useOps(ctx, c);
   return (
-    <div tabIndex={0} onMouseEnter={() => ctx.setPreview(toPreview(c))} onFocus={() => ctx.setPreview(toPreview(c))} onClick={() => ctx.onZoom(c)}
+    <div tabIndex={0} {...bind(ctx, c)} onClick={() => ctx.onZoom(c)}
       aria-label={`${c.quantity} ${c.name}, ${c.status}`}
       style={{ "--strip": `${strip}px`, "--full": `${full}px` } as React.CSSProperties}
       className={`group relative shrink-0 overflow-hidden rounded-[5px] outline-none ring-2 transition-[height] duration-150 motion-reduce:transition-none ${STATUS_RING[c.status]} hover:ring-accent focus-visible:ring-accent ${last ? "h-(--full)" : "h-(--strip) hover:h-(--full) focus:h-(--full)"}`}>
@@ -182,5 +190,5 @@ export function DeckView({ groups, view, every, ctx, layout }: { groups: Group[]
 export function useZoom() {
   const [zoom, setZoom] = useState<DeckCard | null>(null);
   const wide = () => window.matchMedia("(min-width: 1024px)").matches;
-  return { zoom, close: () => setZoom(null), onZoom: (c: DeckCard) => { if (!wide()) setZoom(c); } };
+  return { zoom, close: () => setZoom(null), onZoom: (c: DeckCard) => { if (!wide()) setZoom(c); }, show: setZoom };
 }
