@@ -14,6 +14,7 @@ PROXY = "proxy"  # defined tag: the card is in the deck but is not a real copy
 
 # copies owned (proxy rows of the collection are not real copies) and the cheapest price of the oracle card
 _CARD_SQL = """
+SELECT x.*, (SELECT cardmarket_id FROM cards WHERE id = x.image_id) AS cardmarket_id FROM (
 SELECT d.id, d.oracle_id, d.scryfall_id, d.quantity, d.board, o.name, o.mana_cost, o.cmc, o.type_line, o.colors, o.color_identity,
        o.produced_mana, o.game_changer,
        (SELECT COALESCE(SUM(c.quantity), 0) FROM collection c JOIN cards k ON k.id = c.scryfall_id
@@ -27,7 +28,7 @@ SELECT d.id, d.oracle_id, d.scryfall_id, d.quantity, d.board, o.name, o.mana_cos
                 (SELECT id FROM cards WHERE oracle_id = d.oracle_id AND digital = 0 AND image_small IS NOT NULL
                   ORDER BY released_at DESC LIMIT 1)) AS image_id
 FROM deck_cards d JOIN oracle_cards o ON o.oracle_id = d.oracle_id
-WHERE d.deck_id = ? ORDER BY d.board, o.name, d.id
+WHERE d.deck_id = ?) x ORDER BY x.board, x.name, x.id
 """
 
 
@@ -159,7 +160,8 @@ def listing(db) -> list[dict]:
         d = dict(row)
         cs = cards(db, d["id"])
         d["summary"] = summary(cs)
-        d["cover"] = next((c["image_id"] for c in cs if c["board"] != "maybe"), None)  # the commander's, boards sort first
+        chosen = next((c["image_id"] for c in cs if c["id"] == d["cover_card_id"]), None)  # set from the card's menu
+        d["cover"] = chosen or next((c["image_id"] for c in cs if c["board"] != "maybe"), None)  # else the commander's, boards sort first
         out.append(d)
     return out
 
@@ -167,11 +169,16 @@ def listing(db) -> list[dict]:
 def update(db, deck_id: int, **fields) -> None:
     _deck(db, deck_id)
     folder = {"folder_id": fields["folder_id"]} if "folder_id" in fields else {}  # None puts the deck outside every folder
+    cover = {"cover_card_id": fields["cover_card_id"]} if "cover_card_id" in fields else {}  # None goes back to the default cover
     fields = {k: v for k, v in fields.items() if k in ("name", "format", "description") and v is not None}
     _check(format=fields.get("format"))
     if folder:
         _folder_ok(db, folder["folder_id"])
         fields.update(folder)
+    if cover:
+        if cover["cover_card_id"] is not None and not db.execute("SELECT 1 FROM deck_cards WHERE id=? AND deck_id=?", (cover["cover_card_id"], deck_id)).fetchone():
+            raise ValueError("that card is not in this deck")
+        fields.update(cover)
     if "name" in fields and not (isinstance(fields["name"], str) and fields["name"].strip()):
         raise ValueError("a deck needs a name")
     if fields:

@@ -200,3 +200,17 @@ def test_add_missing_for_chosen_cards_assigns_only_those(db):
     assert (_card(db, d1, c1)["assigned"], _card(db, d1, c2)["assigned"]) == (3, 0)  # the other card's free copy is left alone
     with pytest.raises(ValueError):
         decks.add_missing(db, d1, "x")
+
+
+def test_a_deck_cover_can_be_chosen_from_its_cards(db):
+    oid, sid, row, d1, d2 = _setup(db)
+    other = db.execute("SELECT id, oracle_id FROM cards WHERE oracle_id != ? AND image_small IS NOT NULL LIMIT 1", (oid,)).fetchone()
+    c1, c2 = decks.add_card(db, d1, oid, 1, scryfall_id=sid), decks.add_card(db, d1, other["oracle_id"], 1, scryfall_id=other["id"])
+    cover = lambda: next(d for d in decks.listing(db) if d["id"] == d1)["cover"]
+    first = cover()
+    decks.update(db, d1, cover_card_id=c2 if first == sid else c1)
+    assert cover() != first
+    decks.update(db, d1, cover_card_id=None)  # back to the default
+    assert cover() == first
+    with pytest.raises(ValueError):
+        decks.update(db, d1, cover_card_id=decks.add_card(db, d2, oid))  # a card of another deck

@@ -36,13 +36,20 @@ export function CardImg({ id, size = "normal", className = "" }: { id: string; s
   );
 }
 
+/** Opens a link in the system browser (inside the app window it must not navigate; the server only accepts Scryfall and Cardmarket). */
+export function openExternal(url: string) {
+  api("/open-url", { method: "POST", body: JSON.stringify({ url }) }).catch(() => window.open(url, "_blank", "noopener"));
+}
+export const scryfallUrl = (id: string) => `https://scryfall.com/card/${id}`;
+export const cardmarketUrl = (idProduct: number) => `https://www.cardmarket.com/en/Magic/Products?idProduct=${idProduct}`;
+
 /** Links to visually confirm the printing: Scryfall (by id) and Cardmarket (by idProduct, when it exists). */
 export function ExtLinks({ id, cardmarketId }: { id: string; cardmarketId?: number | null }) {
   const open = (url: string) => (e: React.MouseEvent) => {
-    e.preventDefault();  // inside the app window it opens in the system browser (the server only accepts these two sites)
-    api("/open-url", { method: "POST", body: JSON.stringify({ url }) }).catch(() => window.open(url, "_blank", "noopener"));
+    e.preventDefault();
+    openExternal(url);
   };
-  const sf = `https://scryfall.com/card/${id}`, cm = cardmarketId ? `https://www.cardmarket.com/en/Magic/Products?idProduct=${cardmarketId}` : null;
+  const sf = scryfallUrl(id), cm = cardmarketId ? cardmarketUrl(cardmarketId) : null;
   return (
     <span className="flex gap-3 text-xs">
       <a href={sf} target="_blank" rel="noreferrer" onClick={open(sf)} className="text-accent hover:underline">Scryfall ↗</a>

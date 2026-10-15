@@ -114,7 +114,8 @@ CREATE INDEX IF NOT EXISTS deck_assignments_coll ON deck_assignments(collection_
 """
 
 # additive migrations (never delete or rewrite data): (table, column, definition)
-_ADD = [("decks", "folder_id", "INTEGER REFERENCES deck_folders(id) ON DELETE SET NULL"), ("cards", "illustration_id", "TEXT"), ("cards", "image_status", "TEXT"), ("scan_log", "topk_json", "TEXT")]
+_ADD = [("decks", "folder_id", "INTEGER REFERENCES deck_folders(id) ON DELETE SET NULL"),
+        ("decks", "cover_card_id", "INTEGER REFERENCES deck_cards(id) ON DELETE SET NULL"), ("cards", "illustration_id", "TEXT"), ("cards", "image_status", "TEXT"), ("scan_log", "topk_json", "TEXT")]
 
 
 def _migrate(db):

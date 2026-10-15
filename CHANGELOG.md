@@ -5,6 +5,7 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 ## [Unreleased]
 
 ### Added
+- Decks: a right-click menu on every card in every view (switch printing, add or remove one, move to another board, set as commander, add to another deck or to the collection, tags, details, copy the name, set the deck image, Scryfall and Cardmarket), with Alt+1 to Alt+4 shortcuts on the card under the pointer.
 - Collection: a mark on the cards that are in a deck, the decks listed in the edit panel, and "Release and continue" when an edit, move or delete would take copies away from decks (also for bulk edit and delete).
 - Decks: add the missing copies of a deck to your collection (all of them, or chosen cards), in a location you pick; they are assigned to the deck.
 - Decks: choose the printing of a card from a list of all its printings (image, set, price, finishes, how many you own), with "Use cheapest" and a hint when you own another printing.
@@ -12,6 +13,7 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ### Fixed
 - The mana curve chart grows to fill its card instead of leaving empty space under it.
+- The summary bar of a deck is always pinned to the bottom of the window, whatever the number of cards.
 
 ## [0.5.1] — 2026-10-15
 
