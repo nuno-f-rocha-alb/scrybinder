@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { IconAdjustmentsHorizontal, IconPlus, IconSearch } from "@tabler/icons-react";
+import { useEffect, useRef, useState } from "react";
+import { IconAdjustmentsHorizontal, IconPlus, IconSearch, IconX } from "@tabler/icons-react";
 import { api, qs } from "../api";
 import { BOARDS, BOARD_LABEL, Board, Deck, OracleRow, Preview, resultPreview } from "../decks";
 import { ManaCost } from "./mana";
@@ -17,6 +17,8 @@ export default function AddCards({ deck, onAdd, setPreview, toast }: { deck: Dec
   const [board, setBoard] = useState<Board>(deck.format === "commander" && !deck.cards.some((c) => c.board === "commander") ? "commander" : "main");
   const [legalOnly, setLegalOnly] = useState(true);
   const [more, setMore] = useState(false);
+  const [dismissed, setDismissed] = useState(false);  // the results are hidden (Escape, a click outside, the X) until you search again or focus the box
+  const box = useRef<HTMLDivElement>(null);
   const [separate, setSeparate] = useState(() => { try { return localStorage.getItem("scrybinder.separate") === "1"; } catch { return false; } });
   const [text, setText] = useState("");
   const [type, setType] = useState("");
@@ -31,6 +33,13 @@ export default function AddCards({ deck, onAdd, setPreview, toast }: { deck: Dec
 
   const params = { q, text, type, colors: colors.join(""), cmc_min: lo, cmc_max: hi, owned: owned ? "true" : "", sort, deck: deck.id, legal: legalOnly ? "true" : "", limit: 20 };
   const key = qs(params);
+  useEffect(() => { setDismissed(false); }, [key]);  // a new search shows its results
+  useEffect(() => {
+    if (dismissed) return;
+    const out = (e: MouseEvent) => { if (!box.current?.contains(e.target as Node)) setDismissed(true); };
+    window.addEventListener("mousedown", out);
+    return () => window.removeEventListener("mousedown", out);
+  }, [dismissed]);
   const searching = !!(q.trim() || text.trim() || type.trim() || colors.length || lo || hi || owned);
   useEffect(() => {
     if (!searching) { setRows([]); setTotal(0); return; }
@@ -47,12 +56,13 @@ export default function AddCards({ deck, onAdd, setPreview, toast }: { deck: Dec
   const filtered = !!(text || type || colors.length || lo || hi || owned || sort !== "name");
 
   return (
-    <div className="sticky top-0 z-30 mb-5 rounded-xl border border-line bg-surface p-3 shadow-lg shadow-black/30">
+    <div ref={box} className="sticky top-0 z-30 mb-5 rounded-xl border border-line bg-surface p-3 shadow-lg shadow-black/30">
       <div className="flex flex-wrap items-center gap-2">
         <div className="relative min-w-[220px] flex-1">
           <IconSearch className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-mute" aria-hidden />
           <input className="field pl-9" placeholder="Find cards to add…" aria-label="Find cards to add" value={q} onChange={(e) => setQ(e.target.value)}
-            onKeyDown={(e) => { if (e.key === "Enter" && rows[0]) add(rows[0]); }} />
+            onFocus={() => setDismissed(false)}
+            onKeyDown={(e) => { if (e.key === "Enter" && rows[0]) add(rows[0]); else if (e.key === "Escape") setDismissed(true); }} />
         </div>
         <button className={`btn-ghost ${filtered ? "!border-accent" : ""}`} aria-expanded={more} onClick={() => setMore((v) => !v)}><IconAdjustmentsHorizontal className="size-4" />Filters{filtered ? " •" : ""}</button>
         <select className="field w-auto" value={board} aria-label="Add to" onChange={(e) => setBoard(e.target.value as Board)}>
@@ -90,10 +100,13 @@ export default function AddCards({ deck, onAdd, setPreview, toast }: { deck: Dec
         </div>
       )}
 
-      {searching && done === key && rows.length === 0 && <p className="mt-3 text-sm text-mute">No cards found.</p>}
-      {rows.length > 0 && (
+      {searching && !dismissed && done === key && rows.length === 0 && <p className="mt-3 text-sm text-mute">No cards found.</p>}
+      {rows.length > 0 && !dismissed && (
         <>
-          <p className="mt-3 text-xs text-mute tabular-nums">{total > rows.length ? `${rows.length} of ${total} cards. Narrow it down to see the rest.` : `${total} ${total === 1 ? "card" : "cards"}`}</p>
+          <div className="mt-3 flex items-center justify-between gap-2">
+          <p className="text-xs text-mute tabular-nums">{total > rows.length ? `${rows.length} of ${total} cards. Narrow it down to see the rest.` : `${total} ${total === 1 ? "card" : "cards"}`}</p>
+          <button className="flex size-6 cursor-pointer items-center justify-center rounded-md text-mute hover:bg-raised hover:text-ink" aria-label="Close the results" title="Close the results (Escape)" onClick={() => setDismissed(true)}><IconX className="size-4" /></button>
+          </div>
           <ul className="mt-1 max-h-96 divide-y divide-line overflow-y-auto">
             {rows.map((r) => (
               <li key={r.oracle_id} onMouseEnter={() => setPreview(resultPreview(r))} onContextMenu={(e) => menu.open(e, [
