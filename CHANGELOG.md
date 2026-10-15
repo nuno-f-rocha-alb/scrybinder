@@ -4,6 +4,8 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Fixed
+- Card details of a deck: Prev / Next and the arrow keys follow the list as it is shown (its groups, sort and filter), not the order the cards are stored in.
 ### Added
 - Decks: every card gets an edition by default: the one you own (most copies), else the cheapest. It applies to cards added from the search bar and to imported list lines without a set, and "Set editions" in the deck header fills the lines that have none yet (the printing of the copies assigned to them first).
 
