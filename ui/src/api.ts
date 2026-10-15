@@ -6,6 +6,7 @@ export type Row = {
   altered: number; signed: number; misprint: number; proxy: number;
   purchase_price: number | null; purchase_currency: string; purchase_date: string | null; notes: string;
   name: string; set_code: string; set_name: string; collector_number: string; rarity: string; price: number | null; cardmarket_id?: number | null;
+  decks: { deck_id: number; name: string; quantity: number }[];  // the decks holding copies of this row
 };
 export type Collection = { rows: Row[]; total_rows: number; total_cards: number; total_value: number };
 export type Print = {
@@ -20,12 +21,15 @@ export type Status = {
   index_job?: { state: string; mode: string | null; done: number; total: number; error: string | null; failed: number; detail?: string };
 };
 
+/** An API error; `status` 409 means the copies are assigned to decks (retry with `?release=1` to free them). */
+export class ApiError extends Error { constructor(message: string, public status: number) { super(message); } }
+
 export async function api<T>(path: string, opts: RequestInit = {}): Promise<T> {
   const r = await fetch("/api" + path, { ...opts, headers: { "Content-Type": "application/json", ...opts.headers } });
   if (!r.ok) {
     const j = await r.json().catch(() => ({}));
     // the collection answers 409 with {message, decks} when copies are assigned to decks
-    throw new Error(typeof j.detail === "string" ? j.detail : typeof j.detail?.message === "string" ? j.detail.message : r.statusText);
+    throw new ApiError(typeof j.detail === "string" ? j.detail : typeof j.detail?.message === "string" ? j.detail.message : r.statusText, r.status);
   }
   return r.json();
 }

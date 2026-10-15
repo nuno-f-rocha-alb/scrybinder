@@ -91,6 +91,17 @@ export function Modal({ onClose, title, children }: { onClose: () => void; title
   );
 }
 
+/** Shown when an operation would take copies away from decks: says which, and offers to free them and carry on. */
+export function Blocked({ message, onRelease, onCancel }: { message: string; onRelease: () => void; onCancel: () => void }) {
+  return (
+    <div role="alert" className="mt-4 rounded-xl border border-gold/50 bg-gold/10 p-3 text-sm">
+      <p className="first-letter:uppercase">{message}.</p>
+      <p className="mt-1 text-mute">Release the copies from those decks and continue? The decks keep the cards and show them as missing.</p>
+      <div className="mt-2 flex gap-2"><button className="btn-primary !py-1" onClick={onRelease}>Release and continue</button><button className="btn-ghost !py-1" onClick={onCancel}>Cancel</button></div>
+    </div>
+  );
+}
+
 export function Field({ label, children }: { label: string; children: React.ReactNode }) {
   return <label className="block text-xs font-medium text-mute"><span className="mb-1 block">{label}</span>{children}</label>;
 }

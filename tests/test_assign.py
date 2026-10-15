@@ -165,3 +165,12 @@ def test_copies_api(db):
     r = c.get(f"/api/decks/{d1}/cards/{c1}/copies").json()
     assert r["quantity"] == 2 and r["rows"][0]["id"] == row and r["rows"][0]["free"] == 2
     assert c.get(f"/api/decks/{d1}/cards/999/copies").status_code == 404
+
+
+def test_collection_rows_say_which_decks_hold_them(db):
+    oid, sid, row, d1, d2 = _setup(db)
+    assert collection.search(db)["rows"][0]["decks"] == []
+    decks.assign(db, d1, decks.add_card(db, d1, oid, 1), [{"collection_id": row, "quantity": 1}])
+    decks.assign(db, d2, decks.add_card(db, d2, oid, 1), [{"collection_id": row, "quantity": 1}])
+    held = collection.search(db)["rows"][0]["decks"]
+    assert [(d["name"], d["quantity"]) for d in held] == [("D1", 1), ("D2", 1)]

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { IconChecklist, IconCheck, IconLayoutGrid, IconList, IconSearch } from "@tabler/icons-react";
-import { api, CONDITIONS, Collection as Coll, eur, FINISH, LANGS, qs, Row, useGroup } from "../api";
-import { Badge, CardImg, Drawer, ExtLinks, Field, Hit, Modal, useToast } from "../components/ui";
+import { IconCards, IconChecklist, IconCheck, IconLayoutGrid, IconList, IconSearch } from "@tabler/icons-react";
+import { api, ApiError, CONDITIONS, Collection as Coll, eur, FINISH, LANGS, qs, Row, useGroup } from "../api";
+import { Badge, Blocked, CardImg, Drawer, ExtLinks, Field, Hit, Modal, useToast } from "../components/ui";
 import { GridControls, sourceFor, useCardGrid } from "../components/cardgrid";
 import { BulkBar, BulkDelete, BulkEdit } from "./Bulk";
 
@@ -139,6 +139,8 @@ export default function Collection({ initialSet, initialLocation }: { initialSet
                 <CardImg id={r.scryfall_id} size={sourceFor(grid.tilePx)} className={`shadow-lg shadow-black/50 group-focus-visible:ring-2 group-focus-visible:ring-accent ${sel.has(r.id) ? "ring-2 ring-accent brightness-75" : ""}`} />
                 {selecting && <span aria-hidden className={`absolute bottom-1.5 left-1.5 flex size-6 items-center justify-center rounded-full border-2 ${sel.has(r.id) ? "border-accent bg-accent text-white" : "border-white/70 bg-black/50"}`}>{sel.has(r.id) && <IconCheck className="size-4" stroke={3} />}</span>}
                 <span className="absolute right-1.5 top-1.5 rounded-full bg-black/80 px-2 py-0.5 text-xs font-semibold tabular-nums">×{r.quantity}</span>
+                {r.decks.length > 0 && <span className="absolute bottom-1.5 right-1.5 flex items-center gap-1 rounded-full bg-black/80 px-2 py-0.5 text-xs text-accent" title={`In ${r.decks.map((d) => d.name).join(", ")}`}>
+                  <IconCards className="size-3.5" aria-hidden /><span className="sr-only">In a deck: {r.decks.map((d) => d.name).join(", ")}</span></span>}
                 {r.finish !== "nonfoil" && <span className="absolute left-1.5 top-1.5"><Badge foil>{FINISH[r.finish].toUpperCase()}</Badge></span>}
               </div>
               <div className="mt-2 truncate text-sm font-medium">{r.name}</div>
@@ -163,7 +165,7 @@ export default function Collection({ initialSet, initialLocation }: { initialSet
                 <tr key={r.id} onClick={(e) => open(r, i, e)} className={`cursor-pointer select-none border-t border-line hover:bg-raised/60 ${sel.has(r.id) ? "bg-accent-soft" : ""}`}>
                   {selecting && <td className="px-3 py-2"><input type="checkbox" readOnly tabIndex={-1} aria-label={`Select ${r.name}`} checked={sel.has(r.id)} className="pointer-events-none accent-[var(--color-accent)]" /></td>}
                   <td className="px-3 py-2 tabular-nums">{r.quantity}</td>
-                  <td className="px-3 py-2 font-medium">{r.name}</td>
+                  <td className="px-3 py-2 font-medium">{r.name}{r.decks.length > 0 && <span className="ml-2 inline-flex items-center gap-1 text-xs font-normal text-accent" title={`In ${r.decks.map((d) => d.name).join(", ")}`}><IconCards className="size-3.5" aria-hidden />{r.decks.length}<span className="sr-only"> decks: {r.decks.map((d) => d.name).join(", ")}</span></span>}</td>
                   <td className="px-3 py-2 text-mute">{r.set_code.toUpperCase()}</td>
                   <td className="px-3 py-2 text-mute">{r.collector_number}</td>
                   <td className="px-3 py-2">{r.finish === "nonfoil" ? "" : <Badge foil>{FINISH[r.finish]}</Badge>}</td>
@@ -203,11 +205,14 @@ function EditModal({ row, locations, onClose, onDone, onError }: {
   const [moveQty, setMoveQty] = useState(1);
   const [confirmDel, setConfirmDel] = useState(false);
   const set = <K extends keyof Row>(k: K, v: Row[K]) => setF((o) => ({ ...o, [k]: v }));
-  const run = (p: Promise<unknown>, msg: string) => p.then(() => onDone(msg)).catch((e) => onError(e.message));
+  const [blocked, setBlocked] = useState<{ message: string; retry: () => void } | null>(null);
+  // `go` gets "" or "?release=1": a 409 (copies assigned to decks) offers to free them and run it again
+  const run = (go: (release: string) => Promise<unknown>, msg: string) => go("").then(() => onDone(msg)).catch((e) => e instanceof ApiError && e.status === 409
+    ? setBlocked({ message: e.message, retry: () => go("?release=1").then(() => onDone(msg)).catch((x) => onError(x.message)) }) : onError(e.message));
   const flag = (k: "altered" | "signed" | "misprint" | "proxy", label: string) => (
     <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={!!f[k]} onChange={(e) => set(k, e.target.checked ? 1 : 0)} className="accent-[var(--color-accent)]" />{label}</label>
   );
-  const save = () => run(api(`/collection/${row.id}`, { method: "PATCH", body: JSON.stringify({
+  const save = () => run((r) => api(`/collection/${row.id}${r}`, { method: "PATCH", body: JSON.stringify({
     quantity: f.quantity, finish: f.finish, condition: f.condition, language: f.language, location: f.location,
     altered: f.altered, signed: f.signed, misprint: f.misprint, proxy: f.proxy, notes: f.notes,
     purchase_price: f.purchase_price, purchase_date: f.purchase_date }) }), "Saved");
@@ -222,6 +227,10 @@ function EditModal({ row, locations, onClose, onDone, onError }: {
           <h2 className="text-xl font-semibold">{row.name}</h2>
           <p className="text-sm text-mute">{row.set_name} ({row.set_code.toUpperCase()}) · #{row.collector_number} · {eur(row.price)}</p>
           <div className="mb-4 mt-1"><ExtLinks id={row.scryfall_id} cardmarketId={row.cardmarket_id} /></div>
+          {row.decks.length > 0 && <div className="mb-4 rounded-xl border border-accent/40 bg-accent-soft p-3 text-sm">
+            <div className="mb-1 flex items-center gap-1.5 font-medium text-accent"><IconCards className="size-4" aria-hidden />In {row.decks.length === 1 ? "a deck" : "decks"}</div>
+            <ul>{row.decks.map((d) => <li key={d.deck_id}>{d.name} <span className="text-mute">× {d.quantity}</span></li>)}</ul>
+          </div>}
           <div className="grid grid-cols-2 gap-3">
             <Field label="Quantity"><input type="number" min={1} className="field" value={f.quantity} onChange={(e) => set("quantity", Math.max(1, +e.target.value))} /></Field>
             <Field label="Finish"><select className="field" value={f.finish} onChange={(e) => set("finish", e.target.value as Row["finish"])}>
@@ -243,14 +252,15 @@ function EditModal({ row, locations, onClose, onDone, onError }: {
             <Field label="Move to"><input className="field w-44" list="locs" value={moveTo} onChange={(e) => setMoveTo(e.target.value)} placeholder="Location" /></Field>
             <Field label="Quantity"><input type="number" min={1} max={row.quantity} className="field w-20" value={moveQty} onChange={(e) => setMoveQty(+e.target.value)} /></Field>
             <button className="btn-ghost" disabled={!moveTo || moveTo === row.location}
-              onClick={() => run(api(`/collection/${row.id}/move`, { method: "POST", body: JSON.stringify({ location: moveTo, quantity: moveQty }) }), `Moved ${moveQty} to ${moveTo}`)}>Move</button>
+              onClick={() => run((r) => api(`/collection/${row.id}/move${r}`, { method: "POST", body: JSON.stringify({ location: moveTo, quantity: moveQty }) }), `Moved ${moveQty} to ${moveTo}`)}>Move</button>
           </div>
 
+          {blocked && <Blocked message={blocked.message} onRelease={blocked.retry} onCancel={() => setBlocked(null)} />}
           <div className="mt-5 flex items-center justify-between">
             {confirmDel ? (
               <div className="flex items-center gap-2 text-sm">
                 <span className="text-danger">Delete {row.quantity}× {row.name}?</span>
-                <button className="btn-danger" onClick={() => run(api(`/collection/${row.id}`, { method: "DELETE" }), "Deleted")}>Yes, delete</button>
+                <button className="btn-danger" onClick={() => run((r) => api(`/collection/${row.id}${r}`, { method: "DELETE" }), "Deleted")}>Yes, delete</button>
                 <button className="btn-ghost" onClick={() => setConfirmDel(false)}>Cancel</button>
               </div>
             ) : <button className="btn-danger" onClick={() => setConfirmDel(true)}>Delete</button>}
