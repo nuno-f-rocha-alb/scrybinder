@@ -205,7 +205,7 @@ def test_folder_source_picks_up_only_new_images(client, tmp_path):
     sc.dir = tmp_path / "cap"
     assert client.post("/api/scan/start", json={"kind": "folder", "target": str(folder)}).status_code == 200
     cv2.imwrite(str(folder / "new.jpg"), img_of("Faithless Looting", seed=5))
-    for _ in range(80):
+    for _ in range(300):  # up to 30 s: the CI runners are slow (the file must be 1 s old, then OCR)
         if sc.state()["pending"]:
             break
         time.sleep(0.1)
