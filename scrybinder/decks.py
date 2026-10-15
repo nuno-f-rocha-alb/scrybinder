@@ -444,6 +444,29 @@ def assign_free(db, deck_id: int, only=None) -> int:
     return n
 
 
+def _first_finish(finishes_json) -> str:
+    fin = json.loads(finishes_json or "[]")
+    return "nonfoil" if "nonfoil" in fin or not fin else "foil" if "foil" in fin else "etched"
+
+
+def add_copy(db, deck_id: int, card_id: int, quantity=1, location: str = "") -> int:
+    """Put copies of the printing a deck card prefers (in its finish) into the collection and assign them to that card, even when
+    you own the card in another printing (which is why it is not "missing"). Returns the copies added."""
+    from . import collection  # collection imports decks
+    card = db.execute("SELECT scryfall_id, finish FROM deck_cards WHERE id=? AND deck_id=?", (card_id, deck_id)).fetchone()
+    if not card:
+        raise KeyError(card_id)
+    if not card["scryfall_id"]:
+        raise ValueError("choose a printing for this card first")
+    quantity = _int(quantity)
+    if not 1 <= quantity <= 999:
+        raise ValueError("quantity must be between 1 and 999")
+    finishes = db.execute("SELECT finishes FROM cards WHERE id=?", (card["scryfall_id"],)).fetchone()["finishes"]
+    collection.add(db, scryfall_id=card["scryfall_id"], quantity=quantity, finish=card["finish"] or _first_finish(finishes), location=location)
+    assign_free(db, deck_id, {card_id})
+    return quantity
+
+
 def add_missing(db, deck_id: int, card_ids=None, location: str = "") -> int:
     """Put the copies a deck is missing into the collection (proxies and the maybeboard never are), then assign them.
     `card_ids` limits it to those deck cards. The printing is the preferred one, else the cheapest. Returns the copies added."""
@@ -462,8 +485,7 @@ def add_missing(db, deck_id: int, card_ids=None, location: str = "") -> int:
                            (c["oracle_id"], c["scryfall_id"] or "")).fetchone()
             if not p:
                 continue
-            fin = json.loads(p["finishes"] or "[]")
-            finish = "nonfoil" if "nonfoil" in fin or not fin else "foil" if "foil" in fin else "etched"
+            finish = _first_finish(p["finishes"])
             if c["finish"] and p["id"] == c["scryfall_id"]:
                 finish = c["finish"]  # the deck wants this finish of its printing
             collection.add(db, scryfall_id=p["id"], quantity=c["missing"], finish=finish, location=location)
