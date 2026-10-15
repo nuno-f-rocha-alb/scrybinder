@@ -302,18 +302,57 @@ def test_list_mode_merge_foil_edit_commit_and_persist(db, tmp_path, monkeypatch)
     scanner.process(img, "3", warped=True)            # foil: new entry
     assert [(r["finish"], r["qty"]) for r in scanner.reads] == [("nonfoil", 2), ("foil", 1)]
     assert not scanner.pending and len(scanner.state()["reads"]) == 2
-    scanner.process(img, "4", warped=True)            # adds to the regular entry again, not the foil
-    assert [r["qty"] for r in scanner.reads] == [3, 1]
+    scanner.process(img, "4", warped=True)            # not the card right before (the foil): a new entry, not added to the first one
+    assert [(r["finish"], r["qty"]) for r in scanner.reads] == [("nonfoil", 2), ("foil", 1), ("nonfoil", 1)]
     again = session.Scanner(db, tmp_path)             # the list survives a restart
-    assert [r["qty"] for r in again.reads] == [3, 1]
+    assert [r["qty"] for r in again.reads] == [2, 1, 1]
     scanner.read_edit(scanner.reads[1]["id"], finish="nonfoil", qty=2, condition="LP")
     assert scanner.reads[1]["condition"] == "LP"
     scanner.read_delete(scanner.reads[1]["id"])
-    out = scanner.commit_reads("TESTE-lista")
-    assert out == {"added": 3, "rows": 1} and scanner.reads == []
+    out = scanner.commit_reads("TESTE-lista")         # the identical rows of the list meet again in the collection
+    assert out == {"added": 3, "rows": 2} and scanner.reads == []  # two entries of the list...
+    assert db.execute("SELECT COUNT(*) FROM collection WHERE location='TESTE-lista'").fetchone()[0] == 1  # ...one row in the collection
     row = db.execute("SELECT quantity, finish, location FROM collection WHERE location='TESTE-lista'").fetchone()
     assert tuple(row) == (3, "nonfoil", "TESTE-lista")
-    assert db.execute("SELECT COUNT(*) FROM scan_log WHERE location='TESTE-lista'").fetchone()[0] == 1
+    assert db.execute("SELECT COUNT(*) FROM scan_log WHERE location='TESTE-lista'").fetchone()[0] == 2  # one log line per entry
+
+
+def test_only_identical_cards_in_a_row_add_up(db, tmp_path, monkeypatch):
+    """X, then others, then X again: the second X is a new line, and the list does not change an entry far above. Only when the
+    list goes into the collection do the identical rows meet (the collection adds up rows that are exactly the same)."""
+    from scrybinder.scan import session
+    ids = [r[0] for r in db.execute("SELECT id FROM cards ORDER BY id LIMIT 4")]
+    x, others = ids[0], ids[1:]
+    res = {"ocr": {"name": "x", "name_match": 100, "number": None, "set": None, "rotated": False}, "candidates": [], "confidence": "high"}
+    scanner = session.Scanner(db, tmp_path)
+    scanner.list_mode = True
+    monkeypatch.setattr(session, "identify_image", lambda ident, i, warped=False: (i, True, dict(res)))
+    img = np.zeros((880, 630, 3), np.uint8)
+
+    def read(card_id):
+        res["candidates"] = [{"id": card_id, "finishes": '["nonfoil"]'}]
+        scanner.process(img, "c", warped=True)
+
+    for c in (x, x, x):                  # three X in a row: one entry of 3
+        read(c)
+    for c in others:                     # then other cards, each its own entry
+        read(c)
+    read(x)                              # X again after others: a new entry
+    assert [(r["scryfall_id"] == x, r["qty"]) for r in scanner.reads] == [(True, 3), (False, 1), (False, 1), (False, 1), (True, 1)]
+    read(x)                              # and now it is in a row with the one right before
+    assert scanner.reads[-1]["qty"] == 2 and len(scanner.reads) == 5
+    out = scanner.commit_reads("TESTE-x")
+    assert out["added"] == 8 and out["rows"] == 5  # five entries of the list...
+    assert db.execute("SELECT COUNT(*) FROM collection WHERE location='TESTE-x'").fetchone()[0] == 4  # ...four rows in the collection
+    assert db.execute("SELECT quantity FROM collection WHERE location='TESTE-x' AND scryfall_id=?", (x,)).fetchone()[0] == 5
+
+    pending = session.Scanner(db, tmp_path / "p")  # the same rule without the list mode
+    res["candidates"] = [{"id": x}]
+    monkeypatch.setattr(session, "identify_image", lambda ident, i, warped=False: (i, True, dict(res)))
+    for c in (x, others[0], x):
+        res["candidates"] = [{"id": c}]
+        pending.process(img, "c", warped=True)
+    assert [p["qty"] for p in pending.pending] == [1, 1, 1]
 
 
 def test_open_url_only_scryfall_and_cardmarket_over_https(client, monkeypatch):

@@ -300,6 +300,18 @@ function ReadsList({ reads, location, onChange, toast }: { reads: Read[]; locati
   const [committing, setCommitting] = useState(false);
   const patch = (id: number, body: object) => api(`/scan/reads/${id}`, { method: "PATCH", body: JSON.stringify(body) }).then(onChange).catch((e) => toast(e.message, true));
   const del = (id: number) => api(`/scan/reads/${id}`, { method: "DELETE" }).then(onChange).catch((e) => toast(e.message, true));
+  // the entry that just got a new card (or was added) is outlined for a moment, so a change is seen wherever it is in the list
+  const seen = useRef<Map<number, number> | null>(null);
+  const [flash, setFlash] = useState<Set<number>>(new Set());
+  useEffect(() => {
+    const before = seen.current;
+    seen.current = new Map(reads.map((r) => [r.id, r.qty]));
+    if (!before) return;  // the first time the list is shown nothing is new
+    const changed = reads.filter((r) => (before.get(r.id) ?? 0) < r.qty).map((r) => r.id);
+    if (!changed.length) return;
+    setFlash((f) => new Set([...f, ...changed]));
+    setTimeout(() => setFlash((f) => { const n = new Set(f); changed.forEach((i) => n.delete(i)); return n; }), 1800);
+  }, [reads]);
   const total = reads.reduce((n, r) => n + r.qty, 0);
   const todo = reads.filter((r) => r.confidence !== "high").length;
   const worth = reads.reduce((n, r) => n + (unit(r) ?? 0) * r.qty, 0);
@@ -332,7 +344,7 @@ function ReadsList({ reads, location, onChange, toast }: { reads: Read[]; locati
           const f = flag(r.confidence), c = r.card;
           const fin = c ? (JSON.parse(c.finishes || "[]") as string[]) : [];
           return (
-            <li key={r.id} className={`rounded-xl border bg-surface p-3 ${f ? f.c.split(" ")[1] : "border-line"}`}>
+            <li key={r.id} className={`rounded-xl border bg-surface p-3 transition-shadow duration-500 ${f ? f.c.split(" ")[1] : "border-line"} ${flash.has(r.id) ? "ring-2 ring-accent" : ""}`}>
               <div className="flex flex-wrap items-center gap-3">
                 <HoverZoom zoom={<img src={`/api/scan/capture/${r.id}`} alt="" className="size-full object-cover" />}>
                   <img src={`/api/scan/capture/${r.id}`} alt="Capture" className="h-24 rounded-md border border-line" /></HoverZoom>
