@@ -127,7 +127,13 @@ def search(db, q="", set_code="", location=None, finish="", language="", sort="n
         f"{_PRICE} AS price {base} ORDER BY {order} LIMIT ? OFFSET ?", p + [limit, offset]).fetchall()
     tot = db.execute(f"SELECT COUNT(*) AS rows_, COALESCE(SUM(c.quantity),0) AS cards, "
                      f"COALESCE(SUM(c.quantity*({_PRICE})),0) AS value {base}", p).fetchone()
-    return {"rows": [dict(r) for r in rows], "total_rows": tot["rows_"], "total_cards": tot["cards"],
+    rows = [dict(r) for r in rows]
+    held = {}
+    for u in decks.users(db, [r["id"] for r in rows]):  # which decks hold copies of each row
+        held.setdefault(u["collection_id"], []).append({"deck_id": u["deck_id"], "name": u["name"], "quantity": u["quantity"]})
+    for r in rows:
+        r["decks"] = held.get(r["id"], [])
+    return {"rows": rows, "total_rows": tot["rows_"], "total_cards": tot["cards"],
             "total_value": round(tot["value"], 2)}
 
 

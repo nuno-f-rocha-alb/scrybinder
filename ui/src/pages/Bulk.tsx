@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { IconPencil, IconTrash, IconX } from "@tabler/icons-react";
-import { api, CONDITIONS, FINISH, LANGS } from "../api";
-import { Modal } from "../components/ui";
+import { api, ApiError, CONDITIONS, FINISH, LANGS } from "../api";
+import { Blocked, Modal } from "../components/ui";
 
 type Done = (msg: string, err?: boolean) => void;
 
@@ -43,9 +43,10 @@ export function BulkEdit({ ids, locations, onClose, onDone }: { ids: number[]; l
   const [on, setOn] = useState<Record<string, boolean>>({});
   const [val, setVal] = useState<Record<string, string>>(DEFAULT);
   const [busy, setBusy] = useState(false);
+  const [blocked, setBlocked] = useState<string | null>(null);  // the copies are in decks: wait for "Release and continue"
   const chosen = FIELDS.filter((f) => on[f.key]);
 
-  const submit = async () => {
+  const submit = async (release = "") => {
     const fields: Record<string, string | number | null> = {};
     for (const f of chosen) {
       const v = val[f.key] ?? "";
@@ -53,9 +54,11 @@ export function BulkEdit({ ids, locations, onClose, onDone }: { ids: number[]; l
     }
     setBusy(true);
     try {
-      const r = await api<{ updated: number; merged: number; skipped: number }>("/collection/bulk", { method: "POST", body: JSON.stringify({ ids, action: "update", fields }) });
+      const r = await api<{ updated: number; merged: number; skipped: number }>("/collection/bulk" + release, { method: "POST", body: JSON.stringify({ ids, action: "update", fields }) });
       onDone(`${r.updated} rows updated${r.merged ? ` · ${r.merged} merged into identical rows` : ""}${r.skipped ? ` · ${r.skipped} skipped (that printing does not exist in that finish)` : ""}`);
-    } catch (e) { onDone((e as Error).message, true); setBusy(false); }
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) { setBlocked(e.message); setBusy(false); } else { onDone((e as Error).message, true); setBusy(false); }
+    }
   };
 
   return (
@@ -80,10 +83,11 @@ export function BulkEdit({ ids, locations, onClose, onDone }: { ids: number[]; l
           </div>
         ))}
       </div>
+      {blocked && <Blocked message={blocked} onRelease={() => submit("?release=1")} onCancel={() => setBlocked(null)} />}
       <div className="mt-5 flex items-center justify-between">
         <span className="text-sm text-mute">{chosen.length ? `Changing: ${chosen.map((f) => f.label.split(" (")[0].toLowerCase()).join(", ")}` : "No field switched on"}</span>
         <div className="flex gap-2"><button className="btn-ghost" onClick={onClose}>Cancel</button>
-          <button className="btn-primary" disabled={!chosen.length || busy} onClick={submit}>{busy ? "Saving…" : `Apply to ${ids.length}`}</button></div>
+          <button className="btn-primary" disabled={!chosen.length || busy} onClick={() => submit()}>{busy ? "Saving…" : `Apply to ${ids.length}`}</button></div>
       </div>
     </Modal>
   );
@@ -92,12 +96,15 @@ export function BulkEdit({ ids, locations, onClose, onDone }: { ids: number[]; l
 /** Explicit confirmation: deleting has no "undo" in the interface (the rows are kept in data/trash). */
 export function BulkDelete({ ids, preview, onClose, onDone }: { ids: number[]; preview: string[]; onClose: () => void; onDone: Done }) {
   const [busy, setBusy] = useState(false);
-  const run = async () => {
+  const [blocked, setBlocked] = useState<string | null>(null);
+  const run = async (release = "") => {
     setBusy(true);
     try {
-      const r = await api<{ deleted: number }>("/collection/bulk", { method: "POST", body: JSON.stringify({ ids, action: "delete" }) });
+      const r = await api<{ deleted: number }>("/collection/bulk" + release, { method: "POST", body: JSON.stringify({ ids, action: "delete" }) });
       onDone(`${r.deleted} rows deleted (backup in data/trash)`);
-    } catch (e) { onDone((e as Error).message, true); setBusy(false); }
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 409) { setBlocked(e.message); setBusy(false); } else { onDone((e as Error).message, true); setBusy(false); }
+    }
   };
   return (
     <Modal onClose={onClose} title="Bulk delete">
@@ -109,9 +116,10 @@ export function BulkDelete({ ids, preview, onClose, onDone }: { ids: number[]; p
           {ids.length > preview.length && <li className="text-mute">… and {ids.length - preview.length} more</li>}
         </ul>
       )}
+      {blocked && <Blocked message={blocked} onRelease={() => run("?release=1")} onCancel={() => setBlocked(null)} />}
       <div className="mt-5 flex justify-end gap-2">
         <button className="btn-ghost" autoFocus onClick={onClose}>Cancel</button>
-        <button className="btn-danger" disabled={busy} onClick={run}>{busy ? "Deleting…" : `Yes, delete ${ids.length}`}</button>
+        <button className="btn-danger" disabled={busy} onClick={() => run()}>{busy ? "Deleting…" : `Yes, delete ${ids.length}`}</button>
       </div>
     </Modal>
   );
