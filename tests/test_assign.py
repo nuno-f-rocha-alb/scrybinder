@@ -214,3 +214,20 @@ def test_a_deck_cover_can_be_chosen_from_its_cards(db):
     assert cover() == first
     with pytest.raises(ValueError):
         decks.update(db, d1, cover_card_id=decks.add_card(db, d2, oid))  # a card of another deck
+
+
+def test_an_empty_location_can_be_made_and_removed(db):
+    oid, sid, row, d1, d2 = _setup(db, qty=2)
+    assert collection.create_location(db, "  Box 7 ") == "Box 7"
+    collection.create_location(db, "Box 7")  # again: still one
+    assert {l["location"]: l["cards"] for l in collection.locations(db)} == {"": 2, "Box 7": 0}
+    collection.move(db, row, "Box 7", 1)  # a card can go there later
+    assert {l["location"]: l["cards"] for l in collection.locations(db)} == {"": 1, "Box 7": 1}
+    with pytest.raises(ValueError):
+        collection.delete_location(db, "Box 7")  # it has a card
+    collection.create_location(db, "Empty")
+    collection.delete_location(db, "Empty")
+    assert "Empty" not in [l["location"] for l in collection.locations(db)]
+    for bad in ("", "   ", None, "x" * 61):
+        with pytest.raises(ValueError):
+            collection.create_location(db, bad)

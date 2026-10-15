@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { IconCards, IconChecklist, IconCheck, IconLayoutGrid, IconList, IconSearch } from "@tabler/icons-react";
+import { IconCards, IconChecklist, IconCheck, IconFolderPlus, IconLayoutGrid, IconList, IconSearch } from "@tabler/icons-react";
 import { api, ApiError, CONDITIONS, Collection as Coll, eur, FINISH, LANGS, qs, Row, useGroup } from "../api";
 import { Badge, Blocked, CardImg, Drawer, ExtLinks, Field, Hit, Modal, useToast } from "../components/ui";
 import { GridControls, sourceFor, useCardGrid } from "../components/cardgrid";
@@ -29,6 +29,7 @@ export default function Collection({ initialSet, initialLocation }: { initialSet
   const lastPick = useRef<number | null>(null);
   const filterKey = useRef("");
   const { toast, node } = useToast();
+  const [newLoc, setNewLoc] = useState<string | null>(null);  // the name being typed in the "New location" dialog
   const menu = useContextMenu();
   const [toDeck, setToDeck] = useState<Row | null>(null);
 
@@ -73,6 +74,8 @@ export default function Collection({ initialSet, initialLocation }: { initialSet
   };
   const bulkDone = (m: string, err?: boolean) => { setBulk(null); if (!err) { setSel(new Set()); setSelecting(false); } toast(m, err); load(); };
   const open = (r: Row, i: number, e: React.MouseEvent) => (selecting ? pick(i, e.shiftKey) : setEdit(r));
+  const createLoc = () => api<{ location: string }>("/locations", { method: "POST", body: JSON.stringify({ name: newLoc }) })
+    .then((r) => { setNewLoc(null); setLocation(r.location); toast(`Location ${r.location} created`); load(); }).catch((e) => toast(e.message, true));
   const rowMenu = (r: Row, i: number): MenuItem[] => [
     { label: "Edit…", onSelect: () => setEdit(r) },
     { label: "Add one copy", onSelect: () => api(`/collection/${r.id}`, { method: "PATCH", body: JSON.stringify({ quantity: r.quantity + 1 }) }).then(() => { load(); toast(`${r.quantity + 1}× ${r.name}`); }).catch((e) => toast(e.message, true)) },
@@ -105,6 +108,10 @@ export default function Collection({ initialSet, initialLocation }: { initialSet
             <option value="*">All locations</option>
             {locs.map((l) => <option key={l.location} value={l.location}>{l.location || "(no location)"} · {l.cards}</option>)}
           </select>
+          <button className="btn-ghost" title="Make a location, empty, to move cards into" onClick={() => setNewLoc("")}><IconFolderPlus className="size-4" />New location</button>
+          {location !== undefined && location !== "" && locs.some((l) => l.location === location && l.cards === 0) && (
+            <button className="btn-ghost" title="Remove this empty location" onClick={() => api(`/locations?name=${encodeURIComponent(location)}`, { method: "DELETE" })
+              .then(() => { setLocation(undefined); toast(`Location ${location} removed`); load(); }).catch((e) => toast(e.message, true))}>Remove empty location</button>)}
           <select className="field w-auto" value={finish} onChange={(e) => setFinish(e.target.value)} aria-label="Finish">
             <option value="">All finishes</option>
             {Object.entries(FINISH).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
@@ -204,6 +211,18 @@ export default function Collection({ initialSet, initialLocation }: { initialSet
       {bulk === "delete" && <BulkDelete ids={[...sel]} preview={rows.filter((r) => sel.has(r.id)).slice(0, 6).map((r) => `${r.quantity}× ${r.name} (${r.set_code.toUpperCase()})`)} onClose={() => setBulk(null)} onDone={bulkDone} />}
       {edit && <EditModal row={edit} locations={locs.map((l) => l.location).filter(Boolean)} onClose={() => setEdit(null)}
         onDone={(m) => { setEdit(null); load(); toast(m); }} onError={(m) => toast(m, true)} />}
+      {newLoc !== null && (
+        <Modal title="New location" onClose={() => setNewLoc(null)}>
+          <h2 className="mb-3 text-lg font-semibold">New location</h2>
+          <p className="mb-3 text-sm text-mute">It stays in the list while it is empty, so you can move cards into it.</p>
+          <input className="field" autoFocus maxLength={60} placeholder="e.g. Box 3" aria-label="Location name" value={newLoc} onChange={(e) => setNewLoc(e.target.value)}
+            onKeyDown={(e) => { if (e.key === "Enter" && newLoc.trim()) createLoc(); }} />
+          <div className="mt-5 flex justify-end gap-2">
+            <button className="btn-ghost" onClick={() => setNewLoc(null)}>Cancel</button>
+            <button className="btn-primary" disabled={!newLoc.trim()} onClick={createLoc}>Create</button>
+          </div>
+        </Modal>
+      )}
       {toDeck && <DeckPicker oracleId={toDeck.oracle_id} scryfallId={toDeck.scryfall_id} name={toDeck.name} onClose={() => setToDeck(null)}
         onDone={(n) => { setToDeck(null); load(); toast(`${toDeck.name} added to ${n}`); }} />}
       {menu.node}

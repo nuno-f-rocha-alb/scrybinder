@@ -453,6 +453,15 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
     def locs():
         return collection.locations(db)
 
+    @app.post("/api/locations")
+    def locs_create(body: dict = Body(...)):
+        return {"location": _wrap(collection.create_location, db, body.get("name"))}
+
+    @app.delete("/api/locations")
+    def locs_delete(name: str):
+        _wrap(collection.delete_location, db, name)
+        return {"ok": True}
+
     def _wrap(fn, *a, **k):
         try:
             return fn(*a, **k)
