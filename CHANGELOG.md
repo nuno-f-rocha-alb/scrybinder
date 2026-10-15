@@ -4,6 +4,9 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Fixed
+- The results of the deck's add-cards bar can be closed: Escape, a click outside the bar or the X hide them (they come back when you search again or focus the box). With the bar fixed at the top they stayed over the cards.
+
 ## [0.6.2] — 2026-10-15
 
 ### Added
