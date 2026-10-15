@@ -88,6 +88,12 @@ def cards(db, deck_id: int) -> list[dict]:
     for cid, coll, q in db.execute("SELECT deck_card_id, collection_id, quantity FROM deck_assignments WHERE deck_card_id IN"
                                    " (SELECT id FROM deck_cards WHERE deck_id=?) ORDER BY collection_id", (deck_id,)):
         assignments.setdefault(cid, []).append({"collection_id": coll, "quantity": q})
+    held = {}  # what the assigned copies really are (printing and finish), so the deck follows the collection
+    for cid, sid, fin, setc, num, setn, q in db.execute(
+            "SELECT a.deck_card_id, c.scryfall_id, c.finish, k.set_code, k.collector_number, k.set_name, SUM(a.quantity) FROM deck_assignments a"
+            " JOIN collection c ON c.id = a.collection_id JOIN cards k ON k.id = c.scryfall_id WHERE a.deck_card_id IN"
+            " (SELECT id FROM deck_cards WHERE deck_id=?) GROUP BY a.deck_card_id, c.scryfall_id, c.finish ORDER BY SUM(a.quantity) DESC, c.id", (deck_id,)):
+        held.setdefault(cid, []).append({"scryfall_id": sid, "finish": fin, "set_code": setc, "collector_number": num, "set_name": setn, "quantity": q})
     for oid, did, name, q in db.execute(
             "SELECT k.oracle_id, dk.id, dk.name, SUM(a.quantity) FROM deck_assignments a"
             " JOIN deck_cards dc ON dc.id = a.deck_card_id JOIN decks dk ON dk.id = dc.deck_id"
@@ -104,6 +110,9 @@ def cards(db, deck_id: int) -> list[dict]:
         r["game_changer"] = bool(r["game_changer"])
         r["tags"] = tags.get(r["id"], [])
         r["assignments"] = assignments.get(r["id"], [])
+        r["owned_prints"] = held.get(r["id"], [])
+        if not r["scryfall_id"] and r["owned_prints"]:  # no printing chosen: the card looks like the copy you assigned
+            r["image_id"] = r["owned_prints"][0]["scryfall_id"]
         r["elsewhere"] = elsewhere.get(r["oracle_id"], [])
         free = pool.setdefault(r["oracle_id"], max(r["owned"] - r["assigned_all"], 0))
         need = max(r["quantity"] - r["assigned"], 0)
