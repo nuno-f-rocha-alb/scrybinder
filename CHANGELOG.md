@@ -4,6 +4,8 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+## [0.6.5] — 2026-10-15
+
 ### Added
 - Camera scan: when a read is ignored because it is the card still on the stand, a note says so and reminds you to press N before showing a foil. Each entry now shows whether it was identified by OCR only or by OCR + the visual model (DINOv2).
 
