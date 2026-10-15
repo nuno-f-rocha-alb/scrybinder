@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { api } from "../api";
 import { cardmarketUrl, openExternal, scryfallUrl } from "./ui";
 
 export type MenuItem = "sep" | { label: string; onSelect: () => void; hint?: string; danger?: boolean; disabled?: boolean };
@@ -14,6 +15,11 @@ export function nameAndLinks(name: string, printId: string | null | undefined, c
   ];
 }
 
+/** A short note in app.log about what the menu did (when it opened and why it closed), with the time on this side and the window numbers. */
+function uiLog(body: Record<string, string | number | boolean | undefined>) {
+  api("/ui-log", { method: "POST", body: JSON.stringify({ at: new Date().toISOString(), vh: window.innerHeight, vw: window.innerWidth, ...body }) }).catch(() => {});
+}
+
 /** A right-click menu (also Shift+F10 / the menu key): `open(event, items)` from an `onContextMenu`, and render `node` once. */
 export function useContextMenu() {
   const [m, setM] = useState<Open | null>(null);
@@ -21,6 +27,9 @@ export function useContextMenu() {
     e.preventDefault();
     e.stopPropagation();
     setM({ x: e.clientX, y: e.clientY, items });
+    const row = e.currentTarget as HTMLElement;
+    uiLog({ event: "menu-open", x: e.clientX, y: e.clientY, row: (row.innerText ?? "").replace(/\s+/g, " ").slice(0, 40), top: Math.round(row.getBoundingClientRect().top),
+      left: Math.round(row.getBoundingClientRect().left), items: items.length, main: Math.round(document.querySelector("main")?.scrollTop ?? -1) });
   }, []);
   const close = useCallback(() => setM(null), []);
   const node = m ? <Menu m={m} onClose={close} /> : null;
@@ -40,18 +49,30 @@ function Menu({ m, onClose }: { m: Open; onClose: () => void }) {
     el.querySelector<HTMLElement>("button:not(:disabled)")?.focus({ preventScroll: true });  // focusing must not scroll the page: that closes the menu
   }, [m]);
   useEffect(() => {
-    const out = (e: Event) => { if (!ref.current?.contains(e.target as Node)) onClose(); };
-    window.addEventListener("mousedown", out);
-    window.addEventListener("contextmenu", out, true);
-    const scrolled = (e: Event) => { if (!ref.current?.contains(e.target as Node)) onClose(); };  // the page moved under it; its own scroll does not count
-    window.addEventListener("scroll", scrolled, true);
-    window.addEventListener("resize", onClose);
-    window.addEventListener("blur", onClose);
-    return () => {
-      window.removeEventListener("mousedown", out); window.removeEventListener("contextmenu", out, true);
-      window.removeEventListener("scroll", scrolled, true); window.removeEventListener("resize", onClose); window.removeEventListener("blur", onClose);
+    // Something outside the menu that happens in the first instants after it opened is not the user closing it (a second contextmenu event,
+    // a layout scroll, a focus change of the host window): it is ignored, and written to app.log so it can be found out what it was.
+    const opened = performance.now();
+    const note = (what: string, reason: string, e: Event) => {
+      const ms = Math.round(performance.now() - opened), t = e.target as HTMLElement | null;
+      if (ms < 3000) uiLog({ event: `menu-${what}`, reason, ms, target: t?.tagName ?? String(t), cls: String(t?.className ?? "").slice(0, 60), x: m.x, y: m.y, h: ref.current?.offsetHeight });
     };
-  }, [onClose]);
+    const dismiss = (reason: string, grace: number) => (e: Event) => {
+      if (ref.current?.contains(e.target as Node)) return;  // inside the menu (its own scroll, a click on it) does not count
+      if (performance.now() - opened < grace) { note("ignored", reason, e); return; }
+      note("closed", reason, e);
+      onClose();
+    };
+    const out = dismiss("mousedown", 250), ctx = dismiss("contextmenu", 250), scrolled = dismiss("scroll", 400), resized = dismiss("resize", 400), blurred = dismiss("blur", 400);
+    window.addEventListener("mousedown", out);
+    window.addEventListener("contextmenu", ctx, true);
+    window.addEventListener("scroll", scrolled, true);  // the page moved under it
+    window.addEventListener("resize", resized);
+    window.addEventListener("blur", blurred);
+    return () => {
+      window.removeEventListener("mousedown", out); window.removeEventListener("contextmenu", ctx, true);
+      window.removeEventListener("scroll", scrolled, true); window.removeEventListener("resize", resized); window.removeEventListener("blur", blurred);
+    };
+  }, [onClose, m]);
   useEffect(() => () => (back.current as HTMLElement | null)?.focus?.(), []);
 
   const keys = (e: React.KeyboardEvent) => {

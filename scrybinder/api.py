@@ -1,5 +1,6 @@
 """Local FastAPI backend. Bound to 127.0.0.1 only; SameSite=Strict session cookie + Host header check."""
 import importlib.util
+import logging
 import os
 import secrets
 import sqlite3
@@ -287,6 +288,13 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
                       owned: bool = False, legal: bool = False, deck: int | None = None, sort: str = "name",
                       limit: int = 50, offset: int = 0):
         return _wrap(oracle.search, db, q, text, colors, type, cmc_min, cmc_max, owned, legal, deck, sort, limit, offset)
+
+    @app.post("/api/ui-log")
+    def ui_log(body: dict = Body(...)):
+        """The interface leaves a short note in app.log (what happened when a menu closed by itself): a few fields of text and numbers."""
+        note = {str(k)[:20]: (v if isinstance(v, (int, float, bool)) else str(v)[:80]) for k, v in list(body.items())[:14]}
+        logging.getLogger("scrybinder.ui").info("%s", note)
+        return {"ok": True}
 
     @app.get("/api/cards/{card_id}/details")
     def card_details(card_id: str):
