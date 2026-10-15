@@ -339,7 +339,8 @@ class Scanner:
         if frame is None:
             return None
         self.debug_dir.mkdir(parents=True, exist_ok=True)
-        base = self.debug_dir / f"{time.strftime('%Y%m%d-%H%M%S')}-{int(time.time() * 1000) % 1000:03d}-{reason}"
+        now = time.time_ns()  # one reading of the clock: the names sort in the order the frames were taken
+        base = self.debug_dir / f"{time.strftime('%Y%m%d-%H%M%S', time.localtime(now // 10**9))}-{now % 10**9:09d}-{reason}"
         cv2.imwrite(str(base) + ".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
         view = frame.copy()
         if quad is not None:
