@@ -64,6 +64,24 @@ def test_stability_swap_without_leaving_view():
     s.update(b, 0.5); assert s.update(b, 0.9)
 
 
+def test_stability_does_not_fire_again_when_the_detector_flips_between_shapes():
+    """A card in a dock: the outline found jumps between the whole card and a rectangle inside it. That is not a new card."""
+    s = vision.Stability(hold=0.4)
+    whole = np.array([[100, 100], [400, 100], [400, 520], [100, 520]], np.float32)       # 300 x 420
+    lower = np.array([[100, 280], [400, 280], [400, 520], [100, 520]], np.float32)       # 300 x 240: the lower half
+    text = np.array([[130, 330], [370, 330], [370, 480], [130, 480]], np.float32)        # the text box
+    s.update(whole, 0.0)
+    assert s.update(whole, 0.5)
+    fired = [s.update(q, 1.0 + 0.1 * i) for i, q in enumerate([lower, text, whole, lower, text, whole] * 6)]
+    assert not any(fired)  # 3.6 s of flipping and it never captures the same card again
+    s.update(None, 5.0)
+    s.update(None, 5.5)
+    assert not s.update(whole, 5.6)  # a flicker shorter than the gap does not re-arm either
+    s.update(None, 6.0)
+    s.update(None, 6.9)  # the card really left
+    assert not s.update(whole, 7.0) and s.update(whole, 7.5)
+
+
 def test_parse_bottom():
     p = identify.parse_bottom("103/342 R\nC15 • EN\n")
     assert p["numbers"] == ["103"] and "C15" in p["tokens"]

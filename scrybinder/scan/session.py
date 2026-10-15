@@ -326,7 +326,7 @@ class Scanner:
             self.message = f"The camera failed: {e}"
         finally:
             cap.release()
-            self._frame = self._quad = None  # nothing to save once the camera is off
+            self._frame = self._quad = self._preview = None  # nothing to save or show once the camera is off (a restart must not show the last picture)
             log.info("Camera %s closed after %s frames", index, frames)
 
     DEBUG_KEEP = 30  # frames kept (each is a raw JPEG, one with the outline drawn and a small JSON)

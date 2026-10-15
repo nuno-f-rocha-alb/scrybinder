@@ -272,13 +272,16 @@ def card_from_photo(img: np.ndarray) -> tuple[np.ndarray, bool]:
 
 
 class Stability:
-    """Fires once when the quadrilateral stays still for `hold` s; re-arms only when the card leaves or moves a lot."""
+    """Fires once when the quadrilateral stays still for `hold` s. It re-arms when the card leaves for `gap` s, or when a quadrilateral
+    of the same size as the captured card appears somewhere else (a card swapped without leaving the view). A different size is the
+    detector changing its mind (the text box, the lower half of the same card), not a new card."""
 
-    def __init__(self, hold=0.4, tol=6.0, gap=0.5):
+    def __init__(self, hold=0.4, tol=6.0, gap=0.8):
         self.hold, self.tol, self.gap = hold, tol, gap
         self.anchor = None      # reference position while still
         self.since = None       # since when it has been still
         self.fired = False      # this card was already captured
+        self.fired_area = 0.0   # the area of the quadrilateral that was captured: every card has the same size
         self.lost_at = None     # since when there has been no card
 
     def update(self, quad, now: float) -> bool:
@@ -291,11 +294,11 @@ class Stability:
         self.lost_at = None
         d = float("inf") if self.anchor is None else float(np.abs(quad - self.anchor).max())
         if d > self.tol:
-            if 40 < d < float("inf"):
-                self.fired = False  # big jump without the card leaving the field = card swapped
+            if 40 < d < float("inf") and 0.75 <= float(cv2.contourArea(quad)) / max(self.fired_area, 1.0) <= 1.33:
+                self.fired = False  # big jump to a card-sized quadrilateral without the card leaving the field = card swapped
             self.anchor, self.since = quad.copy(), now
             return False
         if not self.fired and now - self.since >= self.hold:
-            self.fired = True
+            self.fired, self.fired_area = True, float(cv2.contourArea(quad))
             return True
         return False

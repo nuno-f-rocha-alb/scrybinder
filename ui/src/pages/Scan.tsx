@@ -21,6 +21,32 @@ const CONF: Record<string, { t: string; c: string }> = {
 };
 const store = (k: string, d: string) => { try { return localStorage.getItem(k) ?? d; } catch { return d; } };
 
+/** The live camera picture: one JPEG asked for a few times a second (not a continuous stream, see /api/scan/frame). */
+function CameraPreview() {
+  const [url, setUrl] = useState<string | null>(null);
+  useEffect(() => {
+    let live = true, last: string | null = null, busy = false;
+    const tick = async () => {
+      if (busy) return;  // the previous picture has not arrived yet
+      busy = true;
+      try {
+        const r = await fetch("/api/scan/frame", { cache: "no-store" });
+        if (r.ok && live) {
+          const u = URL.createObjectURL(await r.blob());
+          setUrl(u);
+          if (last) URL.revokeObjectURL(last);  // pictures are not kept: a stream's frames piled up in the page
+          last = u;
+        }
+      } catch { /* the camera stopped between two pictures */ } finally { busy = false; }
+    };
+    const t = setInterval(tick, 120);
+    tick();
+    return () => { live = false; clearInterval(t); if (last) URL.revokeObjectURL(last); };
+  }, []);
+  return url ? <img src={url} alt="Camera preview" className="w-full rounded-xl border border-line" />
+    : <div className="flex aspect-video w-full items-center justify-center rounded-xl border border-line bg-surface text-xs text-mute">Waiting for the camera…</div>;
+}
+
 export default function Scan() {
   const [st, setSt] = useState<State | null>(null);
   const [mode, setMode] = useState<"photos" | "folder" | "webcam">("photos");
@@ -153,7 +179,7 @@ export default function Scan() {
               )}
             </div>
           )}
-          {st?.running && st.source?.startsWith("webcam") && <img src="/api/scan/preview" alt="Camera preview" className="w-full rounded-xl border border-line" />}
+          {st?.running && st.source?.startsWith("webcam") && <CameraPreview />}
 
           <label className="flex cursor-pointer items-start gap-2 text-sm">
             <input type="checkbox" className="mt-1" checked={listMode} onChange={(e) => setListMode(e.target.checked)} />
