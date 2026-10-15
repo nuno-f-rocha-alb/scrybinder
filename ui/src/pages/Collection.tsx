@@ -4,6 +4,8 @@ import { api, ApiError, CONDITIONS, Collection as Coll, eur, FINISH, LANGS, qs, 
 import { Badge, Blocked, CardImg, Drawer, ExtLinks, Field, Hit, Modal, useToast } from "../components/ui";
 import { GridControls, sourceFor, useCardGrid } from "../components/cardgrid";
 import { BulkBar, BulkDelete, BulkEdit } from "./Bulk";
+import { MenuItem, nameAndLinks, useContextMenu } from "../components/contextmenu";
+import DeckPicker from "../components/deckpicker";
 
 const PAGE = 60;
 
@@ -28,6 +30,8 @@ export default function Collection({ initialSet, initialLocation }: { initialSet
   const filterKey = useRef("");
   const { toast, node } = useToast();
   const [newLoc, setNewLoc] = useState<string | null>(null);  // the name being typed in the "New location" dialog
+  const menu = useContextMenu();
+  const [toDeck, setToDeck] = useState<Row | null>(null);
 
   const load = useCallback(() => {
     api<Coll>("/collection?" + qs({ q, set: setCode, location, finish, sort, limit })).then(setData).catch((e) => toast(e.message, true));
@@ -72,6 +76,14 @@ export default function Collection({ initialSet, initialLocation }: { initialSet
   const open = (r: Row, i: number, e: React.MouseEvent) => (selecting ? pick(i, e.shiftKey) : setEdit(r));
   const createLoc = () => api<{ location: string }>("/locations", { method: "POST", body: JSON.stringify({ name: newLoc }) })
     .then((r) => { setNewLoc(null); setLocation(r.location); toast(`Location ${r.location} created`); load(); }).catch((e) => toast(e.message, true));
+  const rowMenu = (r: Row, i: number): MenuItem[] => [
+    { label: "Edit…", onSelect: () => setEdit(r) },
+    { label: "Add one copy", onSelect: () => api(`/collection/${r.id}`, { method: "PATCH", body: JSON.stringify({ quantity: r.quantity + 1 }) }).then(() => { load(); toast(`${r.quantity + 1}× ${r.name}`); }).catch((e) => toast(e.message, true)) },
+    { label: "Add to a deck…", onSelect: () => setToDeck(r) },
+    { label: "Select", onSelect: () => { setSelecting(true); setSel(new Set([r.id])); lastPick.current = i; } },
+    "sep",
+    ...nameAndLinks(r.name, r.scryfall_id, r.cardmarket_id, toast),
+  ];
   const setV = (v: "grid" | "table") => { setView(v); try { localStorage.setItem("scrybinder.view", v); } catch { /* no storage */ } };
 
   return (
@@ -141,7 +153,7 @@ export default function Collection({ initialSet, initialLocation }: { initialSet
       {data && view === "grid" && (
         <div ref={grid.setGridEl} className="grid gap-4" style={grid.style}>
           {data.rows.map((r, i) => (
-            <button key={r.id} onClick={(e) => open(r, i, e)} aria-pressed={selecting ? sel.has(r.id) : undefined} className="group cursor-pointer text-left outline-none select-none">
+            <button key={r.id} onClick={(e) => open(r, i, e)} onContextMenu={(e) => menu.open(e, rowMenu(r, i))} aria-pressed={selecting ? sel.has(r.id) : undefined} className="group cursor-pointer text-left outline-none select-none">
               <div className="relative transition-transform duration-200 group-hover:-translate-y-1 group-focus-visible:-translate-y-1">
                 <CardImg id={r.scryfall_id} size={sourceFor(grid.tilePx)} className={`shadow-lg shadow-black/50 group-focus-visible:ring-2 group-focus-visible:ring-accent ${sel.has(r.id) ? "ring-2 ring-accent brightness-75" : ""}`} />
                 {selecting && <span aria-hidden className={`absolute bottom-1.5 left-1.5 flex size-6 items-center justify-center rounded-full border-2 ${sel.has(r.id) ? "border-accent bg-accent text-white" : "border-white/70 bg-black/50"}`}>{sel.has(r.id) && <IconCheck className="size-4" stroke={3} />}</span>}
@@ -169,7 +181,7 @@ export default function Collection({ initialSet, initialLocation }: { initialSet
             </thead>
             <tbody>
               {data.rows.map((r, i) => (
-                <tr key={r.id} onClick={(e) => open(r, i, e)} className={`cursor-pointer select-none border-t border-line hover:bg-raised/60 ${sel.has(r.id) ? "bg-accent-soft" : ""}`}>
+                <tr key={r.id} onClick={(e) => open(r, i, e)} onContextMenu={(e) => menu.open(e, rowMenu(r, i))} className={`cursor-pointer select-none border-t border-line hover:bg-raised/60 ${sel.has(r.id) ? "bg-accent-soft" : ""}`}>
                   {selecting && <td className="px-3 py-2"><input type="checkbox" readOnly tabIndex={-1} aria-label={`Select ${r.name}`} checked={sel.has(r.id)} className="pointer-events-none accent-[var(--color-accent)]" /></td>}
                   <td className="px-3 py-2 tabular-nums">{r.quantity}</td>
                   <td className="px-3 py-2 font-medium">{r.name}{r.decks.length > 0 && <span className="ml-2 inline-flex items-center gap-1 text-xs font-normal text-accent" title={`In ${r.decks.map((d) => d.name).join(", ")}`}><IconCards className="size-3.5" aria-hidden />{r.decks.length}<span className="sr-only"> decks: {r.decks.map((d) => d.name).join(", ")}</span></span>}</td>
@@ -211,6 +223,9 @@ export default function Collection({ initialSet, initialLocation }: { initialSet
           </div>
         </Modal>
       )}
+      {toDeck && <DeckPicker oracleId={toDeck.oracle_id} scryfallId={toDeck.scryfall_id} name={toDeck.name} onClose={() => setToDeck(null)}
+        onDone={(n) => { setToDeck(null); load(); toast(`${toDeck.name} added to ${n}`); }} />}
+      {menu.node}
       {node}
     </div>
   );

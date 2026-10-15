@@ -38,7 +38,7 @@ function HBar({ label, count, max, active, onClick, color }: { label: string; co
 function Curve({ stats, active, onFilter }: { stats: DeckStats; active: CardFilter | null; onFilter: (f: CardFilter) => void }) {
   const max = Math.max(1, ...stats.curve.map((b) => b.permanents + b.spells));
   return (
-    <section className={card} aria-label="Mana curve">
+    <section className={`${card} flex flex-col`} aria-label="Mana curve">
       <div className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h3 className="text-sm font-semibold">Mana curve</h3>
         <span className="flex items-center gap-3 text-xs text-mute">
@@ -46,7 +46,7 @@ function Curve({ stats, active, onFilter }: { stats: DeckStats; active: CardFilt
           <span className="flex items-center gap-1"><span className="size-2.5 rounded-sm bg-gold" aria-hidden />Spells</span>
         </span>
       </div>
-      <div className="flex h-44 items-end gap-2">
+      <div className="flex min-h-44 flex-1 items-end gap-2">  {/* grows to the height of the card beside it */}
         {stats.curve.map((b) => {
           const total = b.permanents + b.spells, label = b.cmc === 7 ? "7+" : String(b.cmc);
           const on = active?.kind === "cmc" && active.value === String(b.cmc);

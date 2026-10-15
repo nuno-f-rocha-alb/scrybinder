@@ -5,12 +5,12 @@ export type Row = {
   condition: "NM" | "LP" | "MP" | "HP" | "DMG"; language: string; location: string;
   altered: number; signed: number; misprint: number; proxy: number;
   purchase_price: number | null; purchase_currency: string; purchase_date: string | null; notes: string;
-  name: string; set_code: string; set_name: string; collector_number: string; rarity: string; price: number | null; cardmarket_id?: number | null;
+  oracle_id: string; name: string; set_code: string; set_name: string; collector_number: string; rarity: string; price: number | null; cardmarket_id?: number | null;
   decks: { deck_id: number; name: string; quantity: number }[];  // the decks holding copies of this row
 };
 export type Collection = { rows: Row[]; total_rows: number; total_cards: number; total_value: number };
 export type Print = {
-  id: string; name: string; set_code: string; set_name: string; collector_number: string; released_at: string;
+  id: string; oracle_id: string; name: string; set_code: string; set_name: string; collector_number: string; released_at: string;
   rarity: string; finishes: string; frame: string; full_art: number; border_color: string; promo_types: string;
   eur: number | null; eur_foil: number | null; eur_etched: number | null; lang: string; cardmarket_id?: number | null;
 };

@@ -3,12 +3,14 @@ import { IconAdjustmentsHorizontal, IconPlus, IconSearch } from "@tabler/icons-r
 import { api, qs } from "../api";
 import { BOARDS, BOARD_LABEL, Board, Deck, OracleRow, Preview, resultPreview } from "../decks";
 import { ManaCost } from "./mana";
+import { nameAndLinks, useContextMenu } from "./contextmenu";
 
 const COLORS = ["W", "U", "B", "R", "G", "C"];
 const NAME: Record<string, string> = { W: "White", U: "Blue", B: "Black", R: "Red", G: "Green", C: "Colourless" };
 
 /** Search for cards to add: by name, and with filters (rules text, type, colours, mana value, owned, sort). Enter adds the first result. */
-export default function AddCards({ deck, onAdd, setPreview }: { deck: Deck; onAdd: (oracleId: string, board: Board) => void; setPreview: (p: Preview) => void }) {
+export default function AddCards({ deck, onAdd, setPreview, toast }: { deck: Deck; onAdd: (oracleId: string, board: Board) => void; setPreview: (p: Preview) => void; toast: (m: string, err?: boolean) => void }) {
+  const menu = useContextMenu();
   const [q, setQ] = useState("");
   const [board, setBoard] = useState<Board>(deck.format === "commander" && !deck.cards.some((c) => c.board === "commander") ? "commander" : "main");
   const [legalOnly, setLegalOnly] = useState(true);
@@ -87,7 +89,9 @@ export default function AddCards({ deck, onAdd, setPreview }: { deck: Deck; onAd
           <p className="mt-3 text-xs text-mute tabular-nums">{total > rows.length ? `${rows.length} of ${total} cards. Narrow it down to see the rest.` : `${total} ${total === 1 ? "card" : "cards"}`}</p>
           <ul className="mt-1 max-h-96 divide-y divide-line overflow-y-auto">
             {rows.map((r) => (
-              <li key={r.oracle_id} onMouseEnter={() => setPreview(resultPreview(r))} className="flex items-center gap-3 px-1 py-1.5 hover:bg-raised">
+              <li key={r.oracle_id} onMouseEnter={() => setPreview(resultPreview(r))} onContextMenu={(e) => menu.open(e, [
+                ...BOARDS.map((b) => ({ label: `Add to ${BOARD_LABEL[b].toLowerCase()}`, onSelect: () => onAdd(r.oracle_id, b) })),
+                "sep" as const, ...nameAndLinks(r.name, r.id, null, toast)])} className="flex items-center gap-3 px-1 py-1.5 hover:bg-raised">
                 <button className="btn-ghost !px-2 !py-1" onClick={() => add(r)} aria-label={`Add ${r.name}`}><IconPlus className="size-4" /></button>
                 <span className="min-w-0 flex-1 truncate text-sm">{r.name}</span>
                 <ManaCost cost={r.mana_cost} />
@@ -98,6 +102,7 @@ export default function AddCards({ deck, onAdd, setPreview }: { deck: Deck; onAd
           </ul>
         </>
       )}
+      {menu.node}
     </div>
   );
 }

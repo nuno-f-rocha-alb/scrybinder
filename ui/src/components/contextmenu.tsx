@@ -1,8 +1,18 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
+import { cardmarketUrl, openExternal, scryfallUrl } from "./ui";
 
 export type MenuItem = "sep" | { label: string; onSelect: () => void; hint?: string; danger?: boolean; disabled?: boolean };
 type Open = { x: number; y: number; items: MenuItem[] };
+
+/** The items every card menu ends with: copy the name and open the printing on Scryfall (and Cardmarket when it has a product). */
+export function nameAndLinks(name: string, printId: string | null | undefined, cardmarketId: number | null | undefined, toast: (m: string, err?: boolean) => void): MenuItem[] {
+  return [
+    { label: "Copy card name", onSelect: () => navigator.clipboard.writeText(name).then(() => toast("Name copied")).catch(() => toast("Could not copy", true)) },
+    ...(printId ? ["sep" as const, { label: "Open on Scryfall", onSelect: () => openExternal(scryfallUrl(printId)) }] : []),
+    ...(cardmarketId ? [{ label: "Open on Cardmarket", onSelect: () => openExternal(cardmarketUrl(cardmarketId)) }] : []),
+  ];
+}
 
 /** A right-click menu (also Shift+F10 / the menu key): `open(event, items)` from an `onContextMenu`, and render `node` once. */
 export function useContextMenu() {
