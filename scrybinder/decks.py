@@ -392,13 +392,14 @@ def assign(db, deck_id: int, card_id: int, items) -> None:
         _touch(db, deck_id)
 
 
-def assign_free(db, deck_id: int) -> int:
-    """Assign every free copy the deck still needs (preferred printing first). Never touches existing assignments."""
+def assign_free(db, deck_id: int, only=None) -> int:
+    """Assign every free copy the deck still needs (preferred printing first), for the deck cards in `only` when given.
+    Never touches existing assignments."""
     _deck(db, deck_id)
     n = 0
     with db:
         for c in cards(db, deck_id):
-            if c["board"] == "maybe" or c["status"] == "proxy":
+            if c["board"] == "maybe" or c["status"] == "proxy" or (only is not None and c["id"] not in only):
                 continue
             need = c["quantity"] - c["assigned"]
             if need <= 0:
@@ -415,6 +416,33 @@ def assign_free(db, deck_id: int) -> int:
                     n += take
         if n:
             _touch(db, deck_id)
+    return n
+
+
+def add_missing(db, deck_id: int, card_ids=None, location: str = "") -> int:
+    """Put the copies a deck is missing into the collection (proxies and the maybeboard never are), then assign them.
+    `card_ids` limits it to those deck cards. The printing is the preferred one, else the cheapest. Returns the copies added."""
+    from . import collection  # collection imports decks
+    _deck(db, deck_id)
+    if card_ids is not None and not isinstance(card_ids, list):
+        raise ValueError("card_ids must be a list")
+    only = None if card_ids is None else {_int(i) for i in card_ids}
+    n = 0
+    with db:
+        for c in cards(db, deck_id):
+            if c["missing"] <= 0 or c["board"] == "maybe" or (only is not None and c["id"] not in only):
+                continue
+            p = db.execute("SELECT id, finishes FROM cards WHERE oracle_id=? AND digital=0"
+                           " ORDER BY (id=?) DESC, COALESCE(eur, eur_foil, eur_etched, 1e9), released_at DESC LIMIT 1",
+                           (c["oracle_id"], c["scryfall_id"] or "")).fetchone()
+            if not p:
+                continue
+            fin = json.loads(p["finishes"] or "[]")
+            finish = "nonfoil" if "nonfoil" in fin or not fin else "foil" if "foil" in fin else "etched"
+            collection.add(db, scryfall_id=p["id"], quantity=c["missing"], finish=finish, location=location)
+            n += c["missing"]
+    if n:
+        assign_free(db, deck_id, only)
     return n
 
 

@@ -557,6 +557,10 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
     def decks_assign_free(deck_id: int):
         return {"assigned": _wrap(decks.assign_free, db, deck_id)}
 
+    @app.post("/api/decks/{deck_id}/add-missing")
+    def decks_add_missing(deck_id: int, body: dict = Body(default={})):
+        return {"added": _wrap(decks.add_missing, db, deck_id, body.get("card_ids"), str(body.get("location") or ""))}
+
     @app.post("/api/collection")
     def coll_add(body: dict = Body(...)):
         return {"id": _wrap(collection.add, db, **{k: v for k, v in body.items() if k in collection.EDITABLE
