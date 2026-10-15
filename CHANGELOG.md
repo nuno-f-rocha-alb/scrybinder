@@ -4,6 +4,8 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+## [0.6.1] — 2026-10-15
+
 ### Added
 - Decks: every group of cards can be folded with a click on its title ("Fold all" / "Unfold all" next to the view options; the choice is remembered), and the bar to add cards stays at the top while you scroll the deck.
 - Card details: "View details" (in the card menus of the decks, the collection, the Add page and a deck's card search) opens the card with its image, prices, rules text, printing, all its printings, legality in every format and its rulings (fetched from Scryfall the first time, then kept), with Prev / Next and the arrow keys.
