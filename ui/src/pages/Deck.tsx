@@ -37,6 +37,7 @@ function PreviewPanel({ p }: { p: Preview | null }) {
             <ManaCost cost={p.mana_cost} />
           </div>
           <div className="text-xs text-mute">{p.type_line}</div>
+          {p.edition && <div className="text-xs text-mute">{p.edition}{p.finish === "foil" ? " · foil" : p.finish === "etched" ? " · etched" : ""}</div>}
           <div className="flex items-center justify-between text-xs text-mute tabular-nums">
             <span>{eur(p.price)}</span>
             {p.owned !== undefined && <span>You own {p.owned}</span>}

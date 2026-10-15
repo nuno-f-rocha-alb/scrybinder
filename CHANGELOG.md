@@ -5,7 +5,7 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 ## [Unreleased]
 
 ### Added
-- Decks: a card now has a finish. Switch printing has a button per finish each printing comes in (Select, Select foil, Select etched), says how many of each finish you own, shows the card large when you point at it, and the deck marks the cards that are foil or etched.
+- Decks: a card now has a finish. Switch printing has a button per finish each printing comes in (Select, Select foil, Select etched), says how many of each finish you own, shows the card large when you point at it, and the deck shows the edition (set and number) and the finish of each card. Deck lists exported and imported keep both: `(SET) number` and `*F*` / `*E*` for foil and etched.
 
 ### Fixed
 - Switch printing no longer shows a "Foil" badge on printings that merely exist in foil.

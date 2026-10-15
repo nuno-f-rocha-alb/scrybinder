@@ -117,3 +117,23 @@ def test_bad_tags_are_skipped_and_huge_lists_refused(db):
     assert res["cards"] == 1 and "tag" in res["skipped"][0]["reason"] and res["skipped"][0]["line"] == 2
     with pytest.raises(ValueError):
         T.import_text(db, d, "1 A\n" * 2001)
+
+
+def test_finish_and_edition_survive_export_and_import(db):
+    a, b, _ = _cards(db)
+    d = decks.create(db, "F", "commander")
+    decks.add_card(db, d, a["oracle_id"], 1, "main", a["id"], finish="foil")  # the fixture cards come in non-foil and foil
+    decks.add_card(db, d, b["oracle_id"], 2, "main", b["id"], finish="nonfoil")
+    text = T.export_text(db, d)
+    assert f"1 {a['name']} ({a['set_code'].upper()}) {a['collector_number']} *F*" in text
+    assert "*F*" not in text.split(b["name"])[1]  # a non-foil card carries no mark
+    again = decks.create(db, "Copy", "commander")
+    T.import_text(db, again, text)
+    got = {c["name"]: c["finish"] for c in decks.get(db, again)["cards"]}
+    assert got[a["name"]] == "foil" and got[b["name"]] is None  # an unmarked line asks for no finish
+    cards = {c["name"]: c for c in decks.get(db, again)["cards"]}
+    assert (cards[a["name"]]["set_code"], cards[a["name"]]["collector_number"]) == (a["set_code"], a["collector_number"])
+    etched = T.parse("1 X (ABC) 12 *E*\n1 Y *f*")  # Moxfield marks: *F* foil, *E* etched, case does not matter
+    assert [i["finish"] for i in etched] == ["etched", "foil"]
+    ok, _ = T.resolve(db, T.parse(f"1 {a['name']} ({a['set_code'].upper()}) {a['collector_number']} *E*"))
+    assert ok[0]["finish"] is None  # that printing has no etched version: the finish is dropped, the line is kept

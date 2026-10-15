@@ -2,7 +2,7 @@ import { useState } from "react";
 import { IconMinus, IconPlus, IconTrash } from "@tabler/icons-react";
 import { api, eur } from "../api";
 import { BOARDS, BOARD_LABEL, DeckCard, Group, Preview, View, toPreview } from "../decks";
-import { CardImg, FinishTag } from "./ui";
+import { CardImg, EditionTag, FinishTag } from "./ui";
 import { ManaCost, STATUS_RING, StatusBadge, StatusDot } from "./mana";
 import { sourceFor } from "./cardgrid";
 
@@ -63,7 +63,7 @@ function ListRow({ c, ctx }: { c: DeckCard; ctx: Ctx }) {
       <div onClick={(e) => e.stopPropagation()}><Stepper c={c} ctx={ctx} /></div>
       <div className="flex min-w-0 items-center gap-2 text-sm">
         <span className="truncate">{c.name}</span>
-        <FinishTag finish={c.finish} />
+        <EditionTag setCode={c.set_code} number={c.collector_number} title={c.set_name} /><FinishTag finish={c.finish} />
         {c.missing > 0 && <span className="shrink-0 text-xs text-danger">{c.missing} missing</span>}
         <span className="hidden items-center gap-2 sm:flex"><Tags c={c} /></span>
       </div>
@@ -86,7 +86,7 @@ function CompactRow({ c, ctx }: { c: DeckCard; ctx: Ctx }) {
       className="group flex items-center gap-2 rounded px-1.5 py-[3px] text-[13px] hover:bg-raised">
       <span className="w-5 shrink-0 text-right tabular-nums text-mute">{c.quantity}</span>
       <span className="min-w-0 flex-1 truncate">{c.name}</span>
-      <FinishTag finish={c.finish} />
+      <EditionTag setCode={c.set_code} number={c.collector_number} title={c.set_name} /><FinishTag finish={c.finish} />
       <span className="hidden shrink-0 items-center gap-0.5 group-hover:flex group-focus-within:flex" onClick={(e) => e.stopPropagation()}>
         <button className={STEP} aria-label={`One less ${c.name}`} onClick={o.less}><IconMinus className="size-3" /></button>
         <button className={STEP} aria-label={`One more ${c.name}`} onClick={o.more}><IconPlus className="size-3" /></button>
@@ -107,6 +107,7 @@ function Tile({ c, ctx, layout, crop }: { c: DeckCard; ctx: Ctx; layout: Layout;
         : <div className={`flex w-full items-center justify-center bg-raised p-2 text-center text-xs text-mute ${crop ? "aspect-[63/62]" : "aspect-[63/88]"}`}>{c.name}</div>}
       <span className="absolute left-1.5 top-1.5 flex flex-col items-start gap-1">
         {c.quantity > 1 && <span className="rounded-md bg-bg/90 px-1.5 py-0.5 text-xs font-semibold tabular-nums">×{c.quantity}</span>}
+        {c.set_code && <span className="rounded-md bg-bg/90 px-1.5 py-0.5 text-[10.5px] uppercase tabular-nums">{c.set_code} #{c.collector_number}</span>}
         <FinishTag finish={c.finish} />
       </span>
       <span className="absolute right-1.5 top-1.5"><AssignBtn c={c} ctx={ctx}><StatusDot status={c.status} title={elsewhereHint(c)} /></AssignBtn></span>

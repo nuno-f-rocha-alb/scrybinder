@@ -14,7 +14,10 @@ PROXY = "proxy"  # defined tag: the card is in the deck but is not a real copy
 
 # copies owned (proxy rows of the collection are not real copies) and the cheapest price of the oracle card
 _CARD_SQL = """
-SELECT x.*, (SELECT cardmarket_id FROM cards WHERE id = x.image_id) AS cardmarket_id FROM (
+SELECT x.*, (SELECT cardmarket_id FROM cards WHERE id = x.image_id) AS cardmarket_id,
+       (SELECT set_code FROM cards WHERE id = x.scryfall_id) AS set_code,
+       (SELECT set_name FROM cards WHERE id = x.scryfall_id) AS set_name,
+       (SELECT collector_number FROM cards WHERE id = x.scryfall_id) AS collector_number FROM (
 SELECT d.id, d.oracle_id, d.scryfall_id, d.finish, d.quantity, d.board, o.name, o.mana_cost, o.cmc, o.type_line, o.colors, o.color_identity,
        o.produced_mana, o.game_changer,
        (SELECT COALESCE(SUM(c.quantity), 0) FROM collection c JOIN cards k ON k.id = c.scryfall_id
