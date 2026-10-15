@@ -4,6 +4,7 @@ Builds a tiny database + visual index from the fixture cards, starts the package
 that the artwork index was really used (in_index/art/card signals), not just OCR."""
 import csv
 import json
+import re
 import shutil
 import subprocess
 import sys
@@ -50,11 +51,12 @@ cv2.imwrite(str(work / "photo.jpg"), synth.photo(fix / "cards" / f"{CARD}.jpg", 
 proc = subprocess.Popen([str(exe), "--serve"], env={**os.environ, "SCRYBINDER_AUTO_BULK": "0", "HF_HUB_OFFLINE": "1"})
 log = data / "scrybinder.log"
 try:
+    url_re = re.compile(r"https?://\S+")  # every line of the log starts with the time: the address is somewhere in it
     for _ in range(120):
         time.sleep(1)
-        if log.exists() and log.read_text(encoding="utf-8", errors="replace").startswith("http"):
+        if log.exists() and url_re.search(log.read_text(encoding="utf-8", errors="replace")):
             break
-    url = log.read_text(encoding="utf-8").splitlines()[0]
+    url = url_re.search(log.read_text(encoding="utf-8")).group(0)
     base = url.split("?")[0]
     op = urllib.request.build_opener(urllib.request.HTTPCookieProcessor())
     op.open(url).read()

@@ -24,8 +24,8 @@ Inside that folder:
 | `debug/` | the last 30 whole camera frames (a raw JPEG, the same with the detected card outline drawn, and the outline's corners), saved each time the camera captures a card and by *Save a debug frame* on the Scan page; for reports about cards that are not detected |
 | `trash/` | JSON copies of rows removed by bulk delete |
 | `app.log` | what the app does and every error, including those of background threads and the web server (rotated, 1 MB, 3 old copies) |
-| `crash.log` | the Python stack of every thread when the process dies from a native crash (a driver, a DLL); empty when nothing crashed |
-| `scrybinder.log` | the program's own output in packaged builds that run without a console (progress bars and the like) |
+| `crash.log` | the Python stack of every thread when the process dies from a native crash (a driver, a DLL), with a line (and the time) when each run starts and when it ends normally: a stack with no "ended normally" line after it belongs to the run that started above it |
+| `scrybinder.log` | the program's own output in packaged builds that run without a console (the web server's lines, what libraries print); every line starts with the time |
 
 **Back up** by copying the folder while the app is closed (the database uses WAL, so copy `-wal`/`-shm` too, or use `sqlite3 scrybinder.db ".backup copy.db"`). `images/` and `index/` can be rebuilt; `scrybinder.db` and `captures/` cannot.
 
