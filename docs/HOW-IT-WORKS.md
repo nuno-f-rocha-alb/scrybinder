@@ -44,7 +44,7 @@ Weights live in `scrybinder/scan/visual.py` and can be overridden with `data/sca
 
 ## 5. The scan list
 
-Each read becomes an entry. A new capture of the same printing and finish adds to the quantity; pressing `N` starts a new (foil) entry. Entries can be edited, re-pointed to another printing and removed; **Add to collection** writes them (and a row per entry to `scan_log`, with the top-5 candidates and their signals, for later evaluation).
+Each read becomes an entry. A new capture of the same printing and finish adds to the quantity for photos and folders (a live camera ignores a card it reads again right after itself, since it is still on the stand); pressing `N` starts a new (foil) entry. Entries can be edited, re-pointed to another printing and removed; **Add to collection** writes them (and a row per entry to `scan_log`, with the top-5 candidates and their signals, for later evaluation).
 
 ## Evaluation
 
