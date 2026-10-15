@@ -4,6 +4,8 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+## [0.6.3] — 2026-10-15
+
 ### Added
 - Logs: every line of `scrybinder.log` (what the app prints: the web server, libraries) and a line at the start and at the normal end of each run in `crash.log` now have the time, like `app.log`. The "Loading weights" progress bars of the visual model are gone from the log. `app.log` now also says when the visual model is loaded (and how long it took), when the visual index opens or why it could not (with the full error), and when an index build starts, ends or fails.
 - A visual index that could not be opened (for example a module that could not be read right after an update) is tried again, up to three times 30 seconds apart, instead of leaving the scan on OCR until the app is restarted.
