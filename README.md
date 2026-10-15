@@ -104,8 +104,8 @@ No ready-made build yet; they work from source and the tests run on both in CI. 
 - **Photos** tab: drop or choose image files. **Folder** tab: watch a folder that another program saves into — only files that appear *after* you press Start are processed (what is already in the folder is ignored). **Camera** tab: a webcam or an HDMI capture card.
 - One card per photo on a plain background; light from the side, not from beside the lens.
 - Live cameras: a fixed overhead stand and a stable light work best. Virtual cameras that only speak Media Foundation (for example Sony *Imaging Edge Webcam*) show a black picture to OpenCV — use a UVC webcam or an HDMI capture card instead.
-- The capture triggers when a card stays still for 0.4 s and re-arms when it leaves the frame.
-- Identical cards in a row add up. `N` marks the next card as foil / a new entry. In the one-by-one confirmation mode (turn *List mode* off): `Enter` accept, `Esc` discard, `←`/`→` change printing, `F` foil, `C` condition, `L` language, `+`/`-` quantity.
+- The capture triggers when a card stays still for 0.3 s and re-arms when it leaves the frame. A card the camera reads again right after itself (it is still on the stand) is not counted twice: fix the quantity with − / +, or show another card.
+- Photos and folders: identical cards in a row add up. `N` marks the next card as foil / a new entry (foil is not detected from the picture: press `N` before showing it). In the one-by-one confirmation mode (turn *List mode* off): `Enter` accept, `Esc` discard, `←`/`→` change printing, `F` foil, `C` condition, `L` language, `+`/`-` quantity.
 
 ### Scanning a binder page
 
@@ -184,6 +184,28 @@ If you run from source instead: `uv sync --extra vision-cuda`.
 ## Accuracy and limitations
 
 Measured on our own test photos (see [How it works](docs/HOW-IT-WORKS.md#evaluation)): about 95 % of printings were right on a mixed set of 44 real photos after tuning on them, and 86 % (printing) / 97 % (illustration) / 96 % (top-5) on 300 synthetic photos with the full index. Most errors are the *same card printed identically* — The List vs the original, prerelease vs promo-pack stamps — where the image genuinely does not tell them apart; those are flagged for review.
+
+### Speed and how sure the reading is
+
+Measured on 300 synthetic photos (the same set as above, full index), reading each rectified card the way the live camera does. Test PC: AMD Ryzen 5 5600, RTX 5070 Ti (GPU on). Synthetic photos have noise, blur and glare, so they are slower to read than a clean card; use the times as a guide.
+
+| | OCR + visual model | OCR only (no visual index) |
+|---|---|---|
+| Time per card, median | 0.97 s | 0.89 s |
+| Time per card, mean / slowest 10 % | 1.9 s / 3.9 s | 1.8 s / 3.6 s |
+| Right printing (top-1) | 85 % | 32 % |
+| Right illustration | 98 % | 48 % |
+| Right printing within the top 5 | 97 % | 53 % |
+
+How much to trust a read — the confidence the app shows on each entry, with the share of reads it covers and how often the first suggestion was the right printing:
+
+| Confidence | Share of reads | Right printing |
+|---|---|---|
+| High (OCR + visual model) | 61 % | 98 % |
+| Medium | 20 % | 83 % |
+| Low | 19 % | 47 % |
+
+Check the Medium and Low entries before adding them; with High, the first suggestion was right in 98 out of 100 reads. Without the visual index (OCR only) 24 % of the reads find no card at all and only 18 % reach High, so build the index (Settings). The capture itself adds about 0.3 s (the card must be still) and the first card after opening Scan waits while the model loads (about 30 s on the test PC).
 
 Known limits: Room/split cards (the artwork box does not exist), very strong holographic foils, serialized cards (identical art — you confirm), cards photographed through glare or sleeves, very dark borderless cards, sets newer than your card database or index, and non-Latin scripts for OCR (artwork still works). A live camera needs good light. Always glance at the list before adding.
 
