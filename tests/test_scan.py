@@ -612,3 +612,12 @@ def test_live_unreadable_card_on_the_stand_does_not_repeat(db, tmp_path, monkeyp
         for _ in range(3):
             scanner.process(img, "c", warped=True, live=True)
         assert len(scanner.reads if list_mode else scanner.pending) == 1
+
+
+def test_camera_waits_0_3_s_for_a_still_card(db, tmp_path):
+    from scrybinder.scan import session
+    scanner = session.Scanner(db, tmp_path)
+    s = vision.Stability(hold=scanner.hold)
+    q = np.array([[100, 100], [400, 100], [400, 520], [100, 520]], np.float32)
+    assert not s.update(q, 0.0) and not s.update(q, 0.25)  # too soon
+    assert s.update(q, 0.31)                               # still for 0.3 s: fires

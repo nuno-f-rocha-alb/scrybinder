@@ -175,7 +175,7 @@ export default function Scan() {
                 : <button className="btn-primary w-full" onClick={start}>Start camera</button>}
               {st?.message && <p className="text-xs text-danger">{st.message}</p>}
               {st?.notice && <p className="text-xs text-gold">{st.notice}</p>}
-              <p className="text-xs text-mute">Capture is automatic when the card stays still for 0.4 s. Swap the card and repeat.</p>
+              <p className="text-xs text-mute">Capture is automatic when the card stays still for 0.3 s. Swap the card and repeat.</p>
               {st?.running && st.source?.startsWith("webcam") && (
                 <button className="btn-ghost w-full !py-1 text-xs" title="Saves the whole camera frame and the outline the app found, in the debug folder of the data folder: attach it when a card is not detected"
                   onClick={() => api<{ path: string }>("/scan/debug-frame", { method: "POST" }).then((r) => toast(`Saved ${r.path}`)).catch((e) => toast((e as Error).message, true))}>

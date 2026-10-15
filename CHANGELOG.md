@@ -8,6 +8,7 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 - Camera scan: when a read is ignored because it is the card still on the stand, a note says so and reminds you to press N before showing a foil. Each entry now shows whether it was identified by OCR only or by OCR + the visual model (DINOv2).
 
 ### Fixed
+- Camera scan: a card is captured after being still for 0.3 s instead of 0.4 s, about a tenth of a second less per card.
 - Camera scan: captures are now read one at a time, in the order they were taken. A slow read of one card could finish after the next card and show up as a stray entry of the previous card.
 
 ## [0.6.4] — 2026-10-15
