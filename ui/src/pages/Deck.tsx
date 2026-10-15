@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { IconAlertTriangle, IconArrowLeft, IconBox, IconCheck, IconCopy, IconDownload, IconPlus, IconTrash, IconUpload, IconX } from "@tabler/icons-react";
 import { api, eur, qs } from "../api";
-import { BOARDS, BOARD_LABEL, Board, CardFilter, Deck as DeckT, DeckCard as DeckCardT, DeckStats, FORMATS, Format, GROUPS, GroupBy, Legality, OracleRow, Preview, SORTS, SortBy, VIEWS, View, groupCards, matchesFilter, resultPreview, toPreview } from "../decks";
+import { BOARDS, BOARD_LABEL, Board, CardFilter, Deck as DeckT, DeckCard as DeckCardT, DeckStats, editionOf, FORMATS, Format, GROUPS, GroupBy, Legality, OracleRow, Preview, SORTS, SortBy, VIEWS, View, groupCards, matchesFilter, resultPreview, toPreview } from "../decks";
 import { CardImg, FinishTag, Modal, cardmarketUrl, openExternal, scryfallUrl, useToast } from "../components/ui";
 import { MenuItem, useContextMenu } from "../components/contextmenu";
 import PrintingDialog from "../components/printings";
@@ -74,6 +74,7 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
   const [switchId, setSwitchId] = useState<number | null>(null);
   const [pickId, setPickId] = useState<number | null>(null);
   const [missingFor, setMissingFor] = useState<DeckCardT | null>(null);
+  const [copyFor, setCopyFor] = useState<DeckCardT | null>(null);
   const menu = useContextMenu();
   const hovered = useRef<number | null>(null);  // the id of the card under the pointer or focus: the target of the Alt+number shortcuts
   const quickRef = useRef<(id: number, n: number) => void>(() => {});
@@ -121,6 +122,7 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
     "sep",
     { label: "Add to another deck…", onSelect: () => setPickId(c.id) },
     ...(c.missing > 0 && c.board !== "maybe" ? [{ label: `Add the missing ${c.missing} to collection…`, onSelect: () => setMissingFor(c) }] : []),
+    ...(c.scryfall_id ? [{ label: "Add this printing to the collection…", onSelect: () => setCopyFor(c) }] : []),
     { label: "Copies and tags…", onSelect: () => setAssignId(c.id) },
     "sep",
     { label: "View details", onSelect: () => show(c) },
@@ -247,6 +249,8 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
         onDone={(n) => { setAdding(false); toast(`${n} ${n === 1 ? "copy" : "copies"} added to your collection`); reload(); }} />}
       {missingFor && <AddMissingDialog deckId={id} cardIds={[missingFor.id]} count={missingFor.missing} onClose={() => setMissingFor(null)}
         onDone={(n) => { setMissingFor(null); toast(`${n} ${n === 1 ? "copy" : "copies"} added to your collection`); reload(); }} />}
+      {copyFor && <AddMissingDialog deckId={id} count={0} printing={{ cardId: copyFor.id, label: `${editionOf(copyFor)}${copyFor.finish === "foil" ? " · foil" : copyFor.finish === "etched" ? " · etched" : ""}` }} onClose={() => setCopyFor(null)}
+        onDone={(n) => { setCopyFor(null); toast(`${n} ${n === 1 ? "copy" : "copies"} added to your collection`); reload(); }} />}
       {switchId !== null && deck.cards.find((c) => c.id === switchId) && (() => { const c = deck.cards.find((x) => x.id === switchId)!;
         return <PrintingDialog deckId={id} oracleId={c.oracle_id} name={c.name} current={c.scryfall_id} currentFinish={c.finish} onClose={() => setSwitchId(null)}
           onPick={(sid, finish) => { setSwitchId(null); patchCard(c, { scryfall_id: sid, finish }); }} />; })()}

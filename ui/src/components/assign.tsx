@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { IconMinus, IconPlus, IconX } from "@tabler/icons-react";
 import { api, eur, FINISH, LANGS } from "../api";
-import { DeckCard } from "../decks";
+import { DeckCard, editionOf } from "../decks";
 import { Badge, FinishTag, Modal } from "./ui";
 import { StatusBadge } from "./mana";
 import PrintingDialog from "./printings";
@@ -23,7 +23,7 @@ export default function AssignDialog({ deckId, card, onClose, onChanged }: { dec
   const [err, setErr] = useState("");
   const [tag, setTag] = useState("");
   const [picking, setPicking] = useState(false);
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState<false | "missing" | "printing">(false);
   const proxy = card.tags.includes("proxy");
   const url = `/decks/${deckId}/cards/${card.id}`;
 
@@ -48,13 +48,16 @@ export default function AssignDialog({ deckId, card, onClose, onChanged }: { dec
     .then(() => { setPicking(false); onChanged(); }).catch((e) => { setPicking(false); setErr(e.message); });
   const other = card.scryfall_id && !rows.some((r) => r.scryfall_id === card.scryfall_id) ? rows[0] : undefined;  // a printing you own that the deck does not prefer
 
-  if (adding) return <AddMissingDialog deckId={deckId} cardIds={[card.id]} count={card.missing} onClose={() => setAdding(false)} onDone={() => { onChanged(); onClose(); }} />;
+  const printing = card.scryfall_id ? { cardId: card.id, label: `${editionOf(card)}${card.finish === "foil" ? " · foil" : card.finish === "etched" ? " · etched" : ""}` } : undefined;
+  const ownsIt = rows.some((r) => r.scryfall_id === card.scryfall_id && (!card.finish || r.finish === card.finish));  // you own the printing (and finish) the deck wants
+  if (adding) return <AddMissingDialog deckId={deckId} cardIds={[card.id]} count={card.missing} printing={adding === "printing" ? printing : undefined} onClose={() => setAdding(false)} onDone={() => { onChanged(); onClose(); }} />;
   return picking ? <PrintingDialog deckId={deckId} oracleId={card.oracle_id} name={card.name} current={card.scryfall_id} currentFinish={card.finish} onPick={setPrinting} onClose={() => setPicking(false)} /> : (
     <Modal title={`Copies and tags of ${card.name}`} onClose={onClose}>
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <h2 className="text-lg font-semibold">{card.name}</h2><StatusBadge status={card.status} />
         <button className="btn-ghost !py-1 text-xs" onClick={() => setPicking(true)}>Switch printing…</button>
-        {card.missing > 0 && !proxy && <button className="btn-ghost !py-1 text-xs" onClick={() => setAdding(true)}>Add the missing {card.missing} to collection…</button>}
+        {card.missing > 0 && !proxy && <button className="btn-ghost !py-1 text-xs" onClick={() => setAdding("missing")}>Add the missing {card.missing} to collection…</button>}
+        {printing && !ownsIt && !proxy && <button className="btn-ghost !py-1 text-xs" title="You do not own the printing this card asks for" onClick={() => setAdding("printing")}>Add this printing to collection…</button>}
         <span className="ml-auto text-sm text-mute tabular-nums">The deck has {card.quantity} · {card.owned} owned</span>
       </div>
 

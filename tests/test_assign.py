@@ -251,3 +251,25 @@ def test_a_deck_card_has_a_finish_of_its_printing(db):
         decks.update_card(db, d1, plain, scryfall_id=other[0])
         assert _card(db, d1, plain)["finish"] is None
     assert decks.duplicate(db, d1) != d1
+
+
+def test_add_copy_of_the_chosen_printing_even_when_another_is_owned(db):
+    oid, sid, row, d1, d2 = _setup(db, qty=1)  # you own one copy of printing `sid`
+    cols = [r[1] for r in db.execute("PRAGMA table_info(cards)")]  # a second printing of the same card
+    db.execute(f"INSERT INTO cards ({','.join(cols)}) SELECT {','.join(repr('second-print') if k == 'id' else k for k in cols)} FROM cards WHERE id=?", (sid,))
+    other = ("second-print",)
+    c = decks.add_card(db, d1, oid, 1, scryfall_id=other[0])
+    assert _card(db, d1, c)["missing"] == 0  # owned in another printing: nothing is "missing"
+    assert decks.add_missing(db, d1) == 0
+    assert decks.add_copy(db, d1, c, 1, "Box") == 1
+    mine = db.execute("SELECT scryfall_id, location, quantity FROM collection WHERE scryfall_id=?", (other[0],)).fetchone()
+    assert (mine["location"], mine["quantity"]) == ("Box", 1)
+    assert _card(db, d1, c)["assigned"] == 1  # and it is assigned to the card
+    for bad in (0, 1000, "x"):
+        with pytest.raises(ValueError):
+            decks.add_copy(db, d1, c, bad)
+    anyc = decks.add_card(db, d1, oid, 1, "side")  # no printing chosen
+    with pytest.raises(ValueError):
+        decks.add_copy(db, d1, anyc)
+    with pytest.raises(KeyError):
+        decks.add_copy(db, d2, c)  # not a card of that deck
