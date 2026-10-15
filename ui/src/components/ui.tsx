@@ -98,6 +98,11 @@ export function Modal({ onClose, title, children }: { onClose: () => void; title
   );
 }
 
+/** "Foil" / "Etched" on a card that is wanted in that finish (nothing for non-foil, as in the collection). */
+export function FinishTag({ finish }: { finish?: string | null }) {
+  return finish === "foil" || finish === "etched" ? <Badge foil>{finish === "foil" ? "Foil" : "Etched"}</Badge> : null;
+}
+
 /** Shown when an operation would take copies away from decks: says which, and offers to free them and carry on. */
 export function Blocked({ message, onRelease, onCancel }: { message: string; onRelease: () => void; onCancel: () => void }) {
   return (

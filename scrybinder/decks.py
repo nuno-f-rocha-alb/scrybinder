@@ -15,14 +15,14 @@ PROXY = "proxy"  # defined tag: the card is in the deck but is not a real copy
 # copies owned (proxy rows of the collection are not real copies) and the cheapest price of the oracle card
 _CARD_SQL = """
 SELECT x.*, (SELECT cardmarket_id FROM cards WHERE id = x.image_id) AS cardmarket_id FROM (
-SELECT d.id, d.oracle_id, d.scryfall_id, d.quantity, d.board, o.name, o.mana_cost, o.cmc, o.type_line, o.colors, o.color_identity,
+SELECT d.id, d.oracle_id, d.scryfall_id, d.finish, d.quantity, d.board, o.name, o.mana_cost, o.cmc, o.type_line, o.colors, o.color_identity,
        o.produced_mana, o.game_changer,
        (SELECT COALESCE(SUM(c.quantity), 0) FROM collection c JOIN cards k ON k.id = c.scryfall_id
          WHERE k.oracle_id = d.oracle_id AND c.proxy = 0) AS owned,
        (SELECT COALESCE(SUM(quantity), 0) FROM deck_assignments WHERE deck_card_id = d.id) AS assigned,
        (SELECT COALESCE(SUM(a.quantity), 0) FROM deck_assignments a JOIN collection c ON c.id = a.collection_id
           JOIN cards k ON k.id = c.scryfall_id WHERE k.oracle_id = d.oracle_id) AS assigned_all,
-       COALESCE((SELECT eur FROM cards WHERE id = d.scryfall_id),
+       COALESCE((SELECT CASE d.finish WHEN 'foil' THEN eur_foil WHEN 'etched' THEN eur_etched ELSE eur END FROM cards WHERE id = d.scryfall_id),
                 (SELECT MIN(eur) FROM cards WHERE oracle_id = d.oracle_id AND eur IS NOT NULL)) AS price,
        COALESCE(d.scryfall_id,  -- the printing whose image the app shows (/api/image/<id>)
                 (SELECT id FROM cards WHERE oracle_id = d.oracle_id AND digital = 0 AND image_small IS NOT NULL
@@ -202,13 +202,24 @@ def _printing_ok(db, oracle_id: str, scryfall_id):
         raise ValueError("that printing is not a printing of this card")
 
 
-def _find(db, deck_id, oracle_id, scryfall_id, board):
-    return db.execute("SELECT id FROM deck_cards WHERE deck_id=? AND oracle_id=? AND COALESCE(scryfall_id,'')=? AND board=?",
-                      (deck_id, oracle_id, scryfall_id or "", board)).fetchone()
+def _finish_ok(db, scryfall_id, finish):
+    """A finish needs a printing, and the printing has to come in it."""
+    if finish is None:
+        return
+    if finish not in ("nonfoil", "foil", "etched"):
+        raise ValueError("finish must be nonfoil, foil or etched")
+    row = db.execute("SELECT finishes FROM cards WHERE id=?", (scryfall_id,)).fetchone() if scryfall_id else None
+    if not row or finish not in json.loads(row["finishes"] or "[]"):
+        raise ValueError("that printing does not come in that finish")
 
 
-def add_card(db, deck_id: int, oracle_id: str, quantity: int = 1, board: str = "main", scryfall_id=None, tags=()) -> int:
-    """Add a card; the same card on the same board with the same printing sums the quantity."""
+def _find(db, deck_id, oracle_id, scryfall_id, board, finish=None):
+    return db.execute("SELECT id FROM deck_cards WHERE deck_id=? AND oracle_id=? AND COALESCE(scryfall_id,'')=? AND COALESCE(finish,'')=? AND board=?",
+                      (deck_id, oracle_id, scryfall_id or "", finish or "", board)).fetchone()
+
+
+def add_card(db, deck_id: int, oracle_id: str, quantity: int = 1, board: str = "main", scryfall_id=None, tags=(), finish=None) -> int:
+    """Add a card; the same card on the same board with the same printing and finish sums the quantity."""
     _deck(db, deck_id)
     _check(board=board)
     quantity = _int(quantity)
@@ -217,16 +228,17 @@ def add_card(db, deck_id: int, oracle_id: str, quantity: int = 1, board: str = "
     if not db.execute("SELECT 1 FROM oracle_cards WHERE oracle_id=?", (oracle_id,)).fetchone():
         raise ValueError("unknown card (update the bulk data)")
     _printing_ok(db, oracle_id, scryfall_id)
+    _finish_ok(db, scryfall_id, finish)
     tags = _tags(tags)
     with db:
-        row = _find(db, deck_id, oracle_id, scryfall_id, board)
+        row = _find(db, deck_id, oracle_id, scryfall_id, board, finish)
         if row:
             db.execute("UPDATE deck_cards SET quantity=quantity+? WHERE id=?", (quantity, row["id"]))
             cid = row["id"]
             db.executemany("INSERT OR IGNORE INTO deck_card_tags VALUES (?,?)", [(cid, t) for t in tags])
         else:
-            cid = db.execute("INSERT INTO deck_cards (deck_id, oracle_id, scryfall_id, quantity, board) VALUES (?,?,?,?,?)",
-                             (deck_id, oracle_id, scryfall_id, quantity, board)).lastrowid
+            cid = db.execute("INSERT INTO deck_cards (deck_id, oracle_id, scryfall_id, quantity, board, finish) VALUES (?,?,?,?,?,?)",
+                             (deck_id, oracle_id, scryfall_id, quantity, board, finish)).lastrowid
             _set_tags(db, cid, tags)
         _touch(db, deck_id)
     return cid
@@ -253,21 +265,24 @@ def _trim(db, card_id: int):
 
 
 def update_card(db, deck_id: int, card_id: int, **fields) -> int:
-    """Change quantity, board, printing (`scryfall_id`, None for any) and/or tags. Returns the card's id, which is another
+    """Change quantity, board, printing (`scryfall_id`, None for any), its finish and/or tags. Another printing with no finish
+    given drops the finish. Returns the card's id, which is another
     one when the change merges it into a card that already exists."""
     cur = db.execute("SELECT * FROM deck_cards WHERE id=? AND deck_id=?", (card_id, deck_id)).fetchone()
     if not cur:
         raise KeyError(card_id)
     board = fields.get("board", cur["board"])
     sid = fields["scryfall_id"] if "scryfall_id" in fields else cur["scryfall_id"]
+    fin = fields["finish"] if "finish" in fields else (cur["finish"] if sid == cur["scryfall_id"] else None)
     qty = _int(fields.get("quantity", cur["quantity"]))
     _check(board=board)
     if qty < 1:
         raise ValueError("quantity must be >= 1")
     _printing_ok(db, cur["oracle_id"], sid)
+    _finish_ok(db, sid, fin)
     tags = _tags(fields["tags"]) if "tags" in fields else None
     with db:
-        other = _find(db, deck_id, cur["oracle_id"], sid, board)
+        other = _find(db, deck_id, cur["oracle_id"], sid, board, fin)
         if other and other["id"] != card_id:  # moved onto an existing card: merge into it
             db.execute("UPDATE deck_cards SET quantity=quantity+? WHERE id=?", (qty, other["id"]))
             db.execute("INSERT OR IGNORE INTO deck_card_tags SELECT ?, tag FROM deck_card_tags WHERE deck_card_id=?",
@@ -278,7 +293,7 @@ def update_card(db, deck_id: int, card_id: int, **fields) -> int:
             db.execute("DELETE FROM deck_cards WHERE id=?", (card_id,))  # its assignments go with it (ON DELETE CASCADE)
             card_id = other["id"]
         else:
-            db.execute("UPDATE deck_cards SET quantity=?, board=?, scryfall_id=? WHERE id=?", (qty, board, sid, card_id))
+            db.execute("UPDATE deck_cards SET quantity=?, board=?, scryfall_id=?, finish=? WHERE id=?", (qty, board, sid, fin, card_id))
         if tags is not None:
             _set_tags(db, card_id, tags)
         if PROXY in _card_tags(db, card_id):  # a proxy is not a real copy: nothing to reserve
@@ -302,8 +317,8 @@ def duplicate(db, deck_id: int) -> int:
         new = db.execute("INSERT INTO decks (name, format, description) VALUES (?,?,?)",
                          (f"{src['name']} (copy)", src["format"], src["description"])).lastrowid
         for c in db.execute("SELECT * FROM deck_cards WHERE deck_id=?", (deck_id,)).fetchall():
-            cid = db.execute("INSERT INTO deck_cards (deck_id, oracle_id, scryfall_id, quantity, board) VALUES (?,?,?,?,?)",
-                             (new, c["oracle_id"], c["scryfall_id"], c["quantity"], c["board"])).lastrowid
+            cid = db.execute("INSERT INTO deck_cards (deck_id, oracle_id, scryfall_id, quantity, board, finish) VALUES (?,?,?,?,?,?)",
+                             (new, c["oracle_id"], c["scryfall_id"], c["quantity"], c["board"], c["finish"])).lastrowid
             db.execute("INSERT INTO deck_card_tags SELECT ?, tag FROM deck_card_tags WHERE deck_card_id=?", (cid, c["id"]))
     return new
 
@@ -414,7 +429,7 @@ def assign_free(db, deck_id: int, only=None) -> int:
             for row in db.execute(
                     "SELECT c.id, c.quantity - COALESCE((SELECT SUM(quantity) FROM deck_assignments WHERE collection_id = c.id), 0) AS free"
                     " FROM collection c JOIN cards k ON k.id = c.scryfall_id WHERE k.oracle_id=? AND c.proxy=0"
-                    " ORDER BY (c.scryfall_id = ?) DESC, c.id", (c["oracle_id"], c["scryfall_id"] or "")).fetchall():
+                    " ORDER BY (c.scryfall_id = ?) DESC, (c.finish = ?) DESC, c.id", (c["oracle_id"], c["scryfall_id"] or "", c["finish"] or "")).fetchall():
                 take = min(need, row["free"])
                 if take > 0:
                     db.execute("INSERT INTO deck_assignments VALUES (?,?,?) ON CONFLICT(deck_card_id, collection_id)"
@@ -446,6 +461,8 @@ def add_missing(db, deck_id: int, card_ids=None, location: str = "") -> int:
                 continue
             fin = json.loads(p["finishes"] or "[]")
             finish = "nonfoil" if "nonfoil" in fin or not fin else "foil" if "foil" in fin else "etched"
+            if c["finish"] and p["id"] == c["scryfall_id"]:
+                finish = c["finish"]  # the deck wants this finish of its printing
             collection.add(db, scryfall_id=p["id"], quantity=c["missing"], finish=finish, location=location)
             n += c["missing"]
     if n:
@@ -519,7 +536,7 @@ def delete_folder(db, folder_id: int) -> None:
 def copies(db, deck_id: int, card_id: int) -> dict:
     """The copies of the collection that can go to a deck card (proxy rows are not copies): per row how many are assigned
     to this card (`here`) and to which other cards' decks (`elsewhere`), so the dialog can say how many are free."""
-    card = db.execute("SELECT oracle_id, scryfall_id, quantity FROM deck_cards WHERE id=? AND deck_id=?", (card_id, deck_id)).fetchone()
+    card = db.execute("SELECT oracle_id, scryfall_id, finish, quantity FROM deck_cards WHERE id=? AND deck_id=?", (card_id, deck_id)).fetchone()
     if not card:
         raise KeyError(card_id)
     rows = [dict(r) for r in db.execute(
@@ -528,7 +545,7 @@ def copies(db, deck_id: int, card_id: int) -> dict:
         " CASE c.finish WHEN 'foil' THEN k.eur_foil WHEN 'etched' THEN k.eur_etched ELSE k.eur END AS price,"
         " COALESCE((SELECT quantity FROM deck_assignments WHERE deck_card_id=? AND collection_id=c.id), 0) AS here"
         " FROM collection c JOIN cards k ON k.id = c.scryfall_id WHERE k.oracle_id=? AND c.proxy=0"
-        " ORDER BY (c.scryfall_id = ?) DESC, k.released_at DESC, c.id", (card_id, card["oracle_id"], card["scryfall_id"] or ""))]
+        " ORDER BY (c.scryfall_id = ?) DESC, (c.finish = ?) DESC, k.released_at DESC, c.id", (card_id, card["oracle_id"], card["scryfall_id"] or "", card["finish"] or ""))]
     other = {}
     for coll, did, name, q in db.execute(
             "SELECT a.collection_id, dk.id, dk.name, SUM(a.quantity) FROM deck_assignments a"

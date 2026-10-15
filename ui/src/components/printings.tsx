@@ -1,18 +1,22 @@
 import { useEffect, useMemo, useState } from "react";
-import { api, eur } from "../api";
-import { Badge, CardImg, Modal } from "./ui";
+import { api, eur, FINISH } from "../api";
+import { Badge, CardImg, HoverZoom, Modal } from "./ui";
 
 export type Print = {
   id: string; set_code: string; set_name: string; collector_number: string; released_at: string; rarity: string;
   finishes: string; eur: number | null; eur_foil: number | null; eur_etched: number | null; owned: number; free: number;
+  owned_finish: Record<string, number>;  // what you own of this printing, per finish
 };
+export type Finish = "nonfoil" | "foil" | "etched";
 
-const cheapest = (p: Print) => Math.min(...[p.eur, p.eur_foil, p.eur_etched].filter((v): v is number => v != null), Infinity);
+const priceOf = (p: Print, f: Finish) => (f === "foil" ? p.eur_foil : f === "etched" ? p.eur_etched : p.eur);
+const finishesOf = (p: Print): Finish[] => { const f = (p.finishes ? JSON.parse(p.finishes) : []) as Finish[]; return f.length ? f : ["nonfoil"]; };
+const BUTTON: Record<Finish, string> = { nonfoil: "Select", foil: "Select foil", etched: "Select etched" };
 
-/** Pick the printing a deck card prefers: the ones you own and no other deck holds first, then the rest, each with image, price and finishes.
- * `current` is the chosen one (null = any). */
-export default function PrintingDialog({ deckId, oracleId, name, current, onPick, onClose }: {
-  deckId: number; oracleId: string; name: string; current: string | null; onPick: (scryfallId: string) => void; onClose: () => void;
+/** Pick the printing a deck card prefers, and its finish: the ones you own and no other deck holds first, then the rest. Each printing has one
+ * button per finish it comes in. `current` / `currentFinish` are the chosen ones (null = not chosen). */
+export default function PrintingDialog({ deckId, oracleId, name, current, currentFinish, onPick, onClose }: {
+  deckId: number; oracleId: string; name: string; current: string | null; currentFinish: string | null; onPick: (scryfallId: string, finish: Finish) => void; onClose: () => void;
 }) {
   const [prints, setPrints] = useState<Print[] | null>(null);
   const [set, setSet] = useState("");
@@ -22,26 +26,33 @@ export default function PrintingDialog({ deckId, oracleId, name, current, onPick
   const sets = useMemo(() => [...new Map((prints ?? []).map((p) => [p.set_code, p.set_name])).entries()], [prints]);
   const shown = (prints ?? []).filter((p) => !set || p.set_code === set);
   const owned = shown.filter((p) => p.free > 0), rest = shown.filter((p) => p.free <= 0);
-  const cheap = useMemo(() => (prints ?? []).filter((p) => cheapest(p) < Infinity).sort((a, b) => cheapest(a) - cheapest(b))[0], [prints]);
+  const cheap = useMemo(() => {  // the lowest price of any printing in any of its finishes
+    let best: { id: string; finish: Finish; price: number } | null = null;
+    for (const p of prints ?? []) for (const f of finishesOf(p)) { const v = priceOf(p, f); if (v != null && (!best || v < best.price)) best = { id: p.id, finish: f, price: v }; }
+    return best;
+  }, [prints]);
 
   const row = (p: Print) => {
-    const fin = p.finishes ? (JSON.parse(p.finishes) as string[]) : [];
+    const mine = Object.entries(p.owned_finish ?? {}).map(([f, q]) => `${q} ${FINISH[f]?.toLowerCase() ?? f}`).join(", ");
     return (
       <li key={p.id} className="flex items-center gap-4 py-2.5">
-        <div className="w-16 shrink-0"><CardImg id={p.id} size="small" /></div>
+        <HoverZoom className="w-16 shrink-0" zoom={<CardImg id={p.id} size="large" />}><CardImg id={p.id} size="small" /></HoverZoom>
         <div className="min-w-0 flex-1 text-sm">
           <div className="truncate font-medium">{p.set_name}</div>
           <div className="flex flex-wrap items-center gap-1.5 text-xs text-mute">
             <span className="uppercase">{p.set_code}</span><span>#{p.collector_number}</span><span className="capitalize">{p.rarity}</span><span>{p.released_at.slice(0, 4)}</span>
-            {fin.includes("foil") && <Badge foil>Foil</Badge>}{fin.includes("etched") && <Badge foil>Etched</Badge>}
-            {p.id === current && <Badge>Current</Badge>}
-            {p.owned > 0 && <span className="text-gold">you own {p.owned}{p.free < p.owned && ` (${p.free} free)`}</span>}
-          </div>
-          <div className="text-xs text-mute tabular-nums">
-            {eur(p.eur)}{p.eur_foil != null && <> · foil {eur(p.eur_foil)}</>}{p.eur_etched != null && <> · etched {eur(p.eur_etched)}</>}
+            {p.id === current && <Badge>{currentFinish ? `Current · ${FINISH[currentFinish]}` : "Current"}</Badge>}
+            {p.owned > 0 && <span className="text-gold">you own {mine}{p.free < p.owned && ` (${p.free} free)`}</span>}
           </div>
         </div>
-        <button className="btn-ghost !py-1 text-xs" disabled={p.id === current} onClick={() => onPick(p.id)} aria-label={`Select ${p.set_name} ${p.collector_number}`}>Select</button>
+        <div className="flex shrink-0 flex-wrap justify-end gap-2">
+          {finishesOf(p).map((f) => (
+            <button key={f} className="btn-ghost !flex-col !items-end !gap-0 !py-1 text-xs" disabled={p.id === current && f === currentFinish} onClick={() => onPick(p.id, f)}
+              aria-label={`${BUTTON[f]} ${p.set_name} ${p.collector_number}`}>
+              <span>{BUTTON[f]}</span><span className="text-[10.5px] font-normal text-mute tabular-nums">{eur(priceOf(p, f))}</span>
+            </button>
+          ))}
+        </div>
       </li>
     );
   };
@@ -67,7 +78,7 @@ export default function PrintingDialog({ deckId, oracleId, name, current, onPick
       {err && <p className="mt-3 text-sm text-danger">{err}</p>}
       <div className="mt-5 flex justify-end gap-2">
         <button className="btn-ghost" onClick={onClose}>Cancel</button>
-        <button className="btn-primary" disabled={!cheap} onClick={() => cheap && onPick(cheap.id)}>Use cheapest</button>
+        <button className="btn-primary" disabled={!cheap} onClick={() => cheap && onPick(cheap.id, cheap.finish)}>Use cheapest</button>
       </div>
     </Modal>
   );

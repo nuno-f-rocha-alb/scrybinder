@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { IconMinus, IconPlus, IconX } from "@tabler/icons-react";
 import { api, eur, FINISH, LANGS } from "../api";
 import { DeckCard } from "../decks";
-import { Badge, Modal } from "./ui";
+import { Badge, FinishTag, Modal } from "./ui";
 import { StatusBadge } from "./mana";
 import PrintingDialog from "./printings";
 import AddMissingDialog from "./addmissing";
@@ -44,12 +44,12 @@ export default function AssignDialog({ deckId, card, onClose, onChanged }: { dec
   const patchTags = (tags: string[]) => api(url, { method: "PATCH", body: JSON.stringify({ tags }) }).then(() => onChanged()).catch((e) => setErr(e.message));
   const addTag = () => { const t = tag.trim().toLowerCase(); if (t && !card.tags.includes(t)) patchTags([...card.tags, t]); setTag(""); };
 
-  const setPrinting = (scryfall_id: string) => api(url, { method: "PATCH", body: JSON.stringify({ scryfall_id }) })
+  const setPrinting = (scryfall_id: string, finish: string | null) => api(url, { method: "PATCH", body: JSON.stringify({ scryfall_id, finish }) })
     .then(() => { setPicking(false); onChanged(); }).catch((e) => { setPicking(false); setErr(e.message); });
   const other = card.scryfall_id && !rows.some((r) => r.scryfall_id === card.scryfall_id) ? rows[0] : undefined;  // a printing you own that the deck does not prefer
 
   if (adding) return <AddMissingDialog deckId={deckId} cardIds={[card.id]} count={card.missing} onClose={() => setAdding(false)} onDone={() => { onChanged(); onClose(); }} />;
-  return picking ? <PrintingDialog deckId={deckId} oracleId={card.oracle_id} name={card.name} current={card.scryfall_id} onPick={setPrinting} onClose={() => setPicking(false)} /> : (
+  return picking ? <PrintingDialog deckId={deckId} oracleId={card.oracle_id} name={card.name} current={card.scryfall_id} currentFinish={card.finish} onPick={setPrinting} onClose={() => setPicking(false)} /> : (
     <Modal title={`Copies and tags of ${card.name}`} onClose={onClose}>
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <h2 className="text-lg font-semibold">{card.name}</h2><StatusBadge status={card.status} />
@@ -59,8 +59,8 @@ export default function AssignDialog({ deckId, card, onClose, onChanged }: { dec
       </div>
 
       {other && <p className="mb-4 rounded-xl border border-dashed border-line p-3 text-sm text-mute">
-        You own another printing: <span className="uppercase">{other.set_code}</span> #{other.collector_number}.{" "}
-        <button className="text-accent hover:underline" onClick={() => setPrinting(other.scryfall_id)}>Use this printing</button>
+        You own another printing: <span className="uppercase">{other.set_code}</span> #{other.collector_number} <FinishTag finish={other.finish} />.{" "}
+        <button className="text-accent hover:underline" onClick={() => setPrinting(other.scryfall_id, other.finish)}>Use this printing</button>
       </p>}
 
       <section aria-label="Tags" className="mb-5">
@@ -97,7 +97,7 @@ export default function AssignDialog({ deckId, card, onClose, onChanged }: { dec
                 <div className="flex flex-wrap items-center gap-1.5 text-sm font-medium">
                   <span className="uppercase">{r.set_code}</span><span className="text-mute">#{r.collector_number}</span>
                   {r.finish !== "nonfoil" && <Badge foil>{FINISH[r.finish]}</Badge>}
-                  {r.scryfall_id === card.scryfall_id && <Badge>Preferred</Badge>}
+                  {r.scryfall_id === card.scryfall_id && (!card.finish || r.finish === card.finish) && <Badge>Preferred</Badge>}
                 </div>
                 <div className="text-xs text-mute">{LANGS[r.language] ?? r.language} · {r.condition} · {r.location || "no location"} · {eur(r.price)}</div>
                 <div className="text-xs text-mute tabular-nums">

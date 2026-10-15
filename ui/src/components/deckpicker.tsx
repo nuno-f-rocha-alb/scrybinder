@@ -4,13 +4,13 @@ import { DeckInfo } from "../decks";
 import { Modal } from "./ui";
 
 /** Choose a deck and put one copy of a card in its main board (the printing is kept when there is one). */
-export default function DeckPicker({ oracleId, scryfallId, name, excludeId, onClose, onDone }: {
-  oracleId: string; scryfallId: string | null; name: string; excludeId?: number; onClose: () => void; onDone: (deckName: string) => void;
+export default function DeckPicker({ oracleId, scryfallId, finish, name, excludeId, onClose, onDone }: {
+  oracleId: string; scryfallId: string | null; finish?: string | null; name: string; excludeId?: number; onClose: () => void; onDone: (deckName: string) => void;
 }) {
   const [decks, setDecks] = useState<DeckInfo[] | null>(null);
   const [err, setErr] = useState("");
   useEffect(() => { api<DeckInfo[]>("/decks").then(setDecks).catch((e) => setErr(e.message)); }, []);
-  const add = (d: DeckInfo) => api(`/decks/${d.id}/cards`, { method: "POST", body: JSON.stringify({ oracle_id: oracleId, scryfall_id: scryfallId, quantity: 1, board: "main" }) })
+  const add = (d: DeckInfo) => api(`/decks/${d.id}/cards`, { method: "POST", body: JSON.stringify({ oracle_id: oracleId, scryfall_id: scryfallId, finish: scryfallId ? finish : null, quantity: 1, board: "main" }) })
     .then(() => onDone(d.name)).catch((e) => setErr(e.message));
   const list = (decks ?? []).filter((d) => d.id !== excludeId);
   return (

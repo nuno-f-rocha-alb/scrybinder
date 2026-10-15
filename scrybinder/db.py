@@ -100,9 +100,9 @@ CREATE TABLE IF NOT EXISTS decks (
 CREATE TABLE IF NOT EXISTS deck_cards (  -- scryfall_id is the preferred printing (NULL = any)
     id INTEGER PRIMARY KEY, deck_id INTEGER NOT NULL REFERENCES decks(id) ON DELETE CASCADE,
     oracle_id TEXT NOT NULL REFERENCES oracle_cards(oracle_id), scryfall_id TEXT REFERENCES cards(id),
-    quantity INTEGER NOT NULL CHECK (quantity > 0), board TEXT NOT NULL DEFAULT 'main' CHECK (board IN ('main','side','commander','maybe'))
+    quantity INTEGER NOT NULL CHECK (quantity > 0), board TEXT NOT NULL DEFAULT 'main' CHECK (board IN ('main','side','commander','maybe')),
+    finish TEXT  -- the finish of the preferred printing (NULL = not chosen)
 );
-CREATE UNIQUE INDEX IF NOT EXISTS deck_cards_key ON deck_cards(deck_id, oracle_id, COALESCE(scryfall_id, ''), board);
 CREATE TABLE IF NOT EXISTS deck_card_tags (
     deck_card_id INTEGER NOT NULL REFERENCES deck_cards(id) ON DELETE CASCADE, tag TEXT NOT NULL, PRIMARY KEY (deck_card_id, tag)
 );
@@ -116,7 +116,7 @@ CREATE INDEX IF NOT EXISTS deck_assignments_coll ON deck_assignments(collection_
 
 # additive migrations (never delete or rewrite data): (table, column, definition)
 _ADD = [("decks", "folder_id", "INTEGER REFERENCES deck_folders(id) ON DELETE SET NULL"),
-        ("decks", "cover_card_id", "INTEGER REFERENCES deck_cards(id) ON DELETE SET NULL"), ("cards", "illustration_id", "TEXT"), ("cards", "image_status", "TEXT"), ("scan_log", "topk_json", "TEXT")]
+        ("decks", "cover_card_id", "INTEGER REFERENCES deck_cards(id) ON DELETE SET NULL"), ("deck_cards", "finish", "TEXT"), ("cards", "illustration_id", "TEXT"), ("cards", "image_status", "TEXT"), ("scan_log", "topk_json", "TEXT")]
 
 
 def _migrate(db):
@@ -124,6 +124,8 @@ def _migrate(db):
         if col not in {r[1] for r in db.execute(f"PRAGMA table_info({table})")}:
             db.execute(f"ALTER TABLE {table} ADD COLUMN {col} {ddl}")
     db.execute("CREATE INDEX IF NOT EXISTS cards_ill ON cards(illustration_id)")
+    db.execute("DROP INDEX IF EXISTS deck_cards_key")  # replaced: the same card in two finishes are two rows
+    db.execute("CREATE UNIQUE INDEX IF NOT EXISTS deck_cards_key2 ON deck_cards(deck_id, oracle_id, COALESCE(scryfall_id, ''), COALESCE(finish, ''), board)")
 
 
 def _adopt_legacy_db(path: Path):

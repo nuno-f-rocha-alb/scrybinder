@@ -9,7 +9,7 @@ export type CardStatus = "assigned" | "available" | "elsewhere" | "missing" | "p
 export type DeckCard = {
   id: number; oracle_id: string; scryfall_id: string | null; quantity: number; board: Board; name: string; mana_cost: string;
   cmc: number; type_line: string | null; colors: string[]; color_identity: string[]; owned: number; assigned: number; price: number | null;
-  image_id: string | null; cardmarket_id: number | null; tags: string[]; status: CardStatus; missing: number; available: number;
+  image_id: string | null; cardmarket_id: number | null; finish: "nonfoil" | "foil" | "etched" | null; tags: string[]; status: CardStatus; missing: number; available: number;
   elsewhere: { deck_id: number; name: string; quantity: number }[]; assignments: { collection_id: number; quantity: number }[];
 };
 export type DeckSummary = { cards: number; assigned: number; available: number; missing: number; proxies: number; cost_to_complete: number };
@@ -57,7 +57,7 @@ export type OracleRow = {
   id: string | null; price: number | null; owned: number; in_deck: number;
 };
 /** What the preview panel shows: a deck card or a search result. */
-export type Preview = { image_id: string | null; name: string; type_line: string | null; mana_cost: string; price: number | null; owned?: number; status?: CardStatus; tags?: string[] };
+export type Preview = { image_id: string | null; finish?: string | null; name: string; type_line: string | null; mana_cost: string; price: number | null; owned?: number; status?: CardStatus; tags?: string[] };
 
 const TYPES = ["land", "creature", "planeswalker", "battle", "artifact", "enchantment", "instant", "sorcery"] as const;
 /** Primary type of a card (front face), the same rule the statistics use. */
@@ -113,5 +113,5 @@ export function groupCards(cards: DeckCard[], by: GroupBy = "type", sort: SortBy
   return out;
 }
 
-export const toPreview = (c: DeckCard): Preview => ({ image_id: c.image_id, name: c.name, type_line: c.type_line, mana_cost: c.mana_cost, price: c.price, owned: c.owned, status: c.status, tags: c.tags });
+export const toPreview = (c: DeckCard): Preview => ({ image_id: c.image_id, finish: c.finish, name: c.name, type_line: c.type_line, mana_cost: c.mana_cost, price: c.price, owned: c.owned, status: c.status, tags: c.tags });
 export const resultPreview = (r: OracleRow): Preview => ({ image_id: r.id, name: r.name, type_line: r.type_line, mana_cost: r.mana_cost, price: r.price, owned: r.owned });
