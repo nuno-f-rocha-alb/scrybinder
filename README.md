@@ -256,7 +256,7 @@ On first run open **Settings**, update the card database and build the visual in
 
 ## Contributing
 
-Issues and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). Bug reports with a photo that was misidentified are especially useful (card, what you expected, what you got).
+Issues and pull requests are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md). Bug reports with a photo that was misidentified are especially useful (card, what you expected, what you got). Everyone taking part is expected to follow the [Code of Conduct](CODE_OF_CONDUCT.md). If something in the app is hard to use, see the [accessibility statement](ACCESSIBILITY.md).
 
 ## Legal
 
