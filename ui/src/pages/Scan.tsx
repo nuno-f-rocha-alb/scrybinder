@@ -7,12 +7,16 @@ type Cand = Pick<Print, "id" | "name" | "set_code" | "set_name" | "collector_num
 type Pending = {
   id: number; qty: number; label: string; detected: boolean; confidence: "high" | "medium" | "low" | "none"; candidates: Cand[];
   ocr: { name: string; number: string | null; set: string | null; name_match: number; rotated: boolean };
+  visual?: Visual | null;
 };
+type Visual = { top_art: number; margin: number };
+const engine = (v?: Visual | null) => (v ? "OCR + DINOv2" : "OCR only");  // the visual field exists only when the visual index took part
 type Read = {
+  visual?: Visual | null;
   id: number; confidence: "high" | "medium" | "low" | "none"; scryfall_id: string | null; finish: string; qty: number;
   condition: string; language: string; card: (Cand & { finishes: string; cardmarket_id?: number | null }) | null;
 };
-type State = { running: boolean; source: string | null; message: string; beep: number; split_next: boolean; list_mode: boolean; page_mode: boolean; pending: Pending[]; reads: Read[] };
+type State = { running: boolean; source: string | null; message: string; notice: string; beep: number; split_next: boolean; list_mode: boolean; page_mode: boolean; pending: Pending[]; reads: Read[] };
 
 const LANG_KEYS = Object.keys(LANGS);
 const CONF: Record<string, { t: string; c: string }> = {
@@ -170,6 +174,7 @@ export default function Scan() {
               {st?.running && st.source?.startsWith("webcam") ? <button className="btn-ghost w-full" onClick={stop}>Stop</button>
                 : <button className="btn-primary w-full" onClick={start}>Start camera</button>}
               {st?.message && <p className="text-xs text-danger">{st.message}</p>}
+              {st?.notice && <p className="text-xs text-gold">{st.notice}</p>}
               <p className="text-xs text-mute">Capture is automatic when the card stays still for 0.4 s. Swap the card and repeat.</p>
               {st?.running && st.source?.startsWith("webcam") && (
                 <button className="btn-ghost w-full !py-1 text-xs" title="Saves the whole camera frame and the outline the app found, in the debug folder of the data folder: attach it when a card is not detected"
@@ -269,7 +274,7 @@ function Confirm({ item, location, onDone }: { item: Pending; location: string; 
     <div className="min-w-0 rounded-2xl border border-line bg-surface p-5">
       <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
         <span className={`text-sm font-medium ${conf.c}`}>{conf.t}</span>
-        <span className="text-xs text-mute">{item.label && `${item.label} · `}OCR: “{item.ocr.name || "—"}”{item.ocr.number && ` · no. ${item.ocr.number}`}{!item.detected && " · card not detected in the photo"}</span>
+        <span className="text-xs text-mute">{item.label && `${item.label} · `}{engine(item.visual)} · OCR: “{item.ocr.name || "—"}”{item.ocr.number && ` · no. ${item.ocr.number}`}{!item.detected && " · card not detected in the photo"}</span>
       </div>
       <div className="grid min-w-0 grid-cols-2 gap-5 2xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1.1fr)]">
         <figure className="min-w-0"><div className="mx-auto aspect-[63/88] max-h-[44vh]"><img src={`/api/scan/capture/${item.id}`} alt="Capture" className="size-full rounded-[4.5%] bg-raised object-cover" /></div><figcaption className="mt-1 text-center text-xs text-mute">Capture</figcaption></figure>
@@ -381,6 +386,7 @@ function ReadsList({ reads, location, onChange, toast }: { reads: Read[]; locati
                   <div className="mt-1 text-sm text-gold">{eur(unit(r))}{r.qty > 1 && unit(r) != null && <span className="text-mute"> × {r.qty} = {eur((unit(r) ?? 0) * r.qty)}</span>}</div>
                   {r.scryfall_id && <div className="mt-1"><ExtLinks id={r.scryfall_id} cardmarketId={c?.cardmarket_id} /></div>}
                   {f && <div className={`mt-1 text-xs font-medium ${f.c.split(" ")[0]}`}>{f.t}</div>}
+                  <div className="mt-1 text-xs text-mute" title={r.visual ? `Artwork ${r.visual.top_art}, margin ${r.visual.margin}` : "No visual index: the name and the bottom line were read by OCR only"}>{engine(r.visual)}</div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 text-sm">
                   <select className="field w-28" value={r.finish} aria-label="Finish" onChange={(e) => patch(r.id, { finish: e.target.value })}>
