@@ -386,6 +386,14 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
         scanner.stop()
         return {"ok": True}
 
+    @app.post("/api/scan/debug-frame")
+    def scan_debug_frame():
+        """Save the camera's current whole frame with the outline the app found (for reports about cards that are not detected)."""
+        path = scanner.save_debug("manual")
+        if path is None:
+            raise HTTPException(409, "start the camera first: there is no frame yet")
+        return {"path": str(path), "folder": str(path.parent)}
+
     @app.get("/api/scan/preview")
     def scan_preview():
         def gen():

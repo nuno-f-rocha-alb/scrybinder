@@ -1,5 +1,6 @@
 """Scan session: pending queue, sources (photos / folder / webcam), the temporary read list, confirmation and logging."""
 import json
+import logging
 import sys
 import threading
 import time
@@ -12,6 +13,8 @@ from .. import collection
 from ..db import DATA_DIR
 from .identify import Identifier
 from .vision import Stability, card_from_photo, find_card, find_cards, inner_card, warp_card
+
+log = logging.getLogger(__name__)
 
 IMG_EXT = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 MAX_SIDE_PAGE = 4500  # a page holds up to 9 cards: more pixels are needed for each one
@@ -47,10 +50,11 @@ def _topk(item: dict) -> str:
 
 
 class Scanner:
-    def __init__(self, db, captures_dir: Path | None = None, hold=0.4):
+    def __init__(self, db, captures_dir: Path | None = None, hold=0.4, debug_dir: Path | None = None):
         self.db = db
         self.ident = Identifier(db)
         self.dir = captures_dir or DATA_DIR / "captures"
+        self.debug_dir = debug_dir or self.dir.parent / "debug"  # whole camera frames with the detected outline (see save_debug)
         self.hold = hold
         self.pending: list[dict] = []
         self.beep = 0                      # increments on every capture: the UI plays a sound
@@ -65,6 +69,8 @@ class Scanner:
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._preview: bytes | None = None
+        self._frame: np.ndarray | None = None  # the latest camera frame and the card outline found in it
+        self._quad: np.ndarray | None = None
         self._seen: set[str] = set()
         self._next_id = int(db.execute("SELECT COALESCE(MAX(id),0) FROM scan_log").fetchone()[0]) + 1
         threading.Thread(target=self.ident.vis, daemon=True).start()  # warm up the index/model before the first card
@@ -285,28 +291,69 @@ class Scanner:
     def _run_webcam(self, index: int):
         cap = cv2.VideoCapture(index, cv2.CAP_DSHOW) if sys.platform == "win32" else cv2.VideoCapture(index)  # DirectShow is Windows-only
         if not cap.isOpened():
+            log.warning("Could not open camera %s", index)
             self.message = f"Could not open camera {index}."
             return
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
         stab = Stability(hold=self.hold)
+        frames = 0
         try:
+            log.info("Camera %s opened: asked 1920x1080, got %sx%s, backend %s", index, cap.get(cv2.CAP_PROP_FRAME_WIDTH),
+                     cap.get(cv2.CAP_PROP_FRAME_HEIGHT), cap.getBackendName())
             while not self._stop.is_set():
                 ok, frame = cap.read()
                 if not ok:
+                    log.warning("Camera %s stopped sending frames after %s frames", index, frames)
                     self.message = "The camera stopped sending frames."
                     break
+                if frames == 0:
+                    log.info("Camera %s first frame: shape %s, dtype %s", index, frame.shape, frame.dtype)
+                frames += 1
                 quad = find_card(frame)
+                self._frame, self._quad = frame, quad
                 fire = stab.update(quad, time.monotonic())
                 view = frame.copy()
                 if quad is not None:
                     cv2.polylines(view, [quad.astype(np.int32)], True, (90, 220, 120) if stab.fired else (60, 180, 255), 4)
                 self._preview = cv2.imencode(".jpg", cv2.resize(view, None, fx=0.5, fy=0.5), [cv2.IMWRITE_JPEG_QUALITY, 70])[1].tobytes()
                 if fire:
+                    self.save_debug("fired", frame, quad)
                     card = warp_card(frame, quad)  # OCR takes ~1 s: run it in another thread so the preview does not block
                     threading.Thread(target=self.process, args=(card, "webcam", True), daemon=True).start()
+        except Exception as e:  # a failure here used to end the thread without a word
+            log.exception("Camera %s failed after %s frames", index, frames)
+            self.message = f"The camera failed: {e}"
         finally:
             cap.release()
+            self._frame = self._quad = None  # nothing to save once the camera is off
+            log.info("Camera %s closed after %s frames", index, frames)
+
+    DEBUG_KEEP = 30  # frames kept (each is a raw JPEG, one with the outline drawn and a small JSON)
+
+    def save_debug(self, reason: str, frame=None, quad=None) -> Path | None:
+        """Save the whole camera frame, the same with the detected card outline drawn, and the outline's corners, so a card that
+        was not found (or a crop of the wrong part) can be looked at later. Returns the raw frame's path (None: no frame yet)."""
+        if frame is None:
+            frame, quad = self._frame, self._quad
+        if frame is None:
+            return None
+        self.debug_dir.mkdir(parents=True, exist_ok=True)
+        now = time.time_ns()  # one reading of the clock: the names sort in the order the frames were taken
+        base = self.debug_dir / f"{time.strftime('%Y%m%d-%H%M%S', time.localtime(now // 10**9))}-{now % 10**9:09d}-{reason}"
+        cv2.imwrite(str(base) + ".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 90])
+        view = frame.copy()
+        if quad is not None:
+            cv2.polylines(view, [np.asarray(quad).astype(np.int32)], True, (60, 180, 255), 4)
+        cv2.imwrite(str(base) + "-outline.jpg", view, [cv2.IMWRITE_JPEG_QUALITY, 85])
+        Path(str(base) + ".json").write_text(json.dumps({"reason": reason, "shape": list(frame.shape),
+                                                         "quad": None if quad is None else np.asarray(quad).round(1).tolist()}), encoding="utf-8")
+        for old in sorted(self.debug_dir.glob("*.json"))[:-self.DEBUG_KEEP]:
+            stem = str(old)[:-len(".json")]
+            for f in (old, Path(stem + ".jpg"), Path(stem + "-outline.jpg")):
+                f.unlink(missing_ok=True)
+        log.info("Saved debug frame %s (%s, outline %s)", base.name, reason, "found" if quad is not None else "not found")
+        return Path(str(base) + ".jpg")
 
     def preview_jpeg(self) -> bytes | None:
         return self._preview
