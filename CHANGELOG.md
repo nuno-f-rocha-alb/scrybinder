@@ -4,6 +4,8 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+## [0.6.0] — 2026-10-15
+
 ### Added
 - Collection: "New location" makes an empty location to move cards into later (it stays in the list while empty, and can be removed while it has no cards).
 - A right-click menu also in the collection (grid and table), on the printings of the Add page and on the results of a deck's card search: edit, add a copy, add to a deck or board, select, copy the name, Scryfall and Cardmarket.
