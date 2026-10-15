@@ -75,12 +75,18 @@ class Embedder:
         return self.model_id.replace("/", "_")
 
     def _load(self):
+        import logging
+        import time
         import torch
         from transformers import AutoModel
+        from transformers.utils import logging as hf_logging
+        hf_logging.disable_progress_bar()  # "Loading weights" bars, a line per redraw in the log, every time the model is loaded
+        t0 = time.monotonic()
         self._dev = "cuda" if torch.cuda.is_available() else "cpu"
         self._model = AutoModel.from_pretrained(self.model_id, **_HF_KW).eval().to(self._dev)
         if self._dev == "cuda":
             self._model.half()
+        logging.getLogger("scrybinder.scan").info("Visual model loaded on %s in %.1f s", self._dev, time.monotonic() - t0)
 
     def embed_raw(self, imgs: list[np.ndarray], size: tuple[int, int], batch=64, progress=None) -> np.ndarray:
         """`progress(done, total)` is called after every batch; if it returns True the work is abandoned (`Stopped`)."""

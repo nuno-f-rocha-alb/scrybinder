@@ -108,7 +108,9 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
         from .scan import index as ixmod
         from .scan.embed import Embedder
         conn = None
+        ilog = logging.getLogger("scrybinder.index")
         try:
+            ilog.info("Visual index build started (%s)", mode)
             ixjob.update(state="prepare", mode=mode, done=0, total=0, error=None, failed=0)
             conn = dbmod.connect(db.execute("PRAGMA database_list").fetchone()[2])  # own connection for this thread
             emb = Embedder()
@@ -118,9 +120,12 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
             res = ixmod.build(emb, d, progress=lambda i, t: ixjob.update(done=i, total=t), should_stop=ix_stop.is_set,
                               detail=lambda text: ixjob.update(detail=text))
             ixjob.update(state="stopped" if res.get("stopped") else "done", failed=res["failed_downloads"])
+            ilog.info("Visual index build %s: %s faces indexed of %s, %s downloads failed", "stopped" if res.get("stopped") else "finished",
+                      res.get("indexed"), res.get("rows"), res["failed_downloads"])
             if res["indexed"]:
                 scanner.ident.reset_vis()
         except Exception as e:  # ponytail: show the error in the UI instead of losing it in the thread
+            ilog.exception("Visual index build failed")
             ixjob.update(state="error", error=str(e))
         finally:
             if conn:

@@ -49,7 +49,7 @@ def _redirect_output_to_log():
     """pythonw / packaged app without a console: uvicorn needs a stderr, so send it to a file."""
     from .db import DATA_DIR
     DATA_DIR.mkdir(parents=True, exist_ok=True)
-    sys.stdout = sys.stderr = open(DATA_DIR / "scrybinder.log", "a", encoding="utf-8", buffering=1)
+    sys.stdout = sys.stderr = logs.stamped_stream(DATA_DIR / "scrybinder.log")  # every line with the time
 
 
 def _wait_forever():
