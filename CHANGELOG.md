@@ -4,6 +4,8 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+## [0.6.6] — 2026-10-16
+
 ### Added
 - Collection: clicking a card shows its details (rules text, legality, rulings) under the edit fields, and a right-click menu item deletes it.
 - Collection: the location filter takes several locations (checkboxes), and cards can be grouped by location (default), name, color, rarity, set or type. Outside the location grouping, the same card in several locations is one card with the quantity per location in its editor.
