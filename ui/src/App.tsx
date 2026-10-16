@@ -18,6 +18,7 @@ export default function App() {
   const [page, setPage] = useState<Page>("collection");
   const [open, setOpen] = useState(true);
   const [filter, setFilter] = useState<{ set?: string; location?: string }>({});
+  const [deckTarget, setDeckTarget] = useState<{ deckId: number; oracleId?: string; n: number } | undefined>();  // `n` makes a repeat of the same target reopen it
   const [status, setStatus] = useState<Status | null>(null);
   const refresh = () => api<Status>("/status").then(setStatus).catch(() => {});
   useEffect(() => { refresh(); }, [page]);
@@ -42,7 +43,7 @@ export default function App() {
           {(["decks", "scan", "add", "io", "settings"] as const).map((p) => {
             const I = ICON[p];
             return <SidebarItem key={p} icon={<I className="size-[18px]" stroke={1.75} />} active={page === p} badge={p === "settings" && status?.update_available ? <span className="size-2 rounded-full bg-accent" title={`Scrybinder ${status.update_available} is available`} /> : undefined}
-              onClick={() => setPage(p)}>{PAGES[p]}</SidebarItem>;
+              onClick={() => { if (p === "decks") setDeckTarget(undefined); setPage(p); }}>{PAGES[p]}</SidebarItem>;
           })}
         </SidebarSection>
         <SidebarFooter>Card data and images © Scryfall<br />Scrybinder is not affiliated with Wizards of the Coast.</SidebarFooter>
@@ -58,9 +59,10 @@ export default function App() {
           </button>
         )}
         <div className="mx-auto max-w-[2600px] p-6 min-[1800px]:px-10">
-          {page === "collection" && <Collection key={`${filter.set}|${filter.location}`} initialSet={filter.set} initialLocation={filter.location} />}
+          {page === "collection" && <Collection key={`${filter.set}|${filter.location}`} initialSet={filter.set} initialLocation={filter.location}
+            onOpenDeck={(deckId, oracleId) => { setDeckTarget({ deckId, oracleId, n: Date.now() }); setPage("decks"); }} />}
           {page === "sets" && <Sets onOpen={(set, location) => { setFilter({ set, location }); setPage("collection"); }} />}
-          {page === "decks" && <Decks />}
+          {page === "decks" && <Decks key={deckTarget?.n} target={deckTarget} />}
           {page === "scan" && <Scan />}
           {page === "add" && <Add />}
           {page === "io" && <ImportExport />}

@@ -62,7 +62,8 @@ def test_assign_free_prefers_printing_and_keeps_manual(db):
     row2 = collection.add(db, scryfall_id=sid, quantity=3, location="B")
     c1 = decks.add_card(db, d1, oid, 3)
     assert decks.assign_free(db, d1) == 3
-    assert sorted((a["collection_id"], a["quantity"]) for a in _card(db, d1, c1)["assignments"]) == [(row, 1), (row2, 2)]
+    assert [a["quantity"] for a in _card(db, d1, c1)["assignments"]] == [3]  # both rows moved into the deck's location and merged there
+    assert [tuple(r) for r in db.execute("SELECT location, SUM(quantity) FROM collection GROUP BY location")] == [("B", 1), ("Deck: D1", 3)]
     c2 = decks.add_card(db, d2, oid, 2)
     assert decks.assign_free(db, d2) == 1 and _card(db, d2, c2)["assigned"] == 1  # one copy was left
     assert _card(db, d2, c2)["missing"] == 1
@@ -80,17 +81,19 @@ def test_changing_the_deck_trims_or_merges_assignments(db):
     with pytest.raises(ValueError):
         decks.assign(db, d1, c1, [{"collection_id": row, "quantity": 1}])
     decks.update_card(db, d1, c1, tags=[])
+    row = db.execute("SELECT id FROM collection").fetchone()[0]  # the rows were split and merged on the way
     side = decks.add_card(db, d1, oid, 1, board="side")
     decks.assign(db, d1, c1, [{"collection_id": row, "quantity": 1}])
     decks.assign(db, d1, side, [{"collection_id": row, "quantity": 1}])
     assert decks.update_card(db, d1, side, board="main") == c1  # merged: assignments are summed
-    assert _card(db, d1, c1)["assignments"] == [{"collection_id": row, "quantity": 2}]
+    assert [a["quantity"] for a in _card(db, d1, c1)["assignments"]] == [2]
 
 
 def test_collection_changes_respect_assignments(db):
     oid, sid, row, d1, _ = _setup(db, qty=3)
     c1 = decks.add_card(db, d1, oid, 2)
     decks.assign(db, d1, c1, [{"collection_id": row, "quantity": 2}])
+    row = db.execute("SELECT collection_id FROM deck_assignments").fetchone()[0]  # the two copies moved to the deck's location
     collection.update(db, row, quantity=2, notes="ok")  # still enough
     for call in (lambda: collection.update(db, row, quantity=1), lambda: collection.delete(db, row),
                  lambda: collection.bulk_delete(db, [row]), lambda: collection.bulk_update(db, [row], proxy=1),
@@ -145,11 +148,12 @@ def test_copies_of_a_deck_card_and_who_holds_them(db):
     decks.assign(db, d1, c1, [{"collection_id": row, "quantity": 2}])
     decks.assign(db, d2, c2, [{"collection_id": row, "quantity": 1}, {"collection_id": other, "quantity": 1}])
     got = decks.copies(db, d1, c1)
-    assert got["quantity"] == 2 and [r["id"] for r in got["rows"]] == [row, other]  # the preferred printing first, no proxy
-    a, b = got["rows"]
-    assert (a["here"], a["free"], a["elsewhere"]) == (2, 0, [{"deck_id": d2, "name": "D2", "quantity": 1}])  # 3 owned: 2 here, 1 in D2
-    assert (b["here"], b["free"], b["finish"]) == (0, 1, "foil") and b["elsewhere"][0]["name"] == "D2"
-    assert decks.copies(db, d2, c2)["rows"][0]["elsewhere"] == [{"deck_id": d1, "name": "D1", "quantity": 2}]
+    rows = got["rows"]  # assigning split and moved rows: look at the totals, not at ids
+    assert got["quantity"] == 2 and 3 not in [r["id"] for r in rows]  # the third row is the proxy
+    assert sum(r["here"] for r in rows) == 2 and sum(r["free"] for r in rows) == 1  # 5 copies: 2 here, 2 in D2, 1 free
+    assert next(r for r in rows if r["free"])["finish"] == "foil"
+    assert {e["name"] for r in rows for e in r["elsewhere"]} == {"D2"}
+    assert {e["name"] for r in decks.copies(db, d2, c2)["rows"] for e in r["elsewhere"]} == {"D1"}
     with pytest.raises(KeyError):
         decks.copies(db, d2, c1)  # the card is not in that deck
     empty = decks.create(db, "E")
@@ -172,8 +176,8 @@ def test_collection_rows_say_which_decks_hold_them(db):
     assert collection.search(db)["rows"][0]["decks"] == []
     decks.assign(db, d1, decks.add_card(db, d1, oid, 1), [{"collection_id": row, "quantity": 1}])
     decks.assign(db, d2, decks.add_card(db, d2, oid, 1), [{"collection_id": row, "quantity": 1}])
-    held = collection.search(db)["rows"][0]["decks"]
-    assert [(d["name"], d["quantity"]) for d in held] == [("D1", 1), ("D2", 1)]
+    held = sorted((d["name"], d["quantity"]) for r in collection.search(db)["rows"] for d in r["decks"])  # each deck has its own row now
+    assert held == [("D1", 1), ("D2", 1)]
 
 
 def test_add_missing_puts_the_missing_copies_in_the_collection(db):
@@ -184,7 +188,7 @@ def test_add_missing_puts_the_missing_copies_in_the_collection(db):
     assert decks.add_missing(db, d1, [px, mb]) == 0  # a proxy and the maybeboard are never added
     assert decks.add_missing(db, d1, location="Box") == 2  # 3 wanted, 1 owned
     assert db.execute("SELECT SUM(quantity) FROM collection WHERE scryfall_id=?", (sid,)).fetchone()[0] == 3
-    assert db.execute("SELECT COUNT(*) FROM collection WHERE location='Box'").fetchone()[0] == 1
+    assert db.execute("SELECT SUM(quantity) FROM collection WHERE location='Deck: D1'").fetchone()[0] == 3  # the new copies went to the deck's location
     a = _card(db, d1, c1)
     assert (a["status"], a["assigned"], a["missing"]) == ("assigned", 3, 0)
     assert decks.add_missing(db, d1) == 0
@@ -220,11 +224,11 @@ def test_an_empty_location_can_be_made_and_removed(db):
     oid, sid, row, d1, d2 = _setup(db, qty=2)
     assert collection.create_location(db, "  Box 7 ") == "Box 7"
     collection.create_location(db, "Box 7")  # again: still one
-    assert {l["location"]: l["cards"] for l in collection.locations(db)} == {"": 2, "Box 7": 0}
+    assert {l["location"]: l["cards"] for l in collection.locations(db)} == {"": 2, "Box 7": 0, "Deck: D1": 0, "Deck: D2": 0}
     collection.move(db, row, "Box 7", 1)  # a card can go there later
-    assert {l["location"]: l["cards"] for l in collection.locations(db)} == {"": 1, "Box 7": 1}
-    with pytest.raises(ValueError):
-        collection.delete_location(db, "Box 7")  # it has a card
+    assert {l["location"]: l["cards"] for l in collection.locations(db)} == {"": 1, "Box 7": 1, "Deck: D1": 0, "Deck: D2": 0}
+    assert collection.delete_location(db, "Box 7") == {"moved": 1}  # its card goes to "(no location)"
+    assert {l["location"]: l["cards"] for l in collection.locations(db)} == {"": 2, "Deck: D1": 0, "Deck: D2": 0}
     collection.create_location(db, "Empty")
     collection.delete_location(db, "Empty")
     assert "Empty" not in [l["location"] for l in collection.locations(db)]
@@ -263,7 +267,7 @@ def test_add_copy_of_the_chosen_printing_even_when_another_is_owned(db):
     assert decks.add_missing(db, d1) == 0
     assert decks.add_copy(db, d1, c, 1, "Box") == 1
     mine = db.execute("SELECT scryfall_id, location, quantity FROM collection WHERE scryfall_id=?", (other[0],)).fetchone()
-    assert (mine["location"], mine["quantity"]) == ("Box", 1)
+    assert (mine["location"], mine["quantity"]) == ("Deck: D1", 1)  # assigned: it is in the deck's location, not the one asked for
     assert _card(db, d1, c)["assigned"] == 1  # and it is assigned to the card
     for bad in (0, 1000, "x"):
         with pytest.raises(ValueError):

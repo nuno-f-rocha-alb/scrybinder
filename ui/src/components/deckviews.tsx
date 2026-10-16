@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { IconChevronDown, IconChevronRight, IconMinus, IconPlus, IconTrash } from "@tabler/icons-react";
+import { IconCheck, IconChevronDown, IconChevronRight, IconMinus, IconPlus, IconTrash } from "@tabler/icons-react";
 import { api, eur } from "../api";
 import { BOARDS, BOARD_LABEL, DeckCard, Group, Preview, View, shownPrints, toPreview } from "../decks";
 import { CardImg, EditionTag, FinishTag } from "./ui";
@@ -7,11 +7,12 @@ import { ManaCost, STATUS_RING, StatusBadge, StatusDot } from "./mana";
 import { sourceFor } from "./cardgrid";
 
 export type Ctx = { deckId: number; act: (p: Promise<unknown>) => void; setPreview: (p: Preview) => void; onZoom: (c: DeckCard) => void; onAssign: (c: DeckCard) => void;
-  onMenu: (c: DeckCard, e: React.MouseEvent) => void; hover: (c: DeckCard | null) => void };
+  onMenu: (c: DeckCard, e: React.MouseEvent) => void; hover: (c: DeckCard | null) => void; selecting?: boolean; selected?: Set<number> };
 export type Layout = { tile: number; tilePx: number; style: React.CSSProperties; setGridEl: (el: HTMLDivElement | null) => void };
 
 /** What every card element shares: the preview, the card under the pointer or focus (for the Alt+number shortcuts) and the right-click menu. */
 const bind = (ctx: Ctx, c: DeckCard) => ({
+  "data-dc": c.id,  // the page finds a card by it (scroll to it, flash it)
   onMouseEnter: () => { ctx.setPreview(toPreview(c)); ctx.hover(c); }, onMouseLeave: () => ctx.hover(null),
   onFocus: () => { ctx.setPreview(toPreview(c)); ctx.hover(c); }, onBlur: () => ctx.hover(null),
   onContextMenu: (e: React.MouseEvent) => ctx.onMenu(c, e),
@@ -27,6 +28,14 @@ function useOps(ctx: Ctx, c: DeckCard) {
     board: (b: string) => patch({ board: b }),
   };
 }
+
+/** In select mode: a round check at the card (filled when it is selected); the row or tile itself toggles on click. */
+function SelMark({ ctx, c, className = "" }: { ctx: Ctx; c: DeckCard; className?: string }) {
+  if (!ctx.selecting) return null;
+  const on = ctx.selected?.has(c.id);
+  return <span aria-hidden className={`flex size-5 shrink-0 items-center justify-center rounded-full border-2 ${on ? "border-accent bg-accent text-white" : "border-white/70 bg-black/50"} ${className}`}>{on && <IconCheck className="size-3.5" stroke={3} />}</span>;
+}
+const picked = (ctx: Ctx, c: DeckCard) => !!ctx.selecting && !!ctx.selected?.has(c.id);
 
 const STEP = "flex size-6 items-center justify-center rounded-md text-mute hover:bg-line hover:text-ink";
 
@@ -66,9 +75,10 @@ function ListRow({ c, ctx }: { c: DeckCard; ctx: Ctx }) {
   const o = useOps(ctx, c);
   return (
     <li {...bind(ctx, c)} onClick={() => ctx.onZoom(c)}
-      className="grid grid-cols-[84px_minmax(0,1fr)_auto_104px] items-center gap-3 rounded-md px-2 py-1 hover:bg-raised md:grid-cols-[84px_minmax(0,1fr)_auto_116px_64px_92px]">
+      className={`grid grid-cols-[84px_minmax(0,1fr)_auto_104px] items-center gap-3 rounded-md px-2 py-1 hover:bg-raised md:grid-cols-[84px_minmax(0,1fr)_auto_116px_64px_92px] ${picked(ctx, c) ? "bg-accent-soft" : ""}`}>
       <div onClick={(e) => e.stopPropagation()}><Stepper c={c} ctx={ctx} /></div>
       <div className="flex min-w-0 items-center gap-2 text-sm">
+        <SelMark ctx={ctx} c={c} />
         <span className="truncate">{c.name}</span>
         <PrintTags c={c} />
         {c.missing > 0 && <span className="shrink-0 text-xs text-danger">{c.missing} missing</span>}
@@ -90,7 +100,8 @@ function CompactRow({ c, ctx }: { c: DeckCard; ctx: Ctx }) {
   const o = useOps(ctx, c);
   return (
     <li {...bind(ctx, c)} onClick={() => ctx.onZoom(c)}
-      className="group flex min-h-[30px] items-center gap-2 rounded px-1.5 py-[3px] text-[13px] hover:bg-raised">
+      className={`group flex min-h-[30px] items-center gap-2 rounded px-1.5 py-[3px] text-[13px] hover:bg-raised ${picked(ctx, c) ? "bg-accent-soft" : ""}`}>
+      <SelMark ctx={ctx} c={c} />
       <span className="w-5 shrink-0 text-right tabular-nums text-mute">{c.quantity}</span>
       <span className="min-w-0 flex-1 truncate">{c.name}</span>
       <PrintTags c={c} />
@@ -109,10 +120,11 @@ function Tile({ c, ctx, layout, crop }: { c: DeckCard; ctx: Ctx; layout: Layout;
   return (
     <div tabIndex={0} {...bind(ctx, c)} onClick={() => ctx.onZoom(c)}
       aria-label={`${c.quantity} ${c.name}, ${c.status}`}
-      className={`group relative overflow-hidden rounded-[4.5%] outline-none ring-2 ring-offset-0 transition focus-visible:ring-accent ${STATUS_RING[c.status]} hover:ring-accent`}>
+      className={`group relative overflow-hidden rounded-[4.5%] outline-none ring-2 ring-offset-0 transition focus-visible:ring-accent ${picked(ctx, c) ? "ring-accent brightness-75" : STATUS_RING[c.status]} hover:ring-accent`}>
       {c.image_id ? <CardImg id={c.image_id} size={sourceFor(layout.tilePx)} className={crop ? "!aspect-[63/62] object-top" : ""} />
         : <div className={`flex w-full items-center justify-center bg-raised p-2 text-center text-xs text-mute ${crop ? "aspect-[63/62]" : "aspect-[63/88]"}`}>{c.name}</div>}
       <span className="absolute left-1.5 top-1.5 flex flex-col items-start gap-1">
+        <SelMark ctx={ctx} c={c} />
         {c.quantity > 1 && <span className="rounded-md bg-bg/90 px-1.5 py-0.5 text-xs font-semibold tabular-nums">×{c.quantity}</span>}
         {shownPrints(c).slice(0, 2).map((p, i) => <span key={i} className="flex items-center gap-1"><span className="rounded-md bg-bg/90 px-1.5 py-0.5 text-[10.5px] uppercase tabular-nums">{p.set_code} #{p.collector_number}</span><FinishTag finish={p.finish} /></span>)}
       </span>
@@ -136,9 +148,10 @@ function Strip({ c, ctx, layout, last, copy }: { c: DeckCard; ctx: Ctx; layout: 
     <div tabIndex={0} {...bind(ctx, c)} onClick={() => ctx.onZoom(c)}
       aria-label={`${c.quantity} ${c.name}, ${c.status}`}
       style={{ "--strip": `${strip}px`, "--full": `${full}px` } as React.CSSProperties}
-      className={`group relative shrink-0 overflow-hidden rounded-[5px] outline-none ring-2 transition-[height] duration-150 motion-reduce:transition-none ${STATUS_RING[c.status]} hover:ring-accent focus-visible:ring-accent ${last ? "h-(--full)" : "h-(--strip) hover:h-(--full) focus:h-(--full)"}`}>
+      className={`group relative shrink-0 overflow-hidden rounded-[5px] outline-none ring-2 transition-[height] duration-150 motion-reduce:transition-none ${STATUS_RING[c.status]} hover:ring-accent focus-visible:ring-accent ${picked(ctx, c) ? "!ring-accent brightness-75" : ""} ${last ? "h-(--full)" : "h-(--strip) hover:h-(--full) focus:h-(--full)"}`}>
       {c.image_id ? <CardImg id={c.image_id} size={sourceFor(layout.tilePx)} className="!rounded-none" /> : <div className="h-full bg-raised p-1 text-xs">{c.name}</div>}
       <span className="absolute left-1 top-0.5 flex items-center gap-1">
+        <SelMark ctx={ctx} c={c} className="!size-4" />
         {copy === undefined && c.quantity > 1 && <span className="rounded bg-bg/90 px-1 text-[11px] font-semibold tabular-nums">×{c.quantity}</span>}
         <FinishTag finish={shownPrints(c)[0]?.finish} />
       </span>

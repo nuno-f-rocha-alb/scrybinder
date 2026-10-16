@@ -11,6 +11,7 @@ FORMATS = ("commander", "standard", "pioneer", "modern", "legacy", "vintage", "p
 BOARDS = ("main", "side", "commander", "maybe")  # maybe never counts towards size, legality or statistics
 TAG_MAX = 30
 PROXY = "proxy"  # defined tag: the card is in the deck but is not a real copy
+LOC_PREFIX = "Deck: "  # every deck is also a collection location, named after it; the prefix is reserved
 
 # copies owned (proxy rows of the collection are not real copies) and the cheapest price of the oracle card
 _CARD_SQL = """
@@ -193,16 +194,98 @@ def update(db, deck_id: int, **fields) -> None:
         fields.update(cover)
     if "name" in fields and not (isinstance(fields["name"], str) and fields["name"].strip()):
         raise ValueError("a deck needs a name")
+    old = location_names(db)
     if fields:
         with db:
             db.execute(f"UPDATE decks SET {', '.join(k + '=?' for k in fields)}, updated_at=strftime('%Y-%m-%dT%H:%M:%SZ','now')"
                        " WHERE id=?", [*fields.values(), deck_id])
+    if "name" in fields:
+        _relocate(db, old)  # the deck's location follows its name
 
 
 def delete(db, deck_id: int) -> None:
-    _deck(db, deck_id)
+    from . import collection  # collection imports decks
+    old = location_names(db)
+    loc = old[_deck(db, deck_id)["id"]]
+    before = _held(db, deck_id)
     with db:
+        db.execute("DELETE FROM deck_assignments WHERE deck_card_id IN (SELECT id FROM deck_cards WHERE deck_id=?)", (deck_id,))
+        settle(db, deck_id, before)
+        for (rid,) in db.execute("SELECT id FROM collection WHERE location=?", (loc,)).fetchall():  # the location goes with the deck
+            collection.update(db, rid, location="")
         db.execute("DELETE FROM decks WHERE id=?", (deck_id,))  # cards and tags go with it (ON DELETE CASCADE)
+    _relocate(db, old)  # a later deck of the same name moves up to the plain name
+
+
+def location_names(db) -> dict[int, str]:
+    """The location of every deck: `Deck: <name>`, and `Deck: <name> (2)`, `(3)`... for the later decks with the same name."""
+    seen, out = {}, {}
+    for did, name in db.execute("SELECT id, name FROM decks ORDER BY id"):
+        seen[name] = seen.get(name, 0) + 1
+        out[did] = f"{LOC_PREFIX}{name}" + (f" ({seen[name]})" if seen[name] > 1 else "")
+    return out
+
+
+def _relocate(db, old: dict[int, str]) -> None:
+    """A deck was renamed or deleted: the decks whose location name changed take their cards along."""
+    from . import collection  # collection imports decks
+    new = location_names(db)
+    moves = [(old[i], new[i]) for i in new if i in old and old[i] != new[i]]
+    with db:
+        for a, b in moves:
+            for (rid,) in db.execute("SELECT id FROM collection WHERE location=?", (a,)).fetchall():
+                collection.update(db, rid, location=b)
+
+
+def _held(db, deck_id: int) -> dict[int, int]:
+    """Copies of each collection row that are assigned to this deck."""
+    return dict(db.execute("SELECT a.collection_id, SUM(a.quantity) FROM deck_assignments a JOIN deck_cards d ON d.id = a.deck_card_id"
+                           " WHERE d.deck_id=? GROUP BY a.collection_id", (deck_id,)).fetchall())
+
+
+def _shift(db, row, q: int, to_loc: str) -> int:
+    """Move q copies of a collection row to a location, merging into the identical row there; returns the destination row."""
+    from . import collection  # collection imports decks
+    if q == row["quantity"]:  # the whole row: it keeps its id, and its assignments follow if it merges into another
+        return collection.update(db, row["id"], location=to_loc)
+    d = dict(row)
+    d.update(location=to_loc, quantity=q)
+    dest = collection.add(db, **{k: v for k, v in d.items() if k not in ("id", "added_at")})
+    db.execute("UPDATE collection SET quantity=quantity-? WHERE id=?", (q, row["id"]))
+    return dest
+
+
+def settle(db, deck_id: int, before: dict[int, int] | None = None) -> None:
+    """Keep the deck's location in step with its assignments, after a change. The copies assigned to the deck move into the location
+    `Deck: <name>` (see location_names; a row is split when only some of it is assigned); of the rows in `before` (what was assigned before the change)
+    the copies that are no longer assigned leave the location for "(no location)". Only rows whose assignment changed are touched:
+    a deck is never filled by a side effect."""
+    _deck(db, deck_id)
+    loc = location_names(db)[deck_id]
+    now = _held(db, deck_id)
+    with db:
+        for coll, q in now.items():
+            row = db.execute("SELECT * FROM collection WHERE id=?", (coll,)).fetchone()
+            if row["location"] == loc or (before or {}).get(coll) == q:  # only the rows this change touched: what was assigned earlier stays where it is
+                continue
+            if q >= row["quantity"]:
+                _shift(db, row, row["quantity"], loc)
+                continue
+            mine = db.execute("SELECT a.deck_card_id, a.quantity FROM deck_assignments a JOIN deck_cards d ON d.id = a.deck_card_id"
+                              " WHERE d.deck_id=? AND a.collection_id=?", (deck_id, coll)).fetchall()
+            db.execute("DELETE FROM deck_assignments WHERE collection_id=? AND deck_card_id IN (SELECT id FROM deck_cards WHERE deck_id=?)", (coll, deck_id))
+            dest = _shift(db, row, q, loc)  # part of the row: split it, and this deck's assignments move to the new row
+            db.executemany("INSERT INTO deck_assignments VALUES (?,?,?) ON CONFLICT(deck_card_id, collection_id)"
+                           " DO UPDATE SET quantity = quantity + excluded.quantity", [(dc, dest, aq) for dc, aq in mine])
+        for coll, was in (before or {}).items():
+            cut = was - now.get(coll, 0)
+            row = db.execute("SELECT * FROM collection WHERE id=?", (coll,)).fetchone() if cut > 0 else None
+            if not row or row["location"] != loc:
+                continue
+            used = db.execute("SELECT COALESCE(SUM(quantity), 0) FROM deck_assignments WHERE collection_id=?", (coll,)).fetchone()[0]
+            cut = min(cut, row["quantity"] - used)  # copies that another deck holds stay
+            if cut > 0:
+                _shift(db, row, cut, "")
 
 
 def _touch(db, deck_id: int):
@@ -334,6 +417,7 @@ def update_card(db, deck_id: int, card_id: int, **fields) -> int:
     _printing_ok(db, cur["oracle_id"], sid)
     _finish_ok(db, sid, fin)
     tags = _tags(fields["tags"]) if "tags" in fields else None
+    before = _held(db, deck_id)
     with db:
         moved = (sid, fin, board) != (cur["scryfall_id"], cur["finish"], cur["board"])  # only a change of printing, finish or board can land on another line
         other = _find(db, deck_id, cur["oracle_id"], sid, board, fin, exclude=card_id) if moved else None
@@ -354,14 +438,17 @@ def update_card(db, deck_id: int, card_id: int, **fields) -> int:
             db.execute("DELETE FROM deck_assignments WHERE deck_card_id=?", (card_id,))
         _trim(db, card_id)
         _touch(db, deck_id)
+    settle(db, deck_id, before)
     return card_id
 
 
 def remove_card(db, deck_id: int, card_id: int) -> None:
+    before = _held(db, deck_id)
     with db:
         if not db.execute("DELETE FROM deck_cards WHERE id=? AND deck_id=?", (card_id, deck_id)).rowcount:
             raise KeyError(card_id)
         _touch(db, deck_id)
+    settle(db, deck_id, before)
 
 
 def duplicate(db, deck_id: int) -> int:
@@ -462,10 +549,12 @@ def assign(db, deck_id: int, card_id: int, items) -> None:
             clash += users(db, [coll])
     if clash:
         raise _conflict(clash, "not enough free copies, assigned to")
+    before = _held(db, deck_id)
     with db:
         db.execute("DELETE FROM deck_assignments WHERE deck_card_id=?", (card_id,))
         db.executemany("INSERT INTO deck_assignments VALUES (?,?,?)", [(card_id, c, q) for c, q in want.items()])
         _touch(db, deck_id)
+    settle(db, deck_id, before)
 
 
 def assign_free(db, deck_id: int, only=None) -> int:
@@ -473,6 +562,7 @@ def assign_free(db, deck_id: int, only=None) -> int:
     Never touches existing assignments."""
     _deck(db, deck_id)
     n = 0
+    before = _held(db, deck_id)
     with db:
         for c in cards(db, deck_id):
             if c["board"] == "maybe" or c["status"] == "proxy" or (only is not None and c["id"] not in only):
@@ -492,6 +582,8 @@ def assign_free(db, deck_id: int, only=None) -> int:
                     n += take
         if n:
             _touch(db, deck_id)
+    if n:
+        settle(db, deck_id, before)
     return n
 
 

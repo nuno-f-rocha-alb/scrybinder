@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { IconUpload } from "@tabler/icons-react";
 import { api } from "../api";
-import { Modal } from "./ui";
+import { Field, Modal } from "./ui";
 
 export type ImportReport = { lines: number; cards: number; skipped: { line: number; text: string; reason: string }[]; preview: { line: number; board: string; quantity: number; name: string }[] };
 
@@ -21,6 +21,7 @@ export function Skipped({ report }: { report: ImportReport }) {
 /** Paste a deck list (or load a .txt) and add it to the deck: Moxfield, Archidekt and MTGO style. A check first shows what would happen. */
 export default function ImportDialog({ deckId, onClose, onDone }: { deckId: number; onClose: () => void; onDone: (r: ImportReport) => void }) {
   const [text, setText] = useState("");
+  const [url, setUrl] = useState("");  // a link wins over the pasted text
   const [file, setFile] = useState("");
   const [report, setReport] = useState<ImportReport | null>(null);
   const [busy, setBusy] = useState(false);
@@ -28,7 +29,7 @@ export default function ImportDialog({ deckId, onClose, onDone }: { deckId: numb
 
   const send = (dry_run: boolean) => {
     setBusy(true); setErr("");
-    api<ImportReport>(`/decks/${deckId}/import`, { method: "POST", body: JSON.stringify({ text, dry_run }) })
+    api<ImportReport>(`/decks/${deckId}/import${url.trim() ? "-url" : ""}`, { method: "POST", body: JSON.stringify(url.trim() ? { url: url.trim(), dry_run } : { text, dry_run }) })
       .then((r) => { if (dry_run) setReport(r); else onDone(r); }).catch((e) => setErr(e.message)).finally(() => setBusy(false));
   };
   const change = (t: string) => { setText(t); setReport(null); };
@@ -37,6 +38,8 @@ export default function ImportDialog({ deckId, onClose, onDone }: { deckId: numb
     <Modal title="Import a deck list" onClose={onClose}>
       <h2 className="mb-1 text-lg font-semibold">Import a deck list</h2>
       <p className="mb-4 text-sm text-mute">One card per line, like <code>4 Lightning Bolt</code> or <code>1 Sol Ring (C21) 263 #ramp</code>. Sections can be <code>Commander</code>, <code>Deck</code>, <code>Sideboard</code> and <code>Maybeboard</code>; without headings, a blank line starts the sideboard. The cards are added to this deck.</p>
+      <div className="mb-3"><Field label="Or a link to a public deck on Moxfield, Archidekt or ManaBox">
+        <input className="field" type="url" aria-label="Deck link" placeholder="https://moxfield.com/decks/..." value={url} onChange={(e) => { setUrl(e.target.value); setReport(null); }} /></Field></div>
       <textarea className="field h-56 font-mono text-xs" aria-label="Deck list" placeholder={"Commander\n1 Atraxa, Praetors' Voice\n\nDeck\n1 Sol Ring\n10 Island"} value={text} onChange={(e) => change(e.target.value)} />
       <div className="mt-3 flex flex-wrap items-center gap-3">
         <label className="btn-ghost cursor-pointer"><IconUpload className="size-4" />{file || "Choose a .txt file"}
@@ -48,7 +51,7 @@ export default function ImportDialog({ deckId, onClose, onDone }: { deckId: numb
       <div className="mt-5 flex justify-end gap-2">
         <button className="btn-ghost" onClick={onClose}>Cancel</button>
         {report ? <button className="btn-primary" disabled={busy || report.cards === 0} onClick={() => send(false)}>Import {report.cards} {report.cards === 1 ? "card" : "cards"}</button>
-          : <button className="btn-primary" disabled={busy || !text.trim()} onClick={() => send(true)}>Check the list</button>}
+          : <button className="btn-primary" disabled={busy || !(text.trim() || url.trim())} onClick={() => send(true)}>{url.trim() ? "Check the link" : "Check the list"}</button>}
       </div>
     </Modal>
   );

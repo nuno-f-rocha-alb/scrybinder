@@ -7,7 +7,16 @@ export type Row = {
   purchase_price: number | null; purchase_currency: string; purchase_date: string | null; notes: string;
   oracle_id: string; name: string; set_code: string; set_name: string; collector_number: string; rarity: string; price: number | null; cardmarket_id?: number | null;
   decks: { deck_id: number; name: string; quantity: number }[];  // the decks holding copies of this row
+  group: string;  // what the row is grouped under (see GROUPS)
+  places: Place[];  // the rows joined into this one (same card in several locations); `quantity` is their total
 };
+export type Place = Partial<Row> & { id: number; location: string; quantity: number; decks: Row["decks"] };
+export const GROUPS = [["location", "Location"], ["name", "Name"], ["color", "Color"], ["rarity", "Rarity"], ["set", "Set"], ["type", "Type"], ["none", "None"]] as const;
+export type GroupBy = (typeof GROUPS)[number][0];
+export type Loc = { location: string; cards: number; deck_id: number | null };
+/** The query string of the collection filters, with one `location=` per chosen location (an empty one is "no location"). */
+export const qsl = (o: Record<string, string | number | undefined | null>, locations: string[]) =>
+  [qs(o), ...locations.map((l) => `location=${encodeURIComponent(l)}`)].filter(Boolean).join("&");
 export type Collection = { rows: Row[]; total_rows: number; total_cards: number; total_value: number };
 export type Print = {
   id: string; oracle_id: string; name: string; set_code: string; set_name: string; collector_number: string; released_at: string;
