@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
-import { IconAlertTriangle, IconArrowLeft, IconBox, IconCheck, IconCopy, IconDownload, IconPlus, IconStack2, IconTrash, IconUpload, IconX } from "@tabler/icons-react";
+import { IconAlertTriangle, IconArrowLeft, IconBox, IconCheck, IconChecklist, IconCopy, IconDownload, IconPlus, IconStack2, IconTrash, IconUpload, IconX } from "@tabler/icons-react";
 import { api, eur, qs } from "../api";
-import { BOARDS, BOARD_LABEL, Board, CardFilter, Deck as DeckT, DeckCard as DeckCardT, DeckStats, editionOf, FORMATS, Format, GROUPS, GroupBy, Legality, OracleRow, Preview, SORTS, SortBy, VIEWS, View, groupCards, matchesFilter, resultPreview, toPreview } from "../decks";
+import { BOARDS, BOARD_LABEL, Board, exportDeckList, CardFilter, Deck as DeckT, DeckCard as DeckCardT, DeckStats, editionOf, FORMATS, Format, GROUPS, GroupBy, Legality, OracleRow, Preview, SORTS, SortBy, VIEWS, View, groupCards, matchesFilter, resultPreview, toPreview } from "../decks";
 import { CardImg, FinishTag, Modal, cardmarketUrl, openExternal, scryfallUrl, useToast } from "../components/ui";
 import { MenuItem, useContextMenu } from "../components/contextmenu";
 import PrintingDialog from "../components/printings";
@@ -51,7 +51,7 @@ function PreviewPanel({ p }: { p: Preview | null }) {
   );
 }
 
-export default function Deck({ id, onBack }: { id: number; onBack: () => void }) {
+export default function Deck({ id, onBack, focusOracle }: { id: number; onBack: () => void; focusOracle?: string }) {
   const [deck, setDeck] = useState<DeckT | null>(null);
   const [legality, setLegality] = useState<Legality | null>(null);
   const [stats, setStats] = useState<DeckStats | null>(null);
@@ -65,7 +65,12 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
   const [sort, setSort] = useChoice<SortBy>("sort", "name", SORTS.map((x) => x.id));
   const [every, setEvery] = useChoice<"1" | "0">("every", "0", ["0", "1"]);
   const grid = useCardGrid();
-  const { zoom, close, onZoom } = useZoom();
+  const { zoom, close, onZoom: zoomTo } = useZoom();
+  const [selecting, setSelecting] = useState(false);
+  const [selected, setSelected] = useState<Set<number>>(new Set());
+  const [missingIds, setMissingIds] = useState<number[] | null>(null);
+  const [confirmRemove, setConfirmRemove] = useState(false);
+  const focused = useRef(false);
   const [tab, setTab] = useState<"cards" | "stats">("cards");
   const [filter, setFilter] = useState<CardFilter | null>(null);
   const [showProblems, setShowProblems] = useState(false);
@@ -107,6 +112,27 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
     return () => window.removeEventListener("keydown", h);
   }, []);
   const shown = preview ?? (deck?.cards[0] ? toPreview(deck.cards[0]) : null);
+  const toggle = (cid: number) => setSelected((s) => { const n = new Set(s); n.has(cid) ? n.delete(cid) : n.add(cid); return n; });
+  const onZoom = (c: DeckCardT) => (selecting ? toggle(c.id) : zoomTo(c));  // while selecting, a click picks the card
+  useEffect(() => {
+    if (!selecting) return;
+    const h = (e: KeyboardEvent) => { if (e.key === "Escape" && !missingIds) { setSelecting(false); setSelected(new Set()); } };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, [selecting, missingIds]);
+  useEffect(() => {  // coming from the collection's deck badge: show the card, scroll to it and flash it
+    if (!deck || !focusOracle || focused.current) return;
+    const c = deck.cards.find((x) => x.oracle_id === focusOracle);
+    focused.current = true;
+    if (!c) return;
+    setFolded(new Set());  // not saved: only so that the card is not inside a folded group
+    setPreview(toPreview(c));
+    requestAnimationFrame(() => requestAnimationFrame(() => {
+      const el = document.querySelector<HTMLElement>(`[data-dc="${c.id}"]`);
+      el?.scrollIntoView({ block: "center" });
+      el?.animate([{ outline: "3px solid var(--color-accent)", outlineOffset: "2px" }, { outline: "3px solid var(--color-accent)", outlineOffset: "2px", offset: 0.7 }, { outline: "3px solid transparent", outlineOffset: "2px" }], { duration: 2600 });
+    }));
+  }, [deck, focusOracle]);
 
   if (err && !deck) return <div><button className="btn-ghost mb-4" onClick={onBack}><IconArrowLeft className="size-4" />Decks</button><p className="text-danger">{err}</p></div>;
   if (!deck) return <p className="text-mute">Loading…</p>;
@@ -115,6 +141,8 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
   const missingCount = deck.cards.reduce((n, c) => n + (c.board === "maybe" ? 0 : c.missing), 0);
 
   const cardMenu = (c: DeckCardT): MenuItem[] => [
+    { label: "Select", onSelect: () => { setSelecting(true); setSelected(new Set([c.id])); } },
+    "sep",
     { label: "Switch printing…", onSelect: () => setSwitchId(c.id) },
     "sep",
     { label: "Add one", hint: "Alt+1", onSelect: () => quickRef.current(c.id, 1) },
@@ -138,16 +166,7 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
     ...(c.cardmarket_id ? [{ label: "Open on Cardmarket", onSelect: () => openExternal(cardmarketUrl(c.cardmarket_id!)) }] : []),
   ];
 
-  const exportList = async () => {
-    const bridge = (window as { pywebview?: { api?: { save_text?: (n: string, t: string) => Promise<string | null> } } }).pywebview?.api;
-    if (!bridge?.save_text) { window.location.assign(`/api/decks/${id}/export`); return; }
-    try {
-      const r = await fetch(`/api/decks/${id}/export`);
-      if (!r.ok) throw new Error(r.statusText);
-      const path = await bridge.save_text(`${deck.name.replace(/[^\w .-]+/g, "").trim() || "deck"}.txt`, await r.text());
-      if (path) toast(`Saved to ${path}`);
-    } catch (e) { toast((e as Error).message, true); }
-  };
+  const exportList = () => exportDeckList(id, deck.name, toast);
   const patchDeck = (body: object) => act(api(`/decks/${id}`, { method: "PATCH", body: JSON.stringify(body) }));
   const errors = legality?.problems.filter((p) => p.severity === "error").length ?? 0;
   const main = (stats?.totals.main ?? 0) + (stats?.totals.commander ?? 0);
@@ -183,6 +202,8 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
           {missingCount > 0 && <button className="btn-ghost" title="Add the copies you are missing to your collection (not the proxies)" onClick={() => setAdding(true)}>
             <IconPlus className="size-4" />Add missing to collection
           </button>}
+          <button className={selecting ? "btn-primary" : "btn-ghost"} aria-pressed={selecting} title="Pick several cards to act on them together"
+            onClick={() => { setSelecting(!selecting); setSelected(new Set()); }}><IconChecklist className="size-4" />Select</button>
           <button className="btn-ghost" title="Add the cards of a list (Moxfield, Archidekt, MTGO style) to this deck" onClick={() => setImporting(true)}>
             <IconUpload className="size-4" />Import list
           </button>
@@ -212,6 +233,35 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
         {tab === "stats" && (stats ? <StatsPanel stats={stats} active={filter} onFilter={pick} /> : <p className="text-mute">Loading…</p>)}
 
         {tab === "cards" && <>
+        {selecting && (() => {
+          const picks = deck.cards.filter((c) => selected.has(c.id));
+          const missing = picks.reduce((n, c) => n + (c.board === "maybe" ? 0 : c.missing), 0);
+          const end = () => { setSelecting(false); setSelected(new Set()); setConfirmRemove(false); };
+          // one after the other: the server shares one database connection, and each change can move copies between rows
+          const each = async (f: (c: DeckCardT) => Promise<unknown>) => { for (const c of picks) await f(c); };
+          const run = (p: Promise<unknown>) => { p.then(() => { setSelected(new Set()); reload(); }).catch((e) => toast(e.message, true)); };
+          return (
+            <div role="toolbar" aria-label="Selected cards" className="sticky top-0 z-20 mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-accent/40 bg-surface/95 px-3 py-2 shadow-lg backdrop-blur">
+              <span className="mr-2 text-sm font-medium tabular-nums">{picks.length} selected</span>
+              <button className="btn-ghost !py-1" onClick={() => setSelected(new Set(cards.map((c) => c.id)))}>Select all shown</button>
+              <button className="btn-ghost !py-1" disabled={!picks.length} onClick={() => setSelected(new Set())}>Clear</button>
+              <span className="mx-1 h-5 w-px bg-line" aria-hidden />
+              <button className="btn-primary !py-1" disabled={!missing} title={missing ? "Put the copies these cards are missing into your collection (not the proxies)" : "Nothing missing in the selected cards"}
+                onClick={() => setMissingIds(picks.map((c) => c.id))}><IconPlus className="size-4" />Add missing to collection ({missing})</button>
+              <button className="btn-ghost !py-1" disabled={!picks.length} title="Reserve the free copies of your collection for the selected cards"
+                onClick={() => api<{ assigned: number }>(`/decks/${id}/assign-free`, { method: "POST", body: JSON.stringify({ card_ids: picks.map((c) => c.id) }) }).then((r) => { toast(r.assigned ? `Assigned ${r.assigned} ${r.assigned === 1 ? "copy" : "copies"}` : "No free copies to assign"); setSelected(new Set()); reload(); }).catch((e) => toast(e.message, true))}>
+                <IconBox className="size-4" />Assign free copies</button>
+              <select className="field !w-auto !py-1 text-xs" aria-label="Move the selected cards to a board" disabled={!picks.length} value="" onChange={(e) => e.target.value && run(each((c) => api(`/decks/${id}/cards/${c.id}`, { method: "PATCH", body: JSON.stringify({ board: e.target.value }) })))}>
+                <option value="">Move to…</option>{BOARDS.map((b) => <option key={b} value={b}>{BOARD_LABEL[b]}</option>)}
+              </select>
+              <button className="btn-danger !py-1" disabled={!picks.length} onClick={() => {
+                if (!confirmRemove) { setConfirmRemove(true); setTimeout(() => setConfirmRemove(false), 4000); return; }
+                setConfirmRemove(false); run(each((c) => api(`/decks/${id}/cards/${c.id}`, { method: "DELETE" })));
+              }}><IconTrash className="size-4" />{confirmRemove ? "Click again to remove" : "Remove"}</button>
+              <button className="btn-ghost ml-auto !py-1" onClick={end}>Done</button>
+            </div>
+          );
+        })()}
         <AddCards deck={deck} setPreview={setPreview} toast={toast} onAdd={(oracle_id, board, new_line) => act(api(`/decks/${id}/cards`, { method: "POST", body: JSON.stringify({ oracle_id, board, new_line }) }))} />
 
         <div className="mb-4 flex flex-wrap items-center gap-2">
@@ -237,7 +287,7 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
           </div>
         )}
         {cards.length === 0 && <div className="rounded-2xl border border-dashed border-line p-12 text-center text-mute">{filter ? "No cards match this filter." : "This deck is empty. Search above to add cards."}</div>}
-        <DeckView groups={groups} folded={folded} onToggle={(k) => { const n = new Set(folded); n.has(k) ? n.delete(k) : n.add(k); setFoldedKeys(n); }} view={view} every={every === "1"} layout={grid} ctx={{ deckId: id, act, setPreview, onZoom, onAssign: (c) => setAssignId(c.id), hover: (c) => { hovered.current = c?.id ?? null; }, onMenu: (c, e) => menu.open(e, cardMenu(c)) }} />
+        <DeckView groups={groups} folded={folded} onToggle={(k) => { const n = new Set(folded); n.has(k) ? n.delete(k) : n.add(k); setFoldedKeys(n); }} view={view} every={every === "1"} layout={grid} ctx={{ deckId: id, act, setPreview, onZoom, selecting, selected, onAssign: (c) => setAssignId(c.id), hover: (c) => { hovered.current = c?.id ?? null; }, onMenu: (c, e) => menu.open(e, cardMenu(c)) }} />
         </>}
 
 {/* the summary lives in a slot under the scrolling area (App), so it is always at the bottom of the window whatever the cards */}
@@ -260,6 +310,8 @@ export default function Deck({ id, onBack }: { id: number; onBack: () => void })
       </div>
       {adding && <AddMissingDialog deckId={id} count={missingCount} onClose={() => setAdding(false)}
         onDone={(n) => { setAdding(false); toast(`${n} ${n === 1 ? "copy" : "copies"} added to your collection`); reload(); }} />}
+      {missingIds && <AddMissingDialog deckId={id} cardIds={missingIds} count={deck.cards.filter((c) => missingIds.includes(c.id)).reduce((n, c) => n + (c.board === "maybe" ? 0 : c.missing), 0)} onClose={() => setMissingIds(null)}
+        onDone={(n) => { setMissingIds(null); setSelected(new Set()); toast(`${n} ${n === 1 ? "copy" : "copies"} added to your collection`); reload(); }} />}
       {missingFor && <AddMissingDialog deckId={id} cardIds={[missingFor.id]} count={missingFor.missing} onClose={() => setMissingFor(null)}
         onDone={(n) => { setMissingFor(null); toast(`${n} ${n === 1 ? "copy" : "copies"} added to your collection`); reload(); }} />}
       {copyFor && <AddMissingDialog deckId={id} count={0} printing={{ cardId: copyFor.id, label: `${editionOf(copyFor)}${copyFor.finish === "foil" ? " · foil" : copyFor.finish === "etched" ? " · etched" : ""}` }} onClose={() => setCopyFor(null)}

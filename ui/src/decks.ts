@@ -124,3 +124,15 @@ export const printLabel = (p: ShownPrint): string => `${p.set_name} (${p.set_cod
 export const editionOf = (c: DeckCard): string | null => (c.set_code ? `${c.set_name} (${c.set_code.toUpperCase()}) #${c.collector_number}` : null);
 export const toPreview = (c: DeckCard): Preview => ({ image_id: c.image_id, finish: shownPrints(c)[0]?.finish ?? c.finish, edition: shownPrints(c)[0] ? printLabel(shownPrints(c)[0]) : null, name: c.name, type_line: c.type_line, mana_cost: c.mana_cost, price: c.price, owned: c.owned, status: c.status, tags: c.tags });
 export const resultPreview = (r: OracleRow): Preview => ({ image_id: r.id, name: r.name, type_line: r.type_line, mana_cost: r.mana_cost, price: r.price, owned: r.owned });
+
+/** Save a deck as a text list: through the app window's save dialog when there is one, else as a download. */
+export async function exportDeckList(id: number, name: string, toast: (m: string, err?: boolean) => void) {
+  const bridge = (window as { pywebview?: { api?: { save_text?: (n: string, t: string) => Promise<string | null> } } }).pywebview?.api;
+  if (!bridge?.save_text) { window.location.assign(`/api/decks/${id}/export`); return; }
+  try {
+    const r = await fetch(`/api/decks/${id}/export`);
+    if (!r.ok) throw new Error(r.statusText);
+    const path = await bridge.save_text(`${name.replace(/[^\w .-]+/g, "").trim() || "deck"}.txt`, await r.text());
+    if (path) toast(`Saved to ${path}`);
+  } catch (e) { toast((e as Error).message, true); }
+}

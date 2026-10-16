@@ -9,14 +9,14 @@ import webbrowser
 from urllib.parse import urlparse
 from pathlib import Path
 
-from fastapi import Body, FastAPI, HTTPException, Request
+from fastapi import Body, FastAPI, HTTPException, Query, Request
 from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 
 import time
 
-from . import __version__, carddetails, collection, db as dbmod, decks, decktext, formats, gpu as gpumod, oracle, scryfall, updater as updmod
+from . import __version__, carddetails, collection, db as dbmod, decks, decktext, deckurl, formats, gpu as gpumod, oracle, scryfall, updater as updmod
 from .scan.session import MAX_SIDE, MAX_SIDE_PAGE, Scanner, decode
 
 UI_DIST = Path(__file__).resolve().parent.parent / "ui" / "dist"
@@ -459,7 +459,7 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
 
     # --- sets ---
     @app.get("/api/sets")
-    def sets(location: str | None = None, q: str = "", hide_empty: bool = True, group: bool = False):
+    def sets(location: list[str] | None = Query(None), q: str = "", hide_empty: bool = True, group: bool = False):
         if not sets_tried and db.execute("SELECT 1 FROM sets LIMIT 1").fetchone() is None:
             sets_tried.append(1)  # being offline must not block every page load
             try:
@@ -479,9 +479,9 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
 
     # --- collection ---
     @app.get("/api/collection")
-    def coll(q: str = "", set: str = "", location: str | None = None, finish: str = "", language: str = "",
-             sort: str = "name", limit: int = 100, offset: int = 0):
-        return collection.search(db, q, set, location, finish, language, sort, min(limit, 500), offset)
+    def coll(q: str = "", set: str = "", location: list[str] | None = Query(None), finish: str = "", language: str = "",
+             sort: str = "name", limit: int = 100, offset: int = 0, group: str = "location"):
+        return collection.search(db, q, set, location, finish, language, sort, min(limit, 500), offset, group)
 
     @app.get("/api/locations")
     def locs():
@@ -491,10 +491,15 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
     def locs_create(body: dict = Body(...)):
         return {"location": _wrap(collection.create_location, db, body.get("name"))}
 
+    @app.post("/api/locations/merge")
+    def locs_merge(body: dict = Body(...)):
+        return _wrap(collection.merge_locations, db, body.get("names"), body.get("into"))
+
     @app.delete("/api/locations")
-    def locs_delete(name: str):
-        _wrap(collection.delete_location, db, name)
-        return {"ok": True}
+    def locs_delete(name: str, cards: str = "move", release: bool = False):
+        if cards not in ("move", "delete"):
+            raise HTTPException(422, "cards: move or delete")
+        return _wrap(collection.delete_location, db, name, cards == "delete", release, dbmod.DATA_DIR / "trash")
 
     def _wrap(fn, *a, **k):
         try:
@@ -562,6 +567,11 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
             raise HTTPException(422, "text: a deck list of up to 1 MB")
         return _wrap(decktext.import_text, db, deck_id, text, bool(body.get("dry_run")))
 
+    @app.post("/api/decks/{deck_id}/import-url")
+    def decks_import_url(deck_id: int, body: dict = Body(...)):
+        text = _wrap(deckurl.fetch_text, body.get("url"))
+        return _wrap(decktext.import_text, db, deck_id, text, bool(body.get("dry_run")))
+
     @app.get("/api/decks/{deck_id}/export")
     def decks_export(deck_id: int, maybe: bool = False):
         text = _wrap(decktext.export_text, db, deck_id, maybe)
@@ -605,8 +615,11 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
         return {"ok": True}
 
     @app.post("/api/decks/{deck_id}/assign-free")
-    def decks_assign_free(deck_id: int):
-        return {"assigned": _wrap(decks.assign_free, db, deck_id)}
+    def decks_assign_free(deck_id: int, body: dict = Body(default={})):
+        ids = body.get("card_ids")
+        if ids is not None and not (isinstance(ids, list) and all(isinstance(i, int) and not isinstance(i, bool) for i in ids)):
+            raise HTTPException(422, "card_ids: a list of ids")
+        return {"assigned": _wrap(decks.assign_free, db, deck_id, None if ids is None else set(ids))}
 
     @app.post("/api/decks/{deck_id}/add-missing")
     def decks_add_missing(deck_id: int, body: dict = Body(default={})):
@@ -635,7 +648,7 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
         return {"ok": True}
 
     @app.get("/api/collection/ids")
-    def coll_ids(q: str = "", set: str = "", location: str | None = None, finish: str = "", language: str = ""):
+    def coll_ids(q: str = "", set: str = "", location: list[str] | None = Query(None), finish: str = "", language: str = ""):
         return {"ids": collection.matching_ids(db, q, set, location, finish, language)}
 
     @app.post("/api/collection/bulk")

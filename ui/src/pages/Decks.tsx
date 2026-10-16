@@ -1,7 +1,8 @@
 import { useEffect, useState } from "react";
 import { IconAlertTriangle, IconCheck, IconChevronRight, IconFolder, IconFolderPlus, IconPencil, IconPlus, IconTrash } from "@tabler/icons-react";
 import { api, eur, img } from "../api";
-import { DeckInfo, FORMATS, Folder, Format, Legality } from "../decks";
+import { DeckInfo, FORMATS, Folder, Format, Legality, exportDeckList } from "../decks";
+import { MenuItem, useContextMenu } from "../components/contextmenu";
 import { Field, Modal, useToast } from "../components/ui";
 import Deck from "./Deck";
 import { ImportReport, Skipped } from "../components/decklist";
@@ -30,9 +31,9 @@ function useFolded(): [Set<string>, (k: string) => void] {
   })];
 }
 
-function DeckCard({ d, legality, folders, onOpen, onMove }: { d: DeckInfo; legality?: Legality; folders: Folder[]; onOpen: () => void; onMove: (folder: number | null) => void }) {
+function DeckCard({ d, legality, folders, onOpen, onMove, onMenu }: { d: DeckInfo; legality?: Legality; folders: Folder[]; onOpen: () => void; onMove: (folder: number | null) => void; onMenu: (e: React.MouseEvent) => void }) {
   return (
-    <div className="group flex flex-col overflow-hidden rounded-xl border border-line bg-surface transition focus-within:border-accent hover:border-accent hover:bg-raised">
+    <div onContextMenu={onMenu} className="group flex flex-col overflow-hidden rounded-xl border border-line bg-surface transition focus-within:border-accent hover:border-accent hover:bg-raised">
       <button onClick={onOpen} className="flex cursor-pointer flex-col text-left outline-none focus-visible:ring-2 focus-visible:ring-accent">
         <div className="h-36 w-full overflow-hidden bg-raised">
           {d.cover && <img src={img(d.cover, "normal")} alt="" loading="lazy" className="h-full w-full object-cover object-[50%_18%] transition group-hover:scale-[1.03]" />}
@@ -60,8 +61,12 @@ function DeckCard({ d, legality, folders, onOpen, onMove }: { d: DeckInfo; legal
   );
 }
 
-export default function Decks() {
-  const [open, setOpen] = useState<number | null>(null);
+/** `target`: open this deck at once, on the card of this oracle id (from the collection's deck badge). */
+export default function Decks({ target }: { target?: { deckId: number; oracleId?: string } }) {
+  const [open, setOpen] = useState<number | null>(target?.deckId ?? null);
+  const [focus, setFocus] = useState<string | undefined>(target?.oracleId);
+  const menu = useContextMenu();
+  const [delDeck, setDelDeck] = useState<DeckInfo | null>(null);
   const [decks, setDecks] = useState<DeckInfo[] | null>(null);
   const [folders, setFolders] = useState<Folder[]>([]);
   const [legal, setLegal] = useState<Record<number, Legality>>({});
@@ -70,6 +75,7 @@ export default function Decks() {
   const [format, setFormat] = useState<Format>("commander");
   const [folder, setFolder] = useState<number | null>(null);
   const [list, setList] = useState("");
+  const [url, setUrl] = useState("");
   const [report, setReport] = useState<{ id: number; r: ImportReport } | null>(null);
   const [folderDialog, setFolderDialog] = useState<{ id?: number; name: string } | null>(null);
   const [confirmDelete, setConfirmDelete] = useState<number | null>(null);
@@ -92,16 +98,16 @@ export default function Decks() {
     return () => clearInterval(t);
   }, []);
 
-  if (open !== null) return <Deck id={open} onBack={() => setOpen(null)} />;
+  if (open !== null) return <Deck id={open} focusOracle={focus} onBack={() => { setOpen(null); setFocus(undefined); }} />;
 
   const run = (p: Promise<unknown>) => p.then(() => load()).catch((e) => toast(e.message, true));
   const create = async () => {
     try {
       const { id } = await api<{ id: number }>("/decks", { method: "POST", body: JSON.stringify({ name, format, folder_id: folder }) });
       // the deck exists now: if the list is refused the deck still opens (empty) and says why, instead of a retry making a second deck
-      const r = list.trim() ? await api<ImportReport>(`/decks/${id}/import`, { method: "POST", body: JSON.stringify({ text: list }) })
-        .catch((e: Error): ImportReport => ({ lines: 0, cards: 0, preview: [], skipped: [{ line: 0, text: "the pasted list", reason: e.message }] })) : null;
-      setCreating(false); setName(""); setList("");
+      const r = url.trim() || list.trim() ? await api<ImportReport>(`/decks/${id}/import${url.trim() ? "-url" : ""}`, { method: "POST", body: JSON.stringify(url.trim() ? { url: url.trim() } : { text: list }) })
+        .catch((e: Error): ImportReport => ({ lines: 0, cards: 0, preview: [], skipped: [{ line: 0, text: url.trim() ? "the link" : "the pasted list", reason: e.message }] })) : null;
+      setCreating(false); setName(""); setList(""); setUrl("");
       if (r && r.skipped.length) setReport({ id, r }); else setOpen(id);  // lines that did not match a card are shown before the deck opens
     } catch (e) { setErr((e as Error).message); }
   };
@@ -112,10 +118,20 @@ export default function Decks() {
       .then(() => { setFolderDialog(null); load(); }).catch((e) => setErr(e.message));
   };
   const move = (d: DeckInfo, to: number | null) => run(api(`/decks/${d.id}`, { method: "PATCH", body: JSON.stringify({ folder_id: to }) }));
+  const deckMenu = (d: DeckInfo): MenuItem[] => [
+    { label: "Open", onSelect: () => setOpen(d.id) },
+    { label: "Duplicate", onSelect: () => run(api(`/decks/${d.id}/duplicate`, { method: "POST" }).then(() => toast("Deck duplicated"))) },
+    { label: "Export list", onSelect: () => exportDeckList(d.id, d.name, toast) },
+    ...(folders.length || d.folder_id !== null ? ["sep" as const] : []),
+    ...(d.folder_id !== null ? [{ label: "Remove from its folder", onSelect: () => move(d, null) }] : []),
+    ...folders.filter((f) => f.id !== d.folder_id).map((f) => ({ label: `Move to ${f.name}`, onSelect: () => move(d, f.id) })),
+    "sep",
+    { label: "Delete…", danger: true, onSelect: () => setDelDeck(d) },
+  ];
 
   const grid = (list: DeckInfo[]) => (
     <div className="grid grid-cols-[repeat(auto-fill,minmax(260px,1fr))] gap-4">
-      {list.map((d) => <DeckCard key={d.id} d={d} legality={legal[d.id]} folders={folders} onOpen={() => setOpen(d.id)} onMove={(to) => move(d, to)} />)}
+      {list.map((d) => <DeckCard key={d.id} d={d} legality={legal[d.id]} folders={folders} onOpen={() => setOpen(d.id)} onMove={(to) => move(d, to)} onMenu={(e) => menu.open(e, deckMenu(d))} />)}
     </div>
   );
   const unfiled = decks?.filter((d) => d.folder_id === null) ?? [];
@@ -190,6 +206,9 @@ export default function Decks() {
                 </select>
               </Field>
             )}
+            <Field label="Or a link to a public deck on Moxfield, Archidekt or ManaBox">
+              <input className="field" type="url" placeholder="https://moxfield.com/decks/..." value={url} onChange={(e) => setUrl(e.target.value)} />
+            </Field>
             <Field label="Deck list (optional)">
               <textarea className="field h-32 font-mono text-xs" value={list} onChange={(e) => setList(e.target.value)} placeholder={"Paste a list from Moxfield, Archidekt or MTGO:\n1 Sol Ring\n10 Island"} />
             </Field>
@@ -221,6 +240,17 @@ export default function Decks() {
           </form>
         </Modal>
       )}
+      {delDeck && (
+        <Modal title="Delete deck" onClose={() => setDelDeck(null)}>
+          <h2 className="mb-2 text-lg font-semibold">Delete {delDeck.name}?</h2>
+          <p className="text-sm text-mute">The deck and its card list go. The copies you assigned to it stay in your collection, outside any location.</p>
+          <div className="mt-5 flex justify-end gap-2">
+            <button className="btn-ghost" onClick={() => setDelDeck(null)}>Cancel</button>
+            <button className="btn-danger" onClick={() => { const d = delDeck; setDelDeck(null); run(api(`/decks/${d.id}`, { method: "DELETE" }).then(() => toast(`${d.name} deleted`))); }}>Delete</button>
+          </div>
+        </Modal>
+      )}
+      {menu.node}
       {node}
     </div>
   );

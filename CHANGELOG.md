@@ -4,6 +4,15 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Added
+- Collection: clicking a card shows its details (rules text, legality, rulings) under the edit fields, and a right-click menu item deletes it.
+- Collection: the location filter takes several locations (checkboxes), and cards can be grouped by location (default), name, color, rarity, set or type. Outside the location grouping, the same card in several locations is one card with the quantity per location in its editor.
+- Collection: locations can be deleted (their cards move to "(no location)" or are deleted with them) or merged (tick several in the location filter; the name starts as the first one ticked and can be changed).
+- Every deck is also a location, `Deck: <name>` (`(2)`, `(3)`... for decks with the same name). Assigning copies to a deck card moves them there; unassigning, removing the card or the deck moves them to "(no location)". Adding the missing copies of a deck puts them in that location.
+- Decks: select several cards (Select button or right-click) to add the missing copies to your collection, assign free copies, move them between boards or remove them in one go; right-click a deck for Open, Duplicate, Export, Move to folder and Delete.
+- The deck badge on a collection card and the "In a deck" box in its editor open that deck on that card.
+- Decks can be imported from a public Moxfield, Archidekt or ManaBox link.
+
 ## [0.6.5] — 2026-10-15
 
 ### Added

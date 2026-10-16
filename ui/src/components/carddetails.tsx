@@ -40,28 +40,104 @@ const LEGAL = {
   restricted: { Icon: IconAlertTriangle, cls: "text-gold", label: "Restricted" },
 } as const;
 
+/** The text side of a card: rules, printing (with the list of all printings), legality and rulings. `onPick` makes the printings clickable. */
+export function CardInfo({ d, id, onPick }: { d: Details; id: string; onPick?: (id: string) => void }) {
+  const [rulings, setRulings] = useState<Ruling[] | null | "error">(null);
+  const [prints, setPrints] = useState<PrintRow[] | null>(null);
+  const [showPrints, setShowPrints] = useState(false);
+  useEffect(() => {
+    let live = true;
+    setRulings(null);
+    api<Ruling[]>(`/cards/${id}/rulings`).then((r) => live && setRulings(r)).catch(() => live && setRulings("error"));
+    return () => { live = false; };
+  }, [id]);
+  useEffect(() => {
+    if (!showPrints || !d.oracle_id) return;
+    api<PrintRow[]>(`/cards/prints?oracle_id=${encodeURIComponent(d.oracle_id)}`).then(setPrints).catch(() => setPrints([]));
+  }, [showPrints, d.oracle_id]);
+  const formats = FORMAT_ORDER.filter((f) => f in d.legalities);  // the formats we have a name for, in a fixed order
+  return (
+    <div className="min-w-0">
+      <div className="flex flex-wrap items-center gap-3">
+        <h2 className="text-2xl font-semibold tracking-tight text-accent">{d.name}</h2><ManaCost cost={d.mana_cost} />
+        {d.game_changer && <span className="rounded-md bg-gold/15 px-2 py-0.5 text-xs text-gold">Game changer</span>}
+      </div>
+      <p className="mt-0.5 text-sm text-mute">{d.type_line}</p>
+      {d.oracle_text && <div className="mt-4"><RulesText text={d.oracle_text} /></div>}
+      {d.keywords.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{d.keywords.map((k) => <span key={k} className="rounded-md bg-raised px-2 py-0.5 text-xs text-mute">{k}</span>)}</div>}
+
+      <section className="mt-5 rounded-xl border border-line p-3 text-sm" aria-label="Printing">
+        <div className="font-medium">{d.set_name} <span className="font-normal text-mute">({d.set_code.toUpperCase()})</span></div>
+        <div className="text-mute">#{d.collector_number} · <span className="capitalize">{d.rarity}</span> · {d.released_at?.slice(0, 4)}{d.border_color === "borderless" ? " · borderless" : ""}</div>
+        <div className="mt-1 text-xs text-mute">Comes in: {d.finishes.map((f) => FINISH[f] ?? f).join(", ") || "—"}</div>
+        {d.oracle_id && <button className="mt-2 cursor-pointer text-accent hover:underline" aria-expanded={showPrints} onClick={() => setShowPrints((v) => !v)}>
+          {showPrints ? "Hide all printings" : "Show all printings"}</button>}
+        {showPrints && (
+          <ul className="mt-2 max-h-56 divide-y divide-line overflow-y-auto rounded-lg border border-line">
+            {!prints && <li className="p-2 text-mute">Loading…</li>}
+            {prints?.map((p) => (
+              <li key={p.id}><button className={`flex w-full cursor-pointer items-center justify-between gap-3 px-2 py-1.5 text-left hover:bg-raised ${p.id === id ? "bg-accent-soft" : ""}`} onClick={() => onPick?.(p.id)}>
+                <span className="min-w-0 truncate"><b className="uppercase">{p.set_code}</b> #{p.collector_number} <span className="text-mute">{p.set_name} · {p.released_at?.slice(0, 4)}</span></span>
+                <span className="shrink-0 text-xs text-mute tabular-nums">{p.owned > 0 && <span className="mr-2 text-gold">own {p.owned}</span>}{eur(p.eur)}</span>
+              </button></li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {formats.length > 0 && (
+        <section className="mt-5" aria-label="Legalities">
+          <h3 className="mb-2 text-sm font-semibold">Legality</h3>
+          <ul className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm sm:grid-cols-3">
+            {formats.map((f) => {
+              const L = LEGAL[d.legalities[f] as keyof typeof LEGAL] ?? LEGAL.not_legal;
+              return <li key={f} className="flex items-center gap-1.5"><L.Icon className={`size-4 shrink-0 ${L.cls}`} aria-hidden /><span className={d.legalities[f] === "legal" ? "" : "text-mute"}>{formatName(f)}</span><span className="sr-only">: {L.label}</span></li>;
+            })}
+          </ul>
+        </section>
+      )}
+
+      <section className="mt-6" aria-label="Rulings">
+        <h3 className="mb-2 text-lg font-semibold">Rulings</h3>
+        {rulings === null && <p className="text-sm text-mute">Loading…</p>}
+        {rulings === "error" && <p className="text-sm text-mute">The rulings could not be loaded: they come from Scryfall and need a connection (the first time).</p>}
+        {Array.isArray(rulings) && rulings.length === 0 && <p className="text-sm text-mute">No rulings for this card.</p>}
+        {Array.isArray(rulings) && rulings.map((r, i) => (
+          <div key={i} className="mb-3"><div className="text-sm text-mute tabular-nums">{r.published_at}</div><p className="text-[15px] leading-relaxed">{r.comment}</p></div>
+        ))}
+      </section>
+    </div>
+  );
+}
+
+/** The card info for a printing, loaded here: for places that already show the image (the collection's edit drawer). */
+export function CardInfoLoader({ printId }: { printId: string }) {
+  const [d, setD] = useState<Details | null>(null);
+  const [err, setErr] = useState("");
+  useEffect(() => {
+    let live = true;
+    setD(null); setErr("");
+    api<Details>(`/cards/${printId}/details`).then((r) => live && setD(r)).catch((e) => live && setErr(e.message));
+    return () => { live = false; };
+  }, [printId]);
+  if (err) return <p className="text-sm text-danger">{err}</p>;
+  return d ? <CardInfo d={d} id={printId} /> : <p className="text-sm text-mute">Loading...</p>;
+}
+
 /** Everything about a card in one place: the image, prices, links, rules text, printing, all printings, legalities and rulings. `printId` is the
  * printing shown; `prev` / `next` (when given) step through the list it came from, also with the arrow keys. */
 export default function CardDetails({ printId, onClose, prev, next }: { printId: string; onClose: () => void; prev?: () => void; next?: () => void }) {
   const [id, setId] = useState(printId);
   const [d, setD] = useState<Details | null>(null);
   const [err, setErr] = useState("");
-  const [rulings, setRulings] = useState<Ruling[] | null | "error">(null);
-  const [prints, setPrints] = useState<PrintRow[] | null>(null);
-  const [showPrints, setShowPrints] = useState(false);
 
   useEffect(() => { setId(printId); }, [printId]);
   useEffect(() => {
     let live = true;
-    setD(null); setErr(""); setRulings(null);
+    setD(null); setErr("");
     api<Details>(`/cards/${id}/details`).then((r) => live && setD(r)).catch((e) => live && setErr(e.message));
-    api<Ruling[]>(`/cards/${id}/rulings`).then((r) => live && setRulings(r)).catch(() => live && setRulings("error"));
     return () => { live = false; };
   }, [id]);
-  useEffect(() => {
-    if (!showPrints || !d?.oracle_id) return;
-    api<PrintRow[]>(`/cards/prints?oracle_id=${encodeURIComponent(d.oracle_id)}`).then(setPrints).catch(() => setPrints([]));
-  }, [showPrints, d?.oracle_id]);
   useEffect(() => {
     const h = (e: KeyboardEvent) => {
       if (/^(INPUT|TEXTAREA|SELECT)$/.test((e.target as HTMLElement).tagName)) return;
@@ -71,8 +147,6 @@ export default function CardDetails({ printId, onClose, prev, next }: { printId:
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
   }, [prev, next]);
-
-  const formats = d ? FORMAT_ORDER.filter((f) => f in d.legalities) : [];  // the formats we have a name for, in a fixed order
 
   return (
     <Modal title={d ? `Details of ${d.name}` : "Card details"} onClose={onClose} wide>
@@ -100,56 +174,7 @@ export default function CardDetails({ printId, onClose, prev, next }: { printId:
             </div>
           </div>
 
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-3">
-              <h2 className="text-2xl font-semibold tracking-tight text-accent">{d.name}</h2><ManaCost cost={d.mana_cost} />
-              {d.game_changer && <span className="rounded-md bg-gold/15 px-2 py-0.5 text-xs text-gold">Game changer</span>}
-            </div>
-            <p className="mt-0.5 text-sm text-mute">{d.type_line}</p>
-            {d.oracle_text && <div className="mt-4"><RulesText text={d.oracle_text} /></div>}
-            {d.keywords.length > 0 && <div className="mt-3 flex flex-wrap gap-1.5">{d.keywords.map((k) => <span key={k} className="rounded-md bg-raised px-2 py-0.5 text-xs text-mute">{k}</span>)}</div>}
-
-            <section className="mt-5 rounded-xl border border-line p-3 text-sm" aria-label="Printing">
-              <div className="font-medium">{d.set_name} <span className="font-normal text-mute">({d.set_code.toUpperCase()})</span></div>
-              <div className="text-mute">#{d.collector_number} · <span className="capitalize">{d.rarity}</span> · {d.released_at?.slice(0, 4)}{d.border_color === "borderless" ? " · borderless" : ""}</div>
-              <div className="mt-1 text-xs text-mute">Comes in: {d.finishes.map((f) => FINISH[f] ?? f).join(", ") || "—"}</div>
-              {d.oracle_id && <button className="mt-2 cursor-pointer text-accent hover:underline" aria-expanded={showPrints} onClick={() => setShowPrints((v) => !v)}>
-                {showPrints ? "Hide all printings" : "Show all printings"}</button>}
-              {showPrints && (
-                <ul className="mt-2 max-h-56 divide-y divide-line overflow-y-auto rounded-lg border border-line">
-                  {!prints && <li className="p-2 text-mute">Loading…</li>}
-                  {prints?.map((p) => (
-                    <li key={p.id}><button className={`flex w-full cursor-pointer items-center justify-between gap-3 px-2 py-1.5 text-left hover:bg-raised ${p.id === id ? "bg-accent-soft" : ""}`} onClick={() => setId(p.id)}>
-                      <span className="min-w-0 truncate"><b className="uppercase">{p.set_code}</b> #{p.collector_number} <span className="text-mute">{p.set_name} · {p.released_at?.slice(0, 4)}</span></span>
-                      <span className="shrink-0 text-xs text-mute tabular-nums">{p.owned > 0 && <span className="mr-2 text-gold">own {p.owned}</span>}{eur(p.eur)}</span>
-                    </button></li>
-                  ))}
-                </ul>
-              )}
-            </section>
-
-            {formats.length > 0 && (
-              <section className="mt-5" aria-label="Legalities">
-                <h3 className="mb-2 text-sm font-semibold">Legality</h3>
-                <ul className="grid grid-cols-2 gap-x-4 gap-y-1.5 text-sm sm:grid-cols-3">
-                  {formats.map((f) => {
-                    const L = LEGAL[d.legalities[f] as keyof typeof LEGAL] ?? LEGAL.not_legal;
-                    return <li key={f} className="flex items-center gap-1.5"><L.Icon className={`size-4 shrink-0 ${L.cls}`} aria-hidden /><span className={d.legalities[f] === "legal" ? "" : "text-mute"}>{formatName(f)}</span><span className="sr-only">: {L.label}</span></li>;
-                  })}
-                </ul>
-              </section>
-            )}
-
-            <section className="mt-6" aria-label="Rulings">
-              <h3 className="mb-2 text-lg font-semibold">Rulings</h3>
-              {rulings === null && <p className="text-sm text-mute">Loading…</p>}
-              {rulings === "error" && <p className="text-sm text-mute">The rulings could not be loaded: they come from Scryfall and need a connection (the first time).</p>}
-              {Array.isArray(rulings) && rulings.length === 0 && <p className="text-sm text-mute">No rulings for this card.</p>}
-              {Array.isArray(rulings) && rulings.map((r, i) => (
-                <div key={i} className="mb-3"><div className="text-sm text-mute tabular-nums">{r.published_at}</div><p className="text-[15px] leading-relaxed">{r.comment}</p></div>
-              ))}
-            </section>
-          </div>
+          <CardInfo d={d} id={id} onPick={setId} />
         </div>
       )}
     </Modal>
