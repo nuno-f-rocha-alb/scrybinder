@@ -49,13 +49,13 @@ export function keep(g: Game): Game {
   return n ? { ...g, phase: "bottom", toBottom: n } : begin(g);
 }
 
-/** Move one card between zones (`bottom` puts it at the end of the library, otherwise on top). Untaps it. */
+/** Move one card between zones (`bottom` puts it at the end of the library, otherwise on top; the battlefield appends). Untaps it. */
 export function move(g: Game, uid: number, to: Zone, bottom = false): Game {
   const from = (Object.keys(g) as (keyof Game)[]).find((z) => Array.isArray(g[z]) && (g[z] as GCard[]).some((c) => c.uid === uid)) as Zone | undefined;
   if (!from) return g;
   const card = { ...(g[from].find((c) => c.uid === uid) as GCard), tapped: false };
   const out = { ...g, [from]: g[from].filter((c) => c.uid !== uid) };
-  out[to] = to === "library" && bottom ? [...out[to], card] : [card, ...out[to]];
+  out[to] = (to === "library" && bottom) || to === "battlefield" ? [...out[to], card] : [card, ...out[to]];
   return out;
 }
 
@@ -77,3 +77,5 @@ export function nextTurn(g: Game): Game {
 }
 
 export const isLand = (c: GCard) => primaryType(c.type_line) === "land";
+
+export const shuffleLibrary = (g: Game, rnd?: () => number): Game => ({ ...g, library: shuffle(g.library, rnd) });
