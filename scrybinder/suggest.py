@@ -23,13 +23,17 @@ def _commanders(db, deck_id: int) -> list[dict]:
 
 def _have(db, oracle_ids: list[str]) -> dict:
     """Per oracle id: copies owned (proxies are not copies), copies assigned to decks, and the decks that hold them."""
-    out = {o: {"owned": 0, "assigned": 0, "decks": []} for o in oracle_ids}
+    out = {o: {"owned": 0, "assigned": 0, "decks": [], "print": None} for o in oracle_ids}
     for k in range(0, len(oracle_ids), 400):
         chunk = oracle_ids[k:k + 400]
         mark = ",".join("?" * len(chunk))
         for o, n in db.execute(f"SELECT k.oracle_id, SUM(c.quantity) FROM collection c JOIN cards k ON k.id = c.scryfall_id"
                                f" WHERE c.proxy = 0 AND k.oracle_id IN ({mark}) GROUP BY k.oracle_id", chunk):
             out[o]["owned"] = n
+        # the printing you own (most copies, newest on a tie: the one a card gets when it is added to a deck), so the image is yours
+        for o, sid in db.execute(f"SELECT k.oracle_id, c.scryfall_id FROM collection c JOIN cards k ON k.id = c.scryfall_id"
+                                 f" WHERE c.proxy = 0 AND k.oracle_id IN ({mark}) ORDER BY c.quantity ASC, k.released_at ASC, c.id DESC", chunk):
+            out[o]["print"] = sid
         for o, n, name in db.execute(
                 f"SELECT k.oracle_id, SUM(a.quantity), dk.name FROM deck_assignments a JOIN deck_cards dc ON dc.id = a.deck_card_id"
                 f" JOIN decks dk ON dk.id = dc.deck_id JOIN collection c ON c.id = a.collection_id JOIN cards k ON k.id = c.scryfall_id"
@@ -46,10 +50,11 @@ def _fits(row, identity: set, in_deck: set) -> bool:
             and "Basic Land" not in (row["type_line"] or ""))
 
 
-def _card(row, have, **extra) -> dict:
+def _card(row, have, image_id=None, **extra) -> dict:
+    """A suggestion; its image is the printing you own when you own the card, else `image_id` (EDHREC's / the newest printing)."""
     h = have[row["oracle_id"]]
-    return {"oracle_id": row["oracle_id"], "name": row["name"], "mana_cost": row["mana_cost"], "type_line": row["type_line"],
-            "owned": h["owned"], "free": max(h["owned"] - h["assigned"], 0), "elsewhere": h["decks"], **extra}
+    return {"oracle_id": row["oracle_id"], "name": row["name"], "mana_cost": row["mana_cost"], "cmc": row["cmc"], "colors": json.loads(row["colors"] or "[]"),
+            "type_line": row["type_line"], "owned": h["owned"], "free": max(h["owned"] - h["assigned"], 0), "elsewhere": h["decks"], "image_id": h["print"] or image_id, **extra}
 
 
 def suggestions(db, deck_id: int, data_dir, use_edhrec: bool) -> dict:
@@ -58,7 +63,7 @@ def suggestions(db, deck_id: int, data_dir, use_edhrec: bool) -> dict:
     cmd = _commanders(db, deck_id)
     identity = {c for r in cmd for c in json.loads(r["color_identity"] or "[]")}
     in_deck = {r[0] for r in db.execute("SELECT oracle_id FROM deck_cards WHERE deck_id=?", (deck_id,))}
-    cols = "o.oracle_id, o.name, o.mana_cost, o.type_line, o.color_identity, o.legalities"
+    cols = "o.oracle_id, o.name, o.mana_cost, o.cmc, o.type_line, o.colors, o.color_identity, o.legalities"
     if use_edhrec:
         data = edhrec.fetch(edhrec.slug([r["name"] for r in cmd]), data_dir)
         picked, seen = [], set()

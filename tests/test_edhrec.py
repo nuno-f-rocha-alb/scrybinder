@@ -116,3 +116,26 @@ def test_suggestions_api_is_off_until_enabled(db, monkeypatch):
     assert c.post("/api/edhrec", json={"enabled": True}).json() == {"enabled": True}
     monkeypatch.setattr(suggest.edhrec, "fetch", lambda slug, dd: (_ for _ in ()).throw(ValueError("EDHREC has no page for this commander")))
     assert c.get(f"/api/decks/{d}/suggestions").status_code == 422
+
+
+def test_a_suggestion_shows_the_printing_you_own(db, tmp_path):
+    (c1, o1), (c2, o2), *_ = _three(db)
+    _fit(db, o1, o2)
+    cols = [r[1] for r in db.execute("PRAGMA table_info(cards)")]  # a newer printing of the card you own
+    db.execute(f"INSERT INTO cards ({','.join(cols)}) SELECT {','.join(repr('newer-print') if k == 'id' else repr('2030-01-01') if k == 'released_at' else k for k in cols)} FROM cards WHERE id=?", (c2,))
+    d = decks.create(db, "Cmd deck", "commander")
+    decks.add_card(db, d, o1, 1, board="commander")
+    collection.add(db, scryfall_id=c2, quantity=1)
+    mine = suggest.suggestions(db, d, tmp_path, False)["cards"][0]
+    assert mine["image_id"] == c2  # not the newest printing
+
+
+def test_suggestions_carry_color_and_mana_value_for_sorting(db, tmp_path):
+    (c1, o1), (c2, o2), *_ = _three(db)
+    _fit(db, o1, o2)
+    db.execute("UPDATE oracle_cards SET colors='[\"W\",\"U\"]', cmc=3 WHERE oracle_id=?", (o2,))
+    d = decks.create(db, "Cmd deck", "commander")
+    decks.add_card(db, d, o1, 1, board="commander")
+    collection.add(db, scryfall_id=c2, quantity=1)
+    got = suggest.suggestions(db, d, tmp_path, False)["cards"][0]
+    assert (got["colors"], got["cmc"]) == (["W", "U"], 3)

@@ -4,6 +4,12 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Added
+- Suggestions can be sorted (popularity, synergy, name, color, mana value, owned first) and grouped (category, color, none).
+
+### Fixed
+- Suggestions: a card you own shows the printing you own instead of the newest one.
+
 ## [0.6.7] — 2026-10-17
 
 ### Added
