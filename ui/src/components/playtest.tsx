@@ -1,24 +1,41 @@
 import { useState } from "react";
-import { CardImg } from "./ui";
+import { CardImg, Modal } from "./ui";
+import { MenuItem, useContextMenu } from "./contextmenu";
 import type { DeckCard } from "../decks";
-import { GCard, Game, Zone, bottomOne, draw, isLand, keep, move, mulligan, newGame, nextTurn, toggleTap } from "../goldfish";
+import { GCard, Game, Zone, bottomOne, draw, isLand, keep, move, mulligan, newGame, nextTurn, shuffleLibrary, toggleTap } from "../goldfish";
 
 const btn = "cursor-pointer rounded-lg border border-line px-3 py-1.5 text-sm outline-none hover:bg-raised focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-40";
-const MOVES: [Zone, string][] = [["hand", "Hand"], ["battlefield", "Battlefield"], ["graveyard", "Graveyard"], ["exile", "Exile"]];
+const ZONE_LABEL: Record<Zone, string> = { hand: "Hand", battlefield: "Battlefield", graveyard: "Graveyard", exile: "Exile", library: "Library", command: "Command zone" };
 
-function Card({ c, zone, moves, onClick, onMove }: { c: GCard; zone: Zone; moves: boolean; onClick: () => void; onMove: (to: Zone, bottom?: boolean) => void }) {
+/** A land that is not also a creature goes in the land area; everything else in the nonland area (the tournament game layout). */
+const landArea = (c: GCard) => isLand(c) && !/creature/i.test(c.type_line ?? "");
+
+function Face({ c, w = "w-24" }: { c: GCard; w?: string }) {
+  return c.image_id ? <div className={w}><CardImg id={c.image_id} size="small" /></div>
+    : <div className={`${w} flex aspect-[63/88] items-center justify-center rounded bg-raised p-1 text-center text-xs`}>{c.name}</div>;
+}
+
+/** A card on the table: click acts, right-click lists the moves. A tapped card turns sideways in a square cell so its neighbours do not overlap. */
+function Card({ c, onClick, onMenu, square }: { c: GCard; onClick?: () => void; onMenu: (e: React.MouseEvent) => void; square?: boolean }) {
   return (
-    <div className="w-28 shrink-0">
-      <button onClick={onClick} aria-label={`${c.name}${c.tapped ? " (tapped)" : ""}`} title={c.name}
-        className={`block w-full cursor-pointer rounded-[4.5%] outline-none focus-visible:ring-2 focus-visible:ring-accent transition-transform ${c.tapped ? "rotate-12 opacity-70" : ""}`}>
-        {c.image_id ? <CardImg id={c.image_id} size="small" /> : <div className="flex aspect-[63/88] items-center justify-center rounded bg-raised p-1 text-center text-xs">{c.name}</div>}
-      </button>
-      {moves && <div className="mt-1 flex flex-wrap gap-1 text-[11px]">
-        {MOVES.filter(([z]) => z !== zone).map(([z, l]) => <button key={z} className="cursor-pointer rounded border border-line px-1.5 hover:bg-raised" onClick={() => onMove(z)}>{l}</button>)}
-        <button className="cursor-pointer rounded border border-line px-1.5 hover:bg-raised" onClick={() => onMove("library")}>Top</button>
-        <button className="cursor-pointer rounded border border-line px-1.5 hover:bg-raised" onClick={() => onMove("library", true)}>Bottom</button>
-      </div>}
-    </div>
+    <button onClick={onClick} onContextMenu={onMenu} aria-label={`${c.name}${c.tapped ? " (tapped)" : ""}`} title={`${c.name} — right-click for more`}
+      className={`flex shrink-0 cursor-pointer items-center justify-center rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-accent ${square ? "size-[8.6rem]" : ""}`}>
+      <span className={`block transition-transform ${c.tapped ? "rotate-90" : ""}`}><Face c={c} /></span>
+    </button>
+  );
+}
+
+/** A pile to the side of the battlefield: the top card (or an empty slot), a name and a count. */
+function Pile({ label, cards, onClick, back }: { label: string; cards: GCard[]; onClick?: () => void; back?: boolean }) {
+  const top = cards[0];
+  return (
+    <button onClick={onClick} disabled={!onClick} aria-label={`${label}: ${cards.length} cards`}
+      className="flex w-28 cursor-pointer flex-col items-center gap-1 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default">
+      {back && cards.length ? <div className="aspect-[63/88] w-24 rounded-[4.5%] border border-line bg-gradient-to-br from-raised to-surface" />
+        : !back && top ? <Face c={top} />
+        : <div className="aspect-[63/88] w-24 rounded-[4.5%] border border-dashed border-line" />}
+      <span className="text-xs text-mute">{label} ({cards.length})</span>
+    </button>
   );
 }
 
@@ -26,6 +43,9 @@ function Card({ c, zone, moves, onClick, onMove }: { c: GCard; zone: Zone; moves
 export default function Playtest({ cards, commander }: { cards: DeckCard[]; commander: boolean }) {
   const [onPlay, setOnPlay] = useState(true);
   const [g, setG] = useState<Game | null>(null);
+  const [search, setSearch] = useState<string | null>(null);  // the library search box (null: closed)
+  const [pile, setPile] = useState<"graveyard" | "exile" | null>(null);  // the pile whose cards are listed
+  const menu = useContextMenu();
   const start = () => setG(newGame(cards, commander, onPlay));
 
   const library = cards.filter((c) => c.board === "main").reduce((n, c) => n + c.quantity, 0);
@@ -40,16 +60,24 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
   );
 
   const set = (f: (x: Game) => Game) => setG((x) => (x ? f(x) : x));
+  const playing = g.phase === "playing";
+  const cardMenu = (c: GCard, zone: Zone) => (e: React.MouseEvent) => {
+    if (!playing) return;  // the opening hand is only kept or sent back
+    const to = (z: Zone, bottom = false): MenuItem => ({ label: z === "library" ? (bottom ? "Bottom of library" : "Top of library") : ZONE_LABEL[z], onSelect: () => set((x) => move(x, c.uid, z, bottom)) });
+    menu.open(e, [
+      ...(zone === "battlefield" ? [{ label: c.tapped ? "Untap" : "Tap", onSelect: () => set((x) => toggleTap(x, c.uid)) }, "sep" as const] : []),
+      ...(["battlefield", "hand", "graveyard", "exile"] as const).filter((z) => z !== zone).map((z) => to(z)),
+      "sep", to("library"), to("library", true),
+    ]);
+  };
   const handClick = (c: GCard) => set((x) => (x.phase === "bottom" ? bottomOne(x, c.uid) : x.phase === "playing" ? move(x, c.uid, "battlefield") : x));
-  const row = (zone: Zone, label: string, click?: (c: GCard) => void) => (
-    <section aria-label={label} className="mb-4">
-      <h3 className="mb-1 text-sm font-medium text-mute">{label} ({g[zone].length})</h3>
-      <div className="flex min-h-12 flex-wrap gap-2">
-        {g[zone].map((c) => <Card key={c.uid} c={c} zone={zone} moves={g.phase === "playing"} onClick={() => click?.(c)} onMove={(to, bottom) => set((x) => move(x, c.uid, to, bottom))} />)}
-      </div>
-    </section>
-  );
   const lands = g.battlefield.filter(isLand).length;
+  const area = (title: string, list: GCard[]) => (
+    <div className="min-h-[9.5rem] p-2" role="group" aria-label={title}>
+      <h3 className="mb-1 text-xs uppercase tracking-wide text-mute">{title} ({list.length})</h3>
+      <div className="flex flex-wrap">{list.map((c) => <Card key={c.uid} c={c} square onClick={() => set((x) => toggleTap(x, c.uid))} onMenu={cardMenu(c, "battlefield")} />)}</div>
+    </div>
+  );
 
   return (
     <div>
@@ -64,19 +92,79 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
           <button className={btn} onClick={() => set(keep)}>Keep</button>
           <button className={btn} onClick={() => set((x) => mulligan(x))}>Mulligan{g.mulligans ? ` (${g.mulligans})` : ""}</button>
         </>}
-        {g.phase === "playing" && <>
+        {playing && <>
           <button className={btn} onClick={() => set(nextTurn)}>Next turn</button>
           <button className={btn} disabled={!g.library.length} onClick={() => set((x) => draw(x))}>Draw</button>
+          <button className={btn} onClick={() => setSearch("")}>Search library</button>
+          <button className={btn} onClick={() => set((x) => shuffleLibrary(x))}>Shuffle</button>
         </>}
         <label className="flex items-center gap-1 text-sm"><input type="checkbox" checked={onPlay} onChange={(e) => setOnPlay(e.target.checked)} />On the play</label>
         <button className={btn} onClick={start}>New game</button>
       </div>
       {g.phase === "bottom" && <p className="mb-3 text-sm text-accent" role="status">Click {g.toBottom} card{g.toBottom > 1 ? "s" : ""} in your hand to put on the bottom of the library.</p>}
-      {row("battlefield", "Battlefield (click to tap)", (c) => set((x) => toggleTap(x, c.uid)))}
-      {row("hand", g.phase === "mulligan" ? "Opening hand" : "Hand (click to play)", handClick)}
-      {commander && row("command", "Command zone", (c) => set((x) => (x.phase === "playing" ? move(x, c.uid, "battlefield") : x)))}
-      {row("graveyard", "Graveyard")}
-      {row("exile", "Exile")}
+      {playing && <p className="mb-2 text-xs text-mute">Click a battlefield card to tap it, a hand card to play it. Right-click any card for more.</p>}
+
+      <div className="flex items-start gap-4">
+        {/* the table: nonlands nearest the opponent (top), lands nearest the player (bottom) */}
+        <section aria-label="Battlefield" className="min-w-0 flex-1 rounded-xl border border-line">
+          {area("Nonland permanents", g.battlefield.filter((c) => !landArea(c)))}
+          <div className="border-t border-dashed border-line" />
+          {area("Lands", g.battlefield.filter(landArea))}
+        </section>
+        {/* library, graveyard and exile together on one side, with the command zone */}
+        <aside aria-label="Zones" className="flex shrink-0 flex-col gap-3">
+          <Pile label="Library" cards={g.library} back onClick={playing && g.library.length ? () => set((x) => draw(x)) : undefined} />
+          <Pile label="Graveyard" cards={g.graveyard} onClick={g.graveyard.length ? () => setPile("graveyard") : undefined} />
+          <Pile label="Exile" cards={g.exile} onClick={g.exile.length ? () => setPile("exile") : undefined} />
+          {commander && (
+            <div className="flex flex-col items-center gap-1" role="group" aria-label="Command zone">
+              {g.command.map((c) => <Card key={c.uid} c={c} onClick={playing ? () => set((x) => move(x, c.uid, "battlefield")) : undefined} onMenu={cardMenu(c, "command")} />)}
+              {!g.command.length && <div className="aspect-[63/88] w-24 rounded-[4.5%] border border-dashed border-line" />}
+              <span className="text-xs text-mute">Command zone ({g.command.length})</span>
+            </div>
+          )}
+        </aside>
+      </div>
+
+      <section aria-label="Hand" className="mt-4">
+        <h3 className="mb-1 text-sm font-medium text-mute">{g.phase === "mulligan" ? "Opening hand" : "Hand"} ({g.hand.length})</h3>
+        <div className="flex min-h-12 flex-wrap gap-1">
+          {g.hand.map((c) => <Card key={c.uid} c={c} onClick={() => handClick(c)} onMenu={cardMenu(c, "hand")} />)}
+        </div>
+      </section>
+
+      {pile && (
+        <Modal title={ZONE_LABEL[pile]} onClose={() => setPile(null)} wide>
+          <h2 className="mb-1 text-lg font-semibold">{ZONE_LABEL[pile]} ({g[pile].length})</h2>
+          <p className="mb-3 text-xs text-mute">Right-click a card to move it.</p>
+          <div className="flex flex-wrap gap-2">
+            {g[pile].map((c) => <Card key={c.uid} c={c} onMenu={cardMenu(c, pile)} />)}
+          </div>
+        </Modal>
+      )}
+      {search !== null && (
+        <Modal title="Search library" onClose={() => setSearch(null)}>
+          <h2 className="mb-2 text-lg font-semibold">Search library ({g.library.length})</h2>
+          <input autoFocus value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Name or type, e.g. island, plains" aria-label="Filter the library"
+            className="mb-3 w-full rounded-lg border border-line bg-raised px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent" />
+          <p className="mb-2 text-xs text-mute">The chosen card moves and the library is shuffled.</p>
+          <ul className="max-h-[55vh] overflow-y-auto">
+            {g.library.filter((c) => `${c.name} ${c.type_line ?? ""}`.toLowerCase().includes(search.toLowerCase()))
+              .sort((a, b) => a.name.localeCompare(b.name)).map((c) => (
+              <li key={c.uid} className="flex items-center justify-between gap-2 border-b border-line py-1 text-sm">
+                <span>{c.name} <span className="text-mute">· {c.type_line}</span></span>
+                <span className="flex gap-1">
+                  {(["battlefield", "hand"] as const).map((z) => (
+                    <button key={z} className="cursor-pointer rounded border border-line px-2 py-0.5 hover:bg-raised"
+                      onClick={() => { set((x) => shuffleLibrary(move(x, c.uid, z))); setSearch(null); }}>{ZONE_LABEL[z]}</button>
+                  ))}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Modal>
+      )}
+      {menu.node}
     </div>
   );
 }

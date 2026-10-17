@@ -4,6 +4,9 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Added
+- Playtest: search the library (to fetch a land with a fetch land, a tutor...) and shuffle it.
+
 ## [0.7.0] — 2026-10-17
 
 ### Added
