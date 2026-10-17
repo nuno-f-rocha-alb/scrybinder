@@ -1,7 +1,7 @@
 import { useState } from "react";
-import { CardImg } from "./ui";
+import { CardImg, Modal } from "./ui";
 import type { DeckCard } from "../decks";
-import { GCard, Game, Zone, bottomOne, draw, isLand, keep, move, mulligan, newGame, nextTurn, toggleTap } from "../goldfish";
+import { GCard, Game, Zone, bottomOne, draw, isLand, keep, move, mulligan, newGame, nextTurn, shuffleLibrary, toggleTap } from "../goldfish";
 
 const btn = "cursor-pointer rounded-lg border border-line px-3 py-1.5 text-sm outline-none hover:bg-raised focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-40";
 const MOVES: [Zone, string][] = [["hand", "Hand"], ["battlefield", "Battlefield"], ["graveyard", "Graveyard"], ["exile", "Exile"]];
@@ -26,6 +26,7 @@ function Card({ c, zone, moves, onClick, onMove }: { c: GCard; zone: Zone; moves
 export default function Playtest({ cards, commander }: { cards: DeckCard[]; commander: boolean }) {
   const [onPlay, setOnPlay] = useState(true);
   const [g, setG] = useState<Game | null>(null);
+  const [search, setSearch] = useState<string | null>(null);  // the library search box (null: closed)
   const start = () => setG(newGame(cards, commander, onPlay));
 
   const library = cards.filter((c) => c.board === "main").reduce((n, c) => n + c.quantity, 0);
@@ -67,6 +68,8 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
         {g.phase === "playing" && <>
           <button className={btn} onClick={() => set(nextTurn)}>Next turn</button>
           <button className={btn} disabled={!g.library.length} onClick={() => set((x) => draw(x))}>Draw</button>
+          <button className={btn} onClick={() => setSearch("")}>Search library</button>
+          <button className={btn} onClick={() => set((x) => shuffleLibrary(x))}>Shuffle</button>
         </>}
         <label className="flex items-center gap-1 text-sm"><input type="checkbox" checked={onPlay} onChange={(e) => setOnPlay(e.target.checked)} />On the play</label>
         <button className={btn} onClick={start}>New game</button>
@@ -77,6 +80,28 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
       {commander && row("command", "Command zone", (c) => set((x) => (x.phase === "playing" ? move(x, c.uid, "battlefield") : x)))}
       {row("graveyard", "Graveyard")}
       {row("exile", "Exile")}
+      {search !== null && (
+        <Modal title="Search library" onClose={() => setSearch(null)}>
+          <h2 className="mb-2 text-lg font-semibold">Search library ({g.library.length})</h2>
+          <input autoFocus value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Name or type, e.g. island, plains" aria-label="Filter the library"
+            className="mb-3 w-full rounded-lg border border-line bg-raised px-3 py-2 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent" />
+          <p className="mb-2 text-xs text-mute">The chosen card moves and the library is shuffled.</p>
+          <ul className="max-h-[55vh] overflow-y-auto">
+            {g.library.filter((c) => `${c.name} ${c.type_line ?? ""}`.toLowerCase().includes(search.toLowerCase()))
+              .sort((a, b) => a.name.localeCompare(b.name)).map((c) => (
+              <li key={c.uid} className="flex items-center justify-between gap-2 border-b border-line py-1 text-sm">
+                <span>{c.name} <span className="text-mute">· {c.type_line}</span></span>
+                <span className="flex gap-1">
+                  {(["battlefield", "hand"] as const).map((z) => (
+                    <button key={z} className="cursor-pointer rounded border border-line px-2 py-0.5 hover:bg-raised"
+                      onClick={() => { set((x) => shuffleLibrary(move(x, c.uid, z))); setSearch(null); }}>{z === "hand" ? "Hand" : "Battlefield"}</button>
+                  ))}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </Modal>
+      )}
     </div>
   );
 }

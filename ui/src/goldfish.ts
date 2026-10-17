@@ -77,3 +77,5 @@ export function nextTurn(g: Game): Game {
 }
 
 export const isLand = (c: GCard) => primaryType(c.type_line) === "land";
+
+export const shuffleLibrary = (g: Game, rnd?: () => number): Game => ({ ...g, library: shuffle(g.library, rnd) });
