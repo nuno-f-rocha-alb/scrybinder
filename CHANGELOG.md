@@ -4,6 +4,10 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Added
+- Card size: Ctrl + mouse wheel over any card grid makes the cards bigger or smaller (fewer or more columns when the columns are fixed).
+- Suggestions: a card size / columns control, and the card zooms when you hover it.
+
 ## [0.6.8] — 2026-10-17
 
 ### Added

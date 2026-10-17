@@ -15,7 +15,7 @@ export function HoverZoom({ children, zoom, className = "" }: { children: React.
   return (
     <div className={className} onMouseEnter={move} onMouseMove={move} onMouseLeave={() => setAt(null)}>
       {children}
-      {at && createPortal(
+      {at && zoom && createPortal(
         <div className="pointer-events-none fixed z-[60] overflow-hidden rounded-[4.5%] shadow-[0_16px_48px_rgba(0,0,0,0.7)] ring-1 ring-line" style={{ left, top, width: W, height: H }}>{zoom}</div>,
         document.body)}
     </div>
