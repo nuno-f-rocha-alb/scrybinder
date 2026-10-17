@@ -3,7 +3,7 @@ import { primaryType } from "./decks";
 import type { DeckCard } from "./decks";
 
 export type Zone = "library" | "hand" | "battlefield" | "graveyard" | "exile" | "command";
-export type GCard = { uid: number; name: string; image_id: string | null; type_line: string | null; tapped: boolean };
+export type GCard = { uid: number; name: string; image_id: string | null; type_line: string | null; tapped: boolean; commander?: boolean };
 export type Game = Record<Zone, GCard[]> & {
   turn: number; life: number; mulligans: number; onPlay: boolean;
   phase: "mulligan" | "bottom" | "playing"; toBottom: number; freeMulligan: boolean;
@@ -21,7 +21,7 @@ export function shuffle<T>(a: T[], rnd: () => number = Math.random): T[] {
 export function newGame(cards: DeckCard[], commander: boolean, onPlay = true, rnd?: () => number): Game {
   let uid = 0;
   const all = (board: string) => cards.filter((c) => c.board === board).flatMap((c) =>
-    Array.from({ length: c.quantity }, () => ({ uid: uid++, name: c.name, image_id: c.image_id, type_line: c.type_line, tapped: false })));
+    Array.from({ length: c.quantity }, () => ({ uid: uid++, name: c.name, image_id: c.image_id, type_line: c.type_line, tapped: false, commander: board === "commander" })));
   const g: Game = {
     library: shuffle(all("main"), rnd), hand: [], battlefield: [], graveyard: [], exile: [], command: all("commander"),
     turn: 1, life: commander ? 40 : 20, mulligans: 0, onPlay, phase: "mulligan", toBottom: 0, freeMulligan: commander,

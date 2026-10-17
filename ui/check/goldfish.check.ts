@@ -26,4 +26,11 @@ assert.ok(!nextTurn(m).battlefield[0].tapped);
 m = move(m, m.battlefield[0].uid, "graveyard"); assert.equal(total(m), 60); assert.ok(!m.graveyard[0].tapped);
 // empty library does not crash
 assert.equal(newGame([mk("A", 3, "main")], false).hand.length, 3);
+
+// a commander can return to the command zone
+{
+  let c = newGame(cards, true); const boss = c.command[0];
+  assert.ok(boss.commander); c = move(c, boss.uid, "battlefield"); c = move(c, boss.uid, "command");
+  assert.equal(c.command.length, 1); assert.equal(c.battlefield.length, 0);
+}
 console.log("goldfish ok");

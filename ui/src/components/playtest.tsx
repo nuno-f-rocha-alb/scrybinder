@@ -67,6 +67,7 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
     menu.open(e, [
       ...(zone === "battlefield" ? [{ label: c.tapped ? "Untap" : "Tap", onSelect: () => set((x) => toggleTap(x, c.uid)) }, "sep" as const] : []),
       ...(["battlefield", "hand", "graveyard", "exile"] as const).filter((z) => z !== zone).map((z) => to(z)),
+      ...(c.commander && zone !== "command" ? [to("command")] : []),  // a commander may return to the command zone instead
       "sep", to("library"), to("library", true),
     ]);
   };
