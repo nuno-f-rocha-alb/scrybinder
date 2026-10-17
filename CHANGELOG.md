@@ -4,6 +4,9 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Fixed
+- Suggestions: a card you own shows the printing you own instead of the newest one.
+
 ## [0.6.7] — 2026-10-17
 
 ### Added
