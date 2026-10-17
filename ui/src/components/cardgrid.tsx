@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Select } from "./select";
 import { IconPhoto, IconPhotoFilled } from "@tabler/icons-react";
 
 /** Card size (px): by default it grows with the screen (1080p ≈ 240, 1440p ≈ 320); the user can adjust it. */
@@ -39,10 +40,10 @@ export function useCardGrid() {
 export function GridControls({ g }: { g: ReturnType<typeof useCardGrid> }) {
   return (
     <>
-      <select className="field w-auto" value={g.cols} aria-label="Columns" title="Number of columns" onChange={(e) => g.setColumns(+e.target.value)}>
+      <Select className="field w-auto" value={g.cols} aria-label="Columns" title="Number of columns" onChange={(e) => g.setColumns(+e.target.value)}>
         <option value={0}>Columns: auto</option>
         {COL_OPTIONS.map((n) => <option key={n} value={n}>{n} columns</option>)}
-      </select>
+      </Select>
       {!g.cols && (
         <label className="flex items-center gap-2 text-xs text-mute" title="Card size (double-click to reset)">
           <IconPhoto className="size-3.5" aria-hidden />

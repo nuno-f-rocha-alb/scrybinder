@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Select } from "../components/select";
 import { IconCamera, IconFolder, IconPhoto, IconSearch } from "@tabler/icons-react";
 import { api, CONDITIONS, eur, FINISH, LANGS, Print, qs } from "../api";
 import { Badge, CardImg, ExtLinks, HoverZoom, Modal, useToast } from "../components/ui";
@@ -389,16 +390,16 @@ function ReadsList({ reads, location, onChange, toast }: { reads: Read[]; locati
                   <div className="mt-1 text-xs text-mute" title={r.visual ? `Artwork ${r.visual.top_art}, margin ${r.visual.margin}` : "No visual index: the name and the bottom line were read by OCR only"}>{engine(r.visual)}</div>
                 </div>
                 <div className="flex flex-wrap items-center gap-2 text-sm">
-                  <select className="field w-28" value={r.finish} aria-label="Finish" onChange={(e) => patch(r.id, { finish: e.target.value })}>
-                    {(fin.length ? fin : ["nonfoil"]).map((x) => <option key={x} value={x}>{FINISH[x] ?? x}</option>)}</select>
+                  <Select className="field w-28" value={r.finish} aria-label="Finish" onChange={(e) => patch(r.id, { finish: e.target.value })}>
+                    {(fin.length ? fin : ["nonfoil"]).map((x) => <option key={x} value={x}>{FINISH[x] ?? x}</option>)}</Select>
                   <div className="flex items-center rounded-lg border border-line">
                     <button className="px-2 py-1" aria-label="Less" onClick={() => patch(r.id, { qty: Math.max(1, r.qty - 1) })}>−</button>
                     <span className="min-w-6 text-center font-medium">{r.qty}</span>
                     <button className="px-2 py-1" aria-label="More" onClick={() => patch(r.id, { qty: r.qty + 1 })}>+</button></div>
-                  <select className="field w-20" value={r.condition} aria-label="Condition" onChange={(e) => patch(r.id, { condition: e.target.value })}>
-                    {CONDITIONS.map((x) => <option key={x}>{x}</option>)}</select>
-                  <select className="field w-28" value={r.language} aria-label="Language" onChange={(e) => patch(r.id, { language: e.target.value })}>
-                    {LANG_KEYS.map((x) => <option key={x} value={x}>{LANGS[x]}</option>)}</select>
+                  <Select className="field w-20" value={r.condition} aria-label="Condition" onChange={(e) => patch(r.id, { condition: e.target.value })}>
+                    {CONDITIONS.map((x) => <option key={x}>{x}</option>)}</Select>
+                  <Select className="field w-28" value={r.language} aria-label="Language" onChange={(e) => patch(r.id, { language: e.target.value })}>
+                    {LANG_KEYS.map((x) => <option key={x} value={x}>{LANGS[x]}</option>)}</Select>
                   <button className="btn-ghost" onClick={() => setOpen(open === r.id ? null : r.id)}>Printing</button>
                   <button className="btn-ghost" aria-label="Remove from list" onClick={() => del(r.id)}>Remove</button>
                 </div>

@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import { Select } from "../components/select";
 import { createPortal } from "react-dom";
 import { IconAlertTriangle, IconArrowLeft, IconBox, IconCheck, IconChecklist, IconCopy, IconDownload, IconPlus, IconStack2, IconTrash, IconUpload, IconX } from "@tabler/icons-react";
 import { api, eur, qs } from "../api";
@@ -186,9 +187,9 @@ export default function Deck({ id, onBack, focusOracle }: { id: number; onBack: 
           <button className="btn-ghost" onClick={onBack} aria-label="Back to decks"><IconArrowLeft className="size-4" />Decks</button>
           <input className="field min-w-[200px] flex-1 !text-lg !font-semibold" aria-label="Deck name" value={name} maxLength={120}
             onChange={(e) => setName(e.target.value)} onBlur={() => name.trim() && name !== deck.name && patchDeck({ name })} />
-          <select className="field w-auto" aria-label="Format" value={deck.format} onChange={(e) => patchDeck({ format: e.target.value as Format })}>
+          <Select className="field w-auto" aria-label="Format" value={deck.format} onChange={(e) => patchDeck({ format: e.target.value as Format })}>
             {FORMATS.map((f) => <option key={f} value={f}>{cap(f)}</option>)}
-          </select>
+          </Select>
         </div>
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <button className="btn-ghost" title="Reserve the free copies of your collection for the cards that still need them"
@@ -251,9 +252,9 @@ export default function Deck({ id, onBack, focusOracle }: { id: number; onBack: 
               <button className="btn-ghost !py-1" disabled={!picks.length} title="Reserve the free copies of your collection for the selected cards"
                 onClick={() => api<{ assigned: number }>(`/decks/${id}/assign-free`, { method: "POST", body: JSON.stringify({ card_ids: picks.map((c) => c.id) }) }).then((r) => { toast(r.assigned ? `Assigned ${r.assigned} ${r.assigned === 1 ? "copy" : "copies"}` : "No free copies to assign"); setSelected(new Set()); reload(); }).catch((e) => toast(e.message, true))}>
                 <IconBox className="size-4" />Assign free copies</button>
-              <select className="field !w-auto !py-1 text-xs" aria-label="Move the selected cards to a board" disabled={!picks.length} value="" onChange={(e) => e.target.value && run(each((c) => api(`/decks/${id}/cards/${c.id}`, { method: "PATCH", body: JSON.stringify({ board: e.target.value }) })))}>
+              <Select className="field !w-auto !py-1 text-xs" aria-label="Move the selected cards to a board" disabled={!picks.length} value="" onChange={(e) => e.target.value && run(each((c) => api(`/decks/${id}/cards/${c.id}`, { method: "PATCH", body: JSON.stringify({ board: e.target.value }) })))}>
                 <option value="">Move to…</option>{BOARDS.map((b) => <option key={b} value={b}>{BOARD_LABEL[b]}</option>)}
-              </select>
+              </Select>
               <button className="btn-danger !py-1" disabled={!picks.length} onClick={() => {
                 if (!confirmRemove) { setConfirmRemove(true); setTimeout(() => setConfirmRemove(false), 4000); return; }
                 setConfirmRemove(false); run(each((c) => api(`/decks/${id}/cards/${c.id}`, { method: "DELETE" })));
@@ -266,11 +267,11 @@ export default function Deck({ id, onBack, focusOracle }: { id: number; onBack: 
 
         <div className="mb-4 flex flex-wrap items-center gap-2">
           <label className="flex items-center gap-1.5 text-xs text-mute">View
-            <select className="field w-auto" value={view} onChange={(e) => setView(e.target.value as View)}>{VIEWS.map((v) => <option key={v.id} value={v.id}>{v.label}</option>)}</select></label>
+            <Select className="field w-auto" value={view} onChange={(e) => setView(e.target.value as View)}>{VIEWS.map((v) => <option key={v.id} value={v.id}>{v.label}</option>)}</Select></label>
           <label className="flex items-center gap-1.5 text-xs text-mute">Group
-            <select className="field w-auto" value={group} onChange={(e) => setGroup(e.target.value as GroupBy)}>{GROUPS.map((g) => <option key={g.id} value={g.id}>{g.label}</option>)}</select></label>
+            <Select className="field w-auto" value={group} onChange={(e) => setGroup(e.target.value as GroupBy)}>{GROUPS.map((g) => <option key={g.id} value={g.id}>{g.label}</option>)}</Select></label>
           <label className="flex items-center gap-1.5 text-xs text-mute">Sort
-            <select className="field w-auto" value={sort} onChange={(e) => setSort(e.target.value as SortBy)}>{SORTS.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}</select></label>
+            <Select className="field w-auto" value={sort} onChange={(e) => setSort(e.target.value as SortBy)}>{SORTS.map((x) => <option key={x.id} value={x.id}>{x.label}</option>)}</Select></label>
           {view === "stacks" && (
             <label className="flex cursor-pointer items-center gap-2 text-sm text-mute" title="Show a strip for every copy instead of one with a count">
               <input type="checkbox" checked={every === "1"} onChange={(e) => setEvery(e.target.checked ? "1" : "0")} className="accent-[var(--color-accent)]" />Every copy

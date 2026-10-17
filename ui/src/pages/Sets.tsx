@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Select } from "../components/select";
 import { IconSearch } from "@tabler/icons-react";
 import { api, qs, useGroup } from "../api";
 
@@ -45,13 +46,13 @@ export default function Sets({ onOpen }: { onOpen: (code: string, location?: str
             <IconSearch className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-mute" />
             <input className="field w-56 pl-9" placeholder="Search sets…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search sets" />
           </div>
-          <select className="field w-auto" value={location ?? "*"} aria-label="Location" onChange={(e) => setLocation(e.target.value === "*" ? undefined : e.target.value)}>
+          <Select className="field w-auto" value={location ?? "*"} aria-label="Location" onChange={(e) => setLocation(e.target.value === "*" ? undefined : e.target.value)}>
             <option value="*">Whole collection</option>
             {locs.map((l) => <option key={l} value={l}>{l || "(no location)"}</option>)}
-          </select>
-          <select className="field w-auto" value={sort} aria-label="Sort" onChange={(e) => setSort(e.target.value as typeof sort)}>
+          </Select>
+          <Select className="field w-auto" value={sort} aria-label="Sort" onChange={(e) => setSort(e.target.value as typeof sort)}>
             <option value="percent">Highest percentage</option><option value="recent">Most recent</option><option value="name">Name</option>
-          </select>
+          </Select>
           <label className="flex cursor-pointer items-center gap-2 text-sm text-mute" title="The same card with different art/frames counts as 1">
             <input type="checkbox" checked={group} onChange={(e) => setGroup(e.target.checked)} className="accent-[var(--color-accent)]" />Group printings
           </label>

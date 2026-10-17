@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from "react";
+import { Select } from "./select";
 import { IconAdjustmentsHorizontal, IconPlus, IconSearch, IconX } from "@tabler/icons-react";
 import { api, qs } from "../api";
 import { BOARDS, BOARD_LABEL, Board, Deck, OracleRow, Preview, resultPreview } from "../decks";
@@ -65,9 +66,9 @@ export default function AddCards({ deck, onAdd, setPreview, toast }: { deck: Dec
             onKeyDown={(e) => { if (e.key === "Enter" && rows[0]) add(rows[0]); else if (e.key === "Escape") setDismissed(true); }} />
         </div>
         <button className={`btn-ghost ${filtered ? "!border-accent" : ""}`} aria-expanded={more} onClick={() => setMore((v) => !v)}><IconAdjustmentsHorizontal className="size-4" />Filters{filtered ? " •" : ""}</button>
-        <select className="field w-auto" value={board} aria-label="Add to" onChange={(e) => setBoard(e.target.value as Board)}>
+        <Select className="field w-auto" value={board} aria-label="Add to" onChange={(e) => setBoard(e.target.value as Board)}>
           {BOARDS.map((b) => <option key={b} value={b}>{BOARD_LABEL[b]}</option>)}
-        </select>
+        </Select>
         <label className="flex cursor-pointer items-center gap-2 text-sm text-mute" title="A card already in the deck gets a line of its own instead of adding to the existing one, so each line can have another printing">
           <input type="checkbox" checked={separate} onChange={(e) => setSep(e.target.checked)} className="accent-[var(--color-accent)]" />Separate line
         </label>
@@ -85,8 +86,8 @@ export default function AddCards({ deck, onAdd, setPreview, toast }: { deck: Dec
               <input className="field" type="number" min={0} aria-label="Mana value from" placeholder="from" value={lo} onChange={(e) => setLo(e.target.value)} />
               <input className="field" type="number" min={0} aria-label="Mana value to" placeholder="to" value={hi} onChange={(e) => setHi(e.target.value)} /></span></div>
           <label className="block text-xs text-mute"><span className="mb-1 block">Sort by</span>
-            <select className="field" value={sort} onChange={(e) => setSort(e.target.value)}>
-              <option value="name">Name</option><option value="cmc">Mana value</option><option value="popularity">Popularity</option></select></label>
+            <Select className="field" value={sort} onChange={(e) => setSort(e.target.value)}>
+              <option value="name">Name</option><option value="cmc">Mana value</option><option value="popularity">Popularity</option></Select></label>
           <div className="sm:col-span-2 lg:col-span-3"><span className="mb-1 block text-xs text-mute">Colours (all of the chosen ones)</span>
             <span className="flex flex-wrap items-center gap-2" role="group" aria-label="Colours">
               {COLORS.map((c) => (
