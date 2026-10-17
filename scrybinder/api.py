@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 
 import time
 
-from . import __version__, carddetails, collection, db as dbmod, decks, decktext, deckurl, formats, gpu as gpumod, oracle, scryfall, updater as updmod
+from . import __version__, carddetails, collection, db as dbmod, decks, decktext, deckurl, formats, gpu as gpumod, oracle, scryfall, suggest, updater as updmod
 from .scan.session import MAX_SIDE, MAX_SIDE_PAGE, Scanner, decode
 
 UI_DIST = Path(__file__).resolve().parent.parent / "ui" / "dist"
@@ -342,9 +342,9 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
 
     @app.post("/api/open-url")
     def open_url(body: dict = Body(...)):
-        """Open a link in the system browser (the app window must not navigate away). Scryfall and Cardmarket only."""
+        """Open a link in the system browser (the app window must not navigate away). Scryfall, Cardmarket and EDHREC (its credit link) only."""
         u = urlparse(str(body.get("url", "")))
-        if u.scheme != "https" or u.hostname not in ("scryfall.com", "www.cardmarket.com"):
+        if u.scheme != "https" or u.hostname not in ("scryfall.com", "www.cardmarket.com", "edhrec.com"):
             raise HTTPException(422, "link not allowed")
         webbrowser.open(u.geturl())
         return {"ok": True}
@@ -604,6 +604,28 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
     def decks_remove_card(deck_id: int, card_id: int):
         _wrap(decks.remove_card, db, deck_id, card_id)
         return {"ok": True}
+
+    def _edhrec_on() -> bool:
+        r = db.execute("SELECT value FROM meta WHERE key='edhrec_enabled'").fetchone()
+        return bool(r and r[0] == "1")
+
+    @app.get("/api/edhrec")
+    def edhrec_status():
+        return {"enabled": _edhrec_on()}
+
+    @app.post("/api/edhrec")
+    def edhrec_settings(body: dict = Body(...)):
+        with db:
+            db.execute("INSERT OR REPLACE INTO meta VALUES ('edhrec_enabled', ?)", ("1" if body.get("enabled") else "0",))
+        return {"enabled": _edhrec_on()}
+
+    @app.get("/api/decks/{deck_id}/suggestions")
+    def decks_suggestions(deck_id: int, source: str = "edhrec"):
+        if source not in ("edhrec", "collection"):
+            raise HTTPException(422, "source: edhrec or collection")
+        if source == "edhrec" and not _edhrec_on():
+            raise HTTPException(403, "EDHREC suggestions are off: turn them on first")
+        return _wrap(suggest.suggestions, db, deck_id, dbmod.DATA_DIR, source == "edhrec")
 
     @app.get("/api/decks/{deck_id}/cards/{card_id}/copies")
     def decks_copies(deck_id: int, card_id: int):
