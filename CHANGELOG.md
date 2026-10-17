@@ -4,6 +4,8 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+## [0.6.7] — 2026-10-17
+
 ### Added
 - Commander decks have a Suggestions tab: cards for your commander from EDHREC (opt-in; inclusion %, synergy, and how many you own and have free), or from your own collection by popularity when it is off. Each card can be added to the deck.
 
