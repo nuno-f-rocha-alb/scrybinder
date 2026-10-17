@@ -236,9 +236,11 @@ Known limits: Room/split cards (the artwork box does not exist), very strong hol
   | `api.github.com`, `github.com` | only when you check for updates (or *Check on start-up* is on) | the list of releases and the update package, checksum verified |
   | `download.pytorch.org` | only if you press *Enable GPU acceleration* | the CUDA build of PyTorch (checksum verified) |
   | `huggingface.co` | only in source builds, once | the DINOv2 weights (the installed app ships them) |
+  | `api2.moxfield.com`, `archidekt.com`, `manabox.app` | only when you import a deck from a link | the public deck at that link |
+  | `json.edhrec.com` | only if you turn on *EDHREC suggestions* in a Commander deck | the commander's page (one request per commander, kept on your computer for a day); only the commander's name is sent |
 
 - **No telemetry, no analytics, no accounts.** The code contains no tracking and no secrets.
-- **The local server** listens on `127.0.0.1` only, protected by a per-session token, a `SameSite=Strict` cookie and a `Host` check. Links the app opens in your browser are limited to Scryfall and Cardmarket.
+- **The local server** listens on `127.0.0.1` only, protected by a per-session token, a `SameSite=Strict` cookie and a `Host` check. Links the app opens in your browser are limited to Scryfall, Cardmarket and EDHREC (its credit link).
 - **No arbitrary code execution:** the app does not use `eval`/`exec`, `os.system` or shell commands. The subprocesses are the app itself (started with `--gpu-selftest` to test a downloaded PyTorch when you enable the GPU, and again to restart after an update) and, only when an update has locked files to put in place, a `cmd.exe` running a short script the app writes to its data folder (`update/finish.cmd`) that moves those files and starts the app.
 - **Deleting files:** the app deletes only the scan captures it created, its own `gpu/` folder if you press Remove GPU support, and the old copies of the files an update replaced.
 - **Verifying a download:** release files are built by GitHub Actions from the public source, and `SHA256SUMS` lets you check them. The Windows binaries are not code-signed, and the in-app updater trusts the checksums published with the release (it catches a corrupt download, not a compromised release).
