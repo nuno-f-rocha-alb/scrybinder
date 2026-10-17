@@ -4,6 +4,9 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Added
+- Playtest tab on a deck: goldfish alone with a shuffled library, opening hand, London mulligan, turns, battlefield with tapping, graveyard, exile and the command zone.
+
 ## [0.6.8] — 2026-10-17
 
 ### Added
