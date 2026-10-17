@@ -128,3 +128,14 @@ def test_a_suggestion_shows_the_printing_you_own(db, tmp_path):
     collection.add(db, scryfall_id=c2, quantity=1)
     mine = suggest.suggestions(db, d, tmp_path, False)["cards"][0]
     assert mine["image_id"] == c2  # not the newest printing
+
+
+def test_suggestions_carry_color_and_mana_value_for_sorting(db, tmp_path):
+    (c1, o1), (c2, o2), *_ = _three(db)
+    _fit(db, o1, o2)
+    db.execute("UPDATE oracle_cards SET colors='[\"W\",\"U\"]', cmc=3 WHERE oracle_id=?", (o2,))
+    d = decks.create(db, "Cmd deck", "commander")
+    decks.add_card(db, d, o1, 1, board="commander")
+    collection.add(db, scryfall_id=c2, quantity=1)
+    got = suggest.suggestions(db, d, tmp_path, False)["cards"][0]
+    assert (got["colors"], got["cmc"]) == (["W", "U"], 3)

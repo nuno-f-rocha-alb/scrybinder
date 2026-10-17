@@ -53,8 +53,8 @@ def _fits(row, identity: set, in_deck: set) -> bool:
 def _card(row, have, image_id=None, **extra) -> dict:
     """A suggestion; its image is the printing you own when you own the card, else `image_id` (EDHREC's / the newest printing)."""
     h = have[row["oracle_id"]]
-    return {"oracle_id": row["oracle_id"], "name": row["name"], "mana_cost": row["mana_cost"], "type_line": row["type_line"],
-            "owned": h["owned"], "free": max(h["owned"] - h["assigned"], 0), "elsewhere": h["decks"], "image_id": h["print"] or image_id, **extra}
+    return {"oracle_id": row["oracle_id"], "name": row["name"], "mana_cost": row["mana_cost"], "cmc": row["cmc"], "colors": json.loads(row["colors"] or "[]"),
+            "type_line": row["type_line"], "owned": h["owned"], "free": max(h["owned"] - h["assigned"], 0), "elsewhere": h["decks"], "image_id": h["print"] or image_id, **extra}
 
 
 def suggestions(db, deck_id: int, data_dir, use_edhrec: bool) -> dict:
@@ -63,7 +63,7 @@ def suggestions(db, deck_id: int, data_dir, use_edhrec: bool) -> dict:
     cmd = _commanders(db, deck_id)
     identity = {c for r in cmd for c in json.loads(r["color_identity"] or "[]")}
     in_deck = {r[0] for r in db.execute("SELECT oracle_id FROM deck_cards WHERE deck_id=?", (deck_id,))}
-    cols = "o.oracle_id, o.name, o.mana_cost, o.type_line, o.color_identity, o.legalities"
+    cols = "o.oracle_id, o.name, o.mana_cost, o.cmc, o.type_line, o.colors, o.color_identity, o.legalities"
     if use_edhrec:
         data = edhrec.fetch(edhrec.slug([r["name"] for r in cmd]), data_dir)
         picked, seen = [], set()

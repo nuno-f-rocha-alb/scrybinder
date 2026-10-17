@@ -6,11 +6,17 @@ import { Select } from "./select";
 import { ManaCost } from "./mana";
 
 type Sug = {
-  oracle_id: string; name: string; mana_cost: string | null; type_line: string | null; image_id: string | null; category: string; category_key: string;
+  oracle_id: string; name: string; mana_cost: string | null; cmc: number | null; colors: string[]; type_line: string | null; image_id: string | null; category: string; category_key: string;
   inclusion: number | null; synergy: number | null; lift: number | null; owned: number; free: number; elsewhere: string[];
 };
 type Result = { source: "edhrec" | "collection"; stale: boolean; fetched?: number; slug?: string; commander: { names: string[]; num_decks?: number; salt?: number; rank?: number }; cards: Sug[] };
 
+const COLORS: [string, string][] = [["W", "White"], ["U", "Blue"], ["B", "Black"], ["R", "Red"], ["G", "Green"], ["M", "Multicolor"], ["C", "Colorless"]];
+/** WUBRG order, then multicolor, then colorless. */
+const colorKey = (c: Sug) => (c.colors.length === 0 ? "C" : c.colors.length > 1 ? "M" : c.colors[0]);
+const SORTS = [["popularity", "Popularity"], ["synergy", "Synergy"], ["name", "Name"], ["color", "Color"], ["cmc", "Mana value"], ["owned", "Owned first"]] as const;
+type SortBy = (typeof SORTS)[number][0];
+type GroupBy = "category" | "color" | "none";
 const pct = (v: number | null) => (v == null ? null : `${Math.round(v * 100)}%`);
 
 /** Card suggestions for a Commander deck: from EDHREC when you have turned it on (one request per commander, kept for a day), else from your
@@ -24,6 +30,8 @@ export default function Suggestions({ deckId, onAdded, toast }: { deckId: number
   const [freeOnly, setFreeOnly] = useState(false);
   const [cat, setCat] = useState("");
   const [q, setQ] = useState("");
+  const [sort, setSort] = useState<SortBy>("popularity");
+  const [groupBy, setGroupBy] = useState<GroupBy>("category");
 
   const load = useCallback((on: boolean) => {
     setBusy(true); setErr("");
@@ -35,8 +43,19 @@ export default function Suggestions({ deckId, onAdded, toast }: { deckId: number
     .then(() => { setRes((r) => r && { ...r, cards: r.cards.filter((x) => x.oracle_id !== c.oracle_id) }); toast(`${c.name} added to the deck`); onAdded(); }).catch((e) => toast(e.message, true));
 
   const cats = useMemo(() => [...new Map((res?.cards ?? []).map((c) => [c.category_key, c.category])).entries()], [res]);
+  const order = useMemo(() => new Map((res?.cards ?? []).map((c, i) => [c.oracle_id, i])), [res]);  // the order the server gave: EDHREC's, or by popularity
+  const cmp: Record<SortBy, (a: Sug, b: Sug) => number> = {
+    popularity: (a, b) => (b.inclusion ?? 0) - (a.inclusion ?? 0),
+    synergy: (a, b) => (b.synergy ?? -9) - (a.synergy ?? -9),
+    name: (a, b) => a.name.localeCompare(b.name),
+    color: (a, b) => COLORS.findIndex(([k]) => k === colorKey(a)) - COLORS.findIndex(([k]) => k === colorKey(b)),
+    cmc: (a, b) => (a.cmc ?? 0) - (b.cmc ?? 0),
+    owned: (a, b) => Number(b.free > 0) - Number(a.free > 0) || Number(b.owned > 0) - Number(a.owned > 0),
+  };
   const shown = (res?.cards ?? []).filter((c) => (!own || c.owned > 0) && (!freeOnly || c.free > 0) && (!cat || c.category_key === cat) && c.name.toLowerCase().includes(q.trim().toLowerCase()));
-  const groups = cats.map(([k, label]) => ({ k, label, cards: shown.filter((c) => c.category_key === k) })).filter((g) => g.cards.length);
+  shown.sort((a, b) => cmp[sort](a, b) || (order.get(a.oracle_id) ?? 0) - (order.get(b.oracle_id) ?? 0) || a.name.localeCompare(b.name));
+  const buckets: [string, string][] = groupBy === "category" ? cats : groupBy === "color" ? COLORS : [["", ""]];
+  const groups = buckets.map(([k, label]) => ({ k, label, cards: shown.filter((c) => (groupBy === "category" ? c.category_key : groupBy === "color" ? colorKey(c) : "") === k) })).filter((g) => g.cards.length);
 
   return (
     <div>
@@ -66,6 +85,11 @@ export default function Suggestions({ deckId, onAdded, toast }: { deckId: number
           <input className="field w-56" placeholder="Search in the suggestions…" aria-label="Search in the suggestions" value={q} onChange={(e) => setQ(e.target.value)} />
           {cats.length > 1 && <Select className="field w-auto" aria-label="Category" value={cat} onChange={(e) => setCat(e.target.value)}>
             <option value="">All categories</option>{cats.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</Select>}
+          <label className="flex items-center gap-1.5 text-xs text-mute">Sort
+            <Select className="field w-auto" value={sort} onChange={(e) => setSort(e.target.value as SortBy)}>{SORTS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</Select></label>
+          <label className="flex items-center gap-1.5 text-xs text-mute">Group
+            <Select className="field w-auto" value={groupBy} onChange={(e) => setGroupBy(e.target.value as GroupBy)}>
+              <option value="category">Category</option><option value="color">Color</option><option value="none">None</option></Select></label>
           <label className="flex cursor-pointer items-center gap-2 text-sm text-mute"><input type="checkbox" checked={own} onChange={(e) => setOwn(e.target.checked)} className="accent-[var(--color-accent)]" />Only what I own</label>
           <label className="flex cursor-pointer items-center gap-2 text-sm text-mute" title="Copies not assigned to any deck"><input type="checkbox" checked={freeOnly} onChange={(e) => setFreeOnly(e.target.checked)} className="accent-[var(--color-accent)]" />Only free copies</label>
           <span className="text-xs text-mute tabular-nums">{shown.length} cards</span>
@@ -73,8 +97,8 @@ export default function Suggestions({ deckId, onAdded, toast }: { deckId: number
       )}
       {res && !busy && shown.length === 0 && <div className="rounded-2xl border border-dashed border-line p-10 text-center text-mute">{res.cards.length ? "No suggestion matches these filters." : "Nothing to suggest right now."}</div>}
       {groups.map((g) => (
-        <section key={g.k} className="mb-6" aria-label={g.label}>
-          <h2 className="mb-2 border-b border-line pb-1 text-sm font-semibold">{g.label} <span className="text-xs font-normal text-mute tabular-nums">{g.cards.length}</span></h2>
+        <section key={g.k} className="mb-6" aria-label={g.label || "Suggestions"}>
+          {groupBy !== "none" && <h2 className="mb-2 border-b border-line pb-1 text-sm font-semibold">{g.label} <span className="text-xs font-normal text-mute tabular-nums">{g.cards.length}</span></h2>}
           <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-4">
             {g.cards.map((c) => (
               <div key={c.oracle_id} className="flex flex-col">
