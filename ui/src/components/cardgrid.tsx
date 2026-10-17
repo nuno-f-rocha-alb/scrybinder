@@ -8,6 +8,7 @@ const SIZE_KEY = "scrybinder.cardsize";
 const COLS_KEY = "scrybinder.cols";
 const COL_OPTIONS = [3, 4, 5, 6, 7, 8, 9, 10, 12, 14, 16];
 const GAP = 16;  // gap-4
+const TILE_MIN = 130, TILE_MAX = 380;  // the range of the size slider
 /** Image source closest to the real size in pixels (size × density): shrinking too much makes card text jagged. */
 export const sourceFor = (tilePx: number) => (tilePx * (window.devicePixelRatio || 1) > 420 ? "large" : "normal");
 
@@ -26,6 +27,28 @@ export function useCardGrid() {
     ro.observe(el);
     return () => ro.disconnect();
   }, [el]);
+  // Ctrl + mouse wheel over a page with a card grid: bigger / smaller cards (fewer / more columns when the columns are fixed)
+  useEffect(() => {
+    if (!el) return;
+    let last = 0;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey || !e.deltaY) return;
+      e.preventDefault();  // not the browser's page zoom
+      if (e.timeStamp - last < 60) return;  // one step per notch, not per event
+      last = e.timeStamp;
+      const bigger = e.deltaY < 0;
+      if (cols) {
+        const i = COL_OPTIONS.indexOf(cols), j = i < 0 ? COL_OPTIONS.findIndex((n) => n >= cols) : i;
+        const to = COL_OPTIONS[Math.min(COL_OPTIONS.length - 1, Math.max(0, j + (bigger ? -1 : 1)))];
+        setCols(to); write(COLS_KEY, to);
+      } else {
+        const to = Math.min(TILE_MAX, Math.max(TILE_MIN, tile + (bigger ? 10 : -10)));
+        setTile(to); write(SIZE_KEY, to);
+      }
+    };
+    window.addEventListener("wheel", onWheel, { passive: false });
+    return () => window.removeEventListener("wheel", onWheel);
+  }, [el, tile, cols]);
   // real width of each card: in "auto" the cards stretch to fill the row, so count the columns that fit
   const nCols = cols || Math.max(1, Math.floor((w + GAP) / (tile + GAP)));
   return {
@@ -47,7 +70,7 @@ export function GridControls({ g }: { g: ReturnType<typeof useCardGrid> }) {
       {!g.cols && (
         <label className="flex items-center gap-2 text-xs text-mute" title="Card size (double-click to reset)">
           <IconPhoto className="size-3.5" aria-hidden />
-          <input type="range" min={130} max={380} step={10} value={g.tile} aria-label="Card size" className="w-28 accent-[var(--color-accent)]"
+          <input type="range" min={TILE_MIN} max={TILE_MAX} step={10} value={g.tile} aria-label="Card size" className="w-28 accent-[var(--color-accent)]"
             onChange={(e) => g.setTileSize(+e.target.value)} onDoubleClick={() => g.setTileSize(autoSize())} />
           <IconPhotoFilled className="size-5" aria-hidden />
         </label>

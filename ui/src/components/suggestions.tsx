@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { IconExternalLink, IconPlus } from "@tabler/icons-react";
 import { api } from "../api";
-import { CardImg, openExternal } from "./ui";
+import { CardImg, HoverZoom, openExternal } from "./ui";
+import { GridControls, sourceFor, useCardGrid } from "./cardgrid";
 import { Select } from "./select";
 import { ManaCost } from "./mana";
 
@@ -30,6 +31,7 @@ export default function Suggestions({ deckId, onAdded, toast }: { deckId: number
   const [freeOnly, setFreeOnly] = useState(false);
   const [cat, setCat] = useState("");
   const [q, setQ] = useState("");
+  const grid = useCardGrid();
   const [sort, setSort] = useState<SortBy>("popularity");
   const [groupBy, setGroupBy] = useState<GroupBy>("category");
 
@@ -92,20 +94,22 @@ export default function Suggestions({ deckId, onAdded, toast }: { deckId: number
               <option value="category">Category</option><option value="color">Color</option><option value="none">None</option></Select></label>
           <label className="flex cursor-pointer items-center gap-2 text-sm text-mute"><input type="checkbox" checked={own} onChange={(e) => setOwn(e.target.checked)} className="accent-[var(--color-accent)]" />Only what I own</label>
           <label className="flex cursor-pointer items-center gap-2 text-sm text-mute" title="Copies not assigned to any deck"><input type="checkbox" checked={freeOnly} onChange={(e) => setFreeOnly(e.target.checked)} className="accent-[var(--color-accent)]" />Only free copies</label>
+          <GridControls g={grid} />
           <span className="text-xs text-mute tabular-nums">{shown.length} cards</span>
         </div>
       )}
       {res && !busy && shown.length === 0 && <div className="rounded-2xl border border-dashed border-line p-10 text-center text-mute">{res.cards.length ? "No suggestion matches these filters." : "Nothing to suggest right now."}</div>}
+      <div ref={grid.setGridEl}>
       {groups.map((g) => (
         <section key={g.k} className="mb-6" aria-label={g.label || "Suggestions"}>
           {groupBy !== "none" && <h2 className="mb-2 border-b border-line pb-1 text-sm font-semibold">{g.label} <span className="text-xs font-normal text-mute tabular-nums">{g.cards.length}</span></h2>}
-          <div className="grid grid-cols-[repeat(auto-fill,minmax(150px,1fr))] gap-4">
+          <div className="grid gap-4" style={grid.style}>
             {g.cards.map((c) => (
               <div key={c.oracle_id} className="flex flex-col">
-                <div className="relative">
-                  {c.image_id ? <CardImg id={c.image_id} size="normal" className="shadow-lg shadow-black/50" /> : <div className="flex aspect-[63/88] items-center justify-center rounded-[4.5%] bg-raised p-2 text-center text-xs text-mute">{c.name}</div>}
+                <HoverZoom className="relative" zoom={c.image_id ? <CardImg id={c.image_id} size="large" /> : null}>
+                  {c.image_id ? <CardImg id={c.image_id} size={sourceFor(grid.tilePx)} className="shadow-lg shadow-black/50" /> : <div className="flex aspect-[63/88] items-center justify-center rounded-[4.5%] bg-raised p-2 text-center text-xs text-mute">{c.name}</div>}
                   {c.inclusion != null && <span className="absolute right-1.5 top-1.5 rounded-full bg-black/80 px-2 py-0.5 text-xs font-semibold tabular-nums" title="Share of the decks of this commander that play it">{pct(c.inclusion)}</span>}
-                </div>
+                </HoverZoom>
                 <div className="mt-2 flex items-start justify-between gap-1 text-sm font-medium"><span className="min-w-0 truncate" title={c.name}>{c.name}</span><ManaCost cost={c.mana_cost} /></div>
                 <div className={`text-xs ${c.owned ? "text-ok" : "text-mute"}`}>
                   {c.owned ? `You own ${c.owned}${c.free < c.owned ? ` · ${c.free} free` : ""}` : "Not in your collection"}
@@ -118,6 +122,7 @@ export default function Suggestions({ deckId, onAdded, toast }: { deckId: number
           </div>
         </section>
       ))}
+      </div>
     </div>
   );
 }
