@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Combo, Select } from "../components/select";
 import { IconCards, IconChecklist, IconCheck, IconFolderPlus, IconLayoutGrid, IconList, IconSearch, IconStack2 } from "@tabler/icons-react";
 import { api, ApiError, CONDITIONS, Collection as Coll, eur, FINISH, GROUPS, GroupBy, LANGS, Loc, qsl, Row, useGroup } from "../api";
 import { Badge, Blocked, CardImg, Drawer, ExtLinks, Field, Hit, Modal, useToast } from "../components/ui";
@@ -9,7 +10,7 @@ import DeckPicker from "../components/deckpicker";
 import CardDetails, { CardInfoLoader } from "../components/carddetails";
 import LocationPicker from "../components/locationpicker";
 
-const PAGE = 60;
+const ALL = 100000;  // the whole collection at once: the images load as they scroll into view
 const placeName = (l: string) => l || "(no location)";
 const cap = (s: string) => (s ? s[0].toUpperCase() + s.slice(1) : s);
 /** The row as one place of it (a row joined from several locations has the first row's fields, but the total quantity): what is edited, moved or deleted. */
@@ -29,8 +30,7 @@ export default function Collection({ initialSet, initialLocation, onOpenDeck }: 
   const [sort, setSort] = useState("name");
   const [view, setView] = useState<"grid" | "table">(() => (localStorage.getItem("scrybinder.view") as "grid") || "grid");
   const [data, setData] = useState<Coll | null>(null);
-  const [limit, setLimit] = useState(PAGE);
-  const [locs, setLocs] = useState<Loc[]>([]);
+    const [locs, setLocs] = useState<Loc[]>([]);
   const [edit, setEdit] = useState<Row | null>(null);
   const grid = useCardGrid();
   const [selecting, setSelecting] = useState(false);
@@ -49,16 +49,15 @@ export default function Collection({ initialSet, initialLocation, onOpenDeck }: 
 
   const loadLocs = useCallback(() => api<Loc[]>("/locations").then(setLocs).catch(() => {}), []);
   const load = useCallback(() => {
-    api<Coll>("/collection?" + qsl({ q, set: setCode, finish, sort, limit, group: groupBy }, locations)).then(setData).catch((e) => toast(e.message, true));
+    api<Coll>("/collection?" + qsl({ q, set: setCode, finish, sort, limit: ALL, group: groupBy }, locations)).then(setData).catch((e) => toast(e.message, true));
     loadLocs();
-  }, [q, setCode, locations, finish, sort, limit, groupBy]);
+  }, [q, setCode, locations, finish, sort, groupBy]);
   useEffect(() => { const t = setTimeout(load, 150); return () => clearTimeout(t); }, [load]);
   useEffect(() => {
     if (!setCode) { setProg(null); return; }
     api<{ code: string; owned: number; total: number; percent: number }[]>("/sets?" + qsl({ q: setCode, hide_empty: "false", group: group ? "true" : "false" }, locations))
       .then((r) => setProg(r.find((s) => s.code === setCode) ?? null)).catch(() => setProg(null));
   }, [setCode, locations, group, data?.total_cards]);
-  useEffect(() => { setLimit(PAGE); }, [q, setCode, locations, finish, sort, groupBy]);
   useEffect(() => { setSel(new Set()); lastPick.current = null; }, [q, setCode, locations, finish, groupBy]);  // the selection belongs to the current filter
   useEffect(() => {
     if (!selecting) return;
@@ -151,19 +150,19 @@ export default function Collection({ initialSet, initialLocation, onOpenDeck }: 
           </div>
           <LocationPicker locs={locs} value={locations} onChange={setLocations} onRemove={setDelLoc} onMerge={setMerging} />
           <button className="btn-ghost" title="Make a location, empty, to move cards into" onClick={() => setNewLoc("")}><IconFolderPlus className="size-4" />New location</button>
-          <select className="field w-auto" value={finish} onChange={(e) => setFinish(e.target.value)} aria-label="Finish">
+          <Select className="field w-auto" value={finish} onChange={(e) => setFinish(e.target.value)} aria-label="Finish">
             <option value="">All finishes</option>
             {Object.entries(FINISH).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
-          </select>
+          </Select>
           <label className="flex items-center gap-1.5 text-xs text-mute">Sort
-            <select className="field w-auto" value={sort} onChange={(e) => setSort(e.target.value)}>
+            <Select className="field w-auto" value={sort} onChange={(e) => setSort(e.target.value)}>
               <option value="name">Name</option><option value="set">Set</option>
               <option value="price">Price</option><option value="added">Most recent</option>
-            </select></label>
+            </Select></label>
           <label className="flex items-center gap-1.5 text-xs text-mute" title="Cards that are in several locations are one card, except when grouped by location">Group
-            <select className="field w-auto" value={groupBy} onChange={(e) => setGroupBy(e.target.value as GroupBy)}>
+            <Select className="field w-auto" value={groupBy} onChange={(e) => setGroupBy(e.target.value as GroupBy)}>
               {GROUPS.map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-            </select></label>
+            </Select></label>
           {view === "grid" && <GridControls g={grid} />}
           <button className={selecting ? "btn-primary" : "btn-ghost"} aria-pressed={selecting}
             onClick={() => { setSelecting(!selecting); setSel(new Set()); }}><IconChecklist className="size-4" />Select</button>
@@ -251,12 +250,6 @@ export default function Collection({ initialSet, initialLocation, onOpenDeck }: 
               ])}
             </tbody>
           </table>
-        </div>
-      )}
-
-      {data && data.total_rows > data.rows.length && (
-        <div className="mt-6 text-center">
-          <button className="btn-ghost" onClick={() => setLimit(limit + PAGE * 2)}>Show more ({data.rows.length} of {data.total_rows})</button>
         </div>
       )}
 
@@ -396,14 +389,13 @@ function EditModal({ row, locations, onClose, onDone, onError, onSwitch, onOpenD
           </div>}
           <div className="grid grid-cols-2 gap-3">
             <Field label="Quantity"><input type="number" min={1} className="field" value={f.quantity} onChange={(e) => set("quantity", Math.max(1, +e.target.value))} /></Field>
-            <Field label="Finish"><select className="field" value={f.finish} onChange={(e) => set("finish", e.target.value as Row["finish"])}>
-              {Object.entries(FINISH).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
-            <Field label="Condition"><select className="field" value={f.condition} onChange={(e) => set("condition", e.target.value as Row["condition"])}>
-              {CONDITIONS.map((c) => <option key={c}>{c}</option>)}</select></Field>
-            <Field label="Language"><select className="field" value={f.language} onChange={(e) => set("language", e.target.value)}>
-              {Object.entries(LANGS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
-            <Field label="Location"><input className="field" list="locs" value={f.location} onChange={(e) => set("location", e.target.value)} />
-              <datalist id="locs">{locations.map((l) => <option key={l} value={l} />)}</datalist></Field>
+            <Field label="Finish"><Select className="field" value={f.finish} onChange={(e) => set("finish", e.target.value as Row["finish"])}>
+              {Object.entries(FINISH).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select></Field>
+            <Field label="Condition"><Select className="field" value={f.condition} onChange={(e) => set("condition", e.target.value as Row["condition"])}>
+              {CONDITIONS.map((c) => <option key={c}>{c}</option>)}</Select></Field>
+            <Field label="Language"><Select className="field" value={f.language} onChange={(e) => set("language", e.target.value)}>
+              {Object.entries(LANGS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select></Field>
+            <Field label="Location"><Combo className="field" suggestions={locations} value={f.location} onChange={(v) => set("location", v)} /></Field>
             <Field label="Purchase price (€)"><input type="number" step="0.01" min={0} className="field" value={f.purchase_price ?? ""}
               onChange={(e) => set("purchase_price", e.target.value === "" ? null : +e.target.value)} /></Field>
             <Field label="Purchase date"><input type="date" className="field" value={f.purchase_date?.slice(0, 10) ?? ""} onChange={(e) => set("purchase_date", e.target.value || null)} /></Field>
@@ -412,7 +404,7 @@ function EditModal({ row, locations, onClose, onDone, onError, onSwitch, onOpenD
           <Field label="Notes"><textarea className="field min-h-16" value={f.notes} onChange={(e) => set("notes", e.target.value)} /></Field>
 
           <div className="mt-4 flex flex-wrap items-end gap-2 rounded-xl border border-line bg-bg p-3">
-            <Field label="Move to"><input className="field w-44" list="locs" value={moveTo} onChange={(e) => setMoveTo(e.target.value)} placeholder="Location" /></Field>
+            <Field label="Move to"><Combo className="field w-44" suggestions={locations} value={moveTo} onChange={setMoveTo} placeholder="Location" /></Field>
             <Field label="Quantity"><input type="number" min={1} max={row.quantity} className="field w-20" value={moveQty} onChange={(e) => setMoveQty(+e.target.value)} /></Field>
             <button className="btn-ghost" disabled={!moveTo || moveTo === row.location}
               onClick={() => run((r) => api(`/collection/${row.id}/move${r}`, { method: "POST", body: JSON.stringify({ location: moveTo, quantity: moveQty }) }), `Moved ${moveQty} to ${moveTo}`)}>Move</button>

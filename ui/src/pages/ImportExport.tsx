@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Combo, Select } from "../components/select";
 import { IconDownload, IconUpload } from "@tabler/icons-react";
 import { api, qs } from "../api";
 import { useToast } from "../components/ui";
@@ -52,13 +53,12 @@ export default function ImportExport() {
           ? <>Choose the CSV exported from ManaBox. Cards are linked by <code>scryfall_id</code>, so the exact printing is kept.</>
           : <>Choose the collection CSV exported from Moxfield. It has no <code>scryfall_id</code>, so cards are matched by edition and collector number.</>} Importing the same file twice adds the quantities up.</p>
         <div className="flex max-w-2xl flex-wrap items-end gap-3 rounded-2xl border border-line bg-surface p-4">
-          <select className="field w-auto" value={fmt} onChange={(e) => { setFmt(e.target.value as typeof fmt); setRes(null); }} aria-label="Import format">
-            <option value="manabox">ManaBox</option><option value="moxfield">Moxfield</option></select>
+          <Select className="field w-auto" value={fmt} onChange={(e) => { setFmt(e.target.value as typeof fmt); setRes(null); }} aria-label="Import format">
+            <option value="manabox">ManaBox</option><option value="moxfield">Moxfield</option></Select>
           <label className="btn-ghost cursor-pointer"><IconUpload className="size-4" />{file ? file.name : "Choose CSV file"}
             <input type="file" accept=".csv,text/csv" className="sr-only" onChange={(e) => pick(e.target.files?.[0] ?? null)} /></label>
           <div className="min-w-48 flex-1"><span className="mb-1 block text-xs font-medium text-mute">Location for the imported cards</span>
-            <input className="field" list="iolocs" value={loc} onChange={(e) => setLoc(e.target.value)} placeholder="e.g. Red boxes" />
-            <datalist id="iolocs">{locs.filter(Boolean).map((l) => <option key={l} value={l} />)}</datalist></div>
+            <Combo className="field" suggestions={locs.filter(Boolean)} value={loc} onChange={setLoc} placeholder="e.g. Red boxes" /></div>
           <button className="btn-primary" disabled={!file || busy} onClick={run}>{busy ? "Importing…" : "Import"}</button>
         </div>
         {res && (
@@ -75,10 +75,10 @@ export default function ImportExport() {
       <section>
         <h2 className="mb-1 text-2xl font-semibold tracking-tight">Export</h2>
         <div className="mb-4 flex items-center gap-2 text-sm text-mute">Location:
-          <select className="field w-auto" value={exportLoc ?? "*"} onChange={(e) => setExportLoc(e.target.value === "*" ? undefined : e.target.value)}>
+          <Select className="field w-auto" value={exportLoc ?? "*"} onChange={(e) => setExportLoc(e.target.value === "*" ? undefined : e.target.value)}>
             <option value="*">Whole collection</option>
             {locs.map((l) => <option key={l} value={l}>{l || "(no location)"}</option>)}
-          </select></div>
+          </Select></div>
         <div className="grid max-w-4xl gap-4 sm:grid-cols-3">
           {FORMATS.map((f) => (
             <button key={f.id} type="button" onClick={() => exportCsv(f.id)}

@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Select } from "./select";
 import { IconAlertTriangle, IconCheck, IconInfoCircle, IconX } from "@tabler/icons-react";
 import { eur } from "../api";
 import { CardFilter, DeckStats, Format, Legality, atLeast } from "../decks";
@@ -137,15 +138,15 @@ function Odds({ stats }: { stats: DeckStats }) {
         <label className="flex items-center gap-1.5 text-mute">At least
           <input type="number" min={1} max={7} className="field !w-16" value={needText} onChange={(e) => setNeedText(e.target.value)} onBlur={() => setNeedText(String(need))} /></label>
         <label className="flex items-center gap-1.5 text-mute">of
-          <select className="field w-auto" value={what} onChange={(e) => setWhat(e.target.value)}>
+          <Select className="field w-auto" value={what} onChange={(e) => setWhat(e.target.value)}>
             <option value="lands">Lands</option>
             {COLORS.filter((c) => stats.land_sources[c]).map((c) => <option key={c} value={c}>{NAME[c]} sources</option>)}
-          </select></label>
+          </Select></label>
         <label className="flex items-center gap-1.5 text-mute">by turn
           <input type="number" min={1} max={10} className="field !w-16" value={turnText} onChange={(e) => setTurnText(e.target.value)} onBlur={() => setTurnText(String(turn))} /></label>
-        <select className="field w-auto" aria-label="On the play or on the draw" value={play ? "play" : "draw"} onChange={(e) => setPlay(e.target.value === "play")}>
+        <Select className="field w-auto" aria-label="On the play or on the draw" value={play ? "play" : "draw"} onChange={(e) => setPlay(e.target.value === "play")}>
           <option value="play">On the play</option><option value="draw">On the draw</option>
-        </select>
+        </Select>
         <span className="ml-auto text-2xl font-semibold tabular-nums" aria-live="polite">{pct(p)}</span>
       </div>
       <ol className="grid grid-cols-5 gap-2 sm:grid-cols-10" aria-label="The same chance on each turn">

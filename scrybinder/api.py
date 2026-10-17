@@ -481,7 +481,7 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
     @app.get("/api/collection")
     def coll(q: str = "", set: str = "", location: list[str] | None = Query(None), finish: str = "", language: str = "",
              sort: str = "name", limit: int = 100, offset: int = 0, group: str = "location"):
-        return collection.search(db, q, set, location, finish, language, sort, min(limit, 500), offset, group)
+        return collection.search(db, q, set, location, finish, language, sort, min(limit, 100000), offset, group)
 
     @app.get("/api/locations")
     def locs():

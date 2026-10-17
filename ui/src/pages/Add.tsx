@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Combo, Select } from "../components/select";
 import { IconSearch } from "@tabler/icons-react";
 import { api, CONDITIONS, eur, FINISH, LANGS, Print, qs } from "../api";
 import { Badge, CardImg, ExtLinks, Field, useToast } from "../components/ui";
@@ -116,16 +117,15 @@ export default function Add() {
                 <div className="text-xs text-mute">{picked.set_name} · #{picked.collector_number} · {eur(price(picked))}</div>
                 <div className="mt-1"><ExtLinks id={picked.id} cardmarketId={picked.cardmarket_id} /></div></div>
               <div className="grid grid-cols-2 gap-3">
-                <Field label="Finish"><select className="field" value={form.finish} onChange={(e) => setForm({ ...form, finish: e.target.value })}>
-                  {finishes(picked).map((f) => <option key={f} value={f}>{FINISH[f] ?? f}</option>)}</select></Field>
+                <Field label="Finish"><Select className="field" value={form.finish} onChange={(e) => setForm({ ...form, finish: e.target.value })}>
+                  {finishes(picked).map((f) => <option key={f} value={f}>{FINISH[f] ?? f}</option>)}</Select></Field>
                 <Field label="Quantity"><input type="number" min={1} className="field" value={form.quantity} onChange={(e) => setForm({ ...form, quantity: Math.max(1, +e.target.value) })} /></Field>
-                <Field label="Condition"><select className="field" value={form.condition} onChange={(e) => setForm({ ...form, condition: e.target.value })}>
-                  {CONDITIONS.map((c) => <option key={c}>{c}</option>)}</select></Field>
-                <Field label="Language"><select className="field" value={form.language} onChange={(e) => setForm({ ...form, language: e.target.value })}>
-                  {Object.entries(LANGS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></Field>
+                <Field label="Condition"><Select className="field" value={form.condition} onChange={(e) => setForm({ ...form, condition: e.target.value })}>
+                  {CONDITIONS.map((c) => <option key={c}>{c}</option>)}</Select></Field>
+                <Field label="Language"><Select className="field" value={form.language} onChange={(e) => setForm({ ...form, language: e.target.value })}>
+                  {Object.entries(LANGS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</Select></Field>
               </div>
-              <Field label="Location"><input className="field" list="addlocs" value={form.location} onChange={(e) => setForm({ ...form, location: e.target.value })} placeholder="e.g. Box 3" />
-                <datalist id="addlocs">{locs.map((l) => <option key={l} value={l} />)}</datalist></Field>
+              <Field label="Location"><Combo className="field" suggestions={locs} value={form.location} onChange={(v) => setForm({ ...form, location: v })} placeholder="e.g. Box 3" /></Field>
               <Field label="Purchase price (€, optional)"><input type="number" step="0.01" min={0} className="field" value={form.price} onChange={(e) => setForm({ ...form, price: e.target.value })} /></Field>
               <button className="btn-primary w-full" onClick={add}>Add (Enter)</button>
             </div>

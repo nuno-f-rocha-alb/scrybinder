@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Select } from "./select";
 import { IconCheck, IconChevronDown, IconChevronRight, IconMinus, IconPlus, IconTrash } from "@tabler/icons-react";
 import { api, eur } from "../api";
 import { BOARDS, BOARD_LABEL, DeckCard, Group, Preview, View, shownPrints, toPreview } from "../decks";
@@ -87,10 +88,10 @@ function ListRow({ c, ctx }: { c: DeckCard; ctx: Ctx }) {
       <span className="justify-self-end"><ManaCost cost={c.mana_cost} /></span>
       <AssignBtn c={c} ctx={ctx} className="px-1 text-left hover:bg-line"><StatusBadge status={c.status} title={elsewhereHint(c)} /></AssignBtn>
       <span className="hidden text-right text-xs text-mute tabular-nums md:block">{eur(c.price)}</span>
-      <select className="field hidden !w-auto !px-1.5 !py-0.5 text-xs md:block" aria-label={`Board of ${c.name}`} value={c.board} onClick={(e) => e.stopPropagation()}
+      <Select className="field hidden !w-auto !px-1.5 !py-0.5 text-xs md:block" aria-label={`Board of ${c.name}`} value={c.board} onClick={(e) => e.stopPropagation()}
         onChange={(e) => o.board(e.target.value)}>
         {BOARDS.map((b) => <option key={b} value={b}>{BOARD_LABEL[b]}</option>)}
-      </select>
+      </Select>
     </li>
   );
 }

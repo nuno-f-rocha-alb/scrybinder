@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { Select } from "../components/select";
 import { IconAlertTriangle, IconCheck, IconChevronRight, IconFolder, IconFolderPlus, IconPencil, IconPlus, IconTrash } from "@tabler/icons-react";
 import { api, eur, img } from "../api";
 import { DeckInfo, FORMATS, Folder, Format, Legality, exportDeckList } from "../decks";
@@ -52,10 +53,10 @@ function DeckCard({ d, legality, folders, onOpen, onMove, onMenu }: { d: DeckInf
       </button>
       <label className="flex items-center gap-2 px-4 pb-3 text-xs text-mute">
         <IconFolder className="size-3.5 shrink-0" aria-hidden /><span className="sr-only">Folder of {d.name}</span>
-        <select className="field !px-2 !py-1 text-xs" value={d.folder_id ?? ""} onChange={(e) => onMove(e.target.value === "" ? null : Number(e.target.value))}>
+        <Select className="field !px-2 !py-1 text-xs" value={d.folder_id ?? ""} onChange={(e) => onMove(e.target.value === "" ? null : Number(e.target.value))}>
           <option value="">No folder</option>
           {folders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-        </select>
+        </Select>
       </label>
     </div>
   );
@@ -194,16 +195,16 @@ export default function Decks({ target }: { target?: { deckId: number; oracleId?
           <form className="space-y-4" onSubmit={(e) => { e.preventDefault(); create(); }}>
             <Field label="Name"><input className="field" autoFocus value={name} onChange={(e) => setName(e.target.value)} maxLength={120} /></Field>
             <Field label="Format">
-              <select className="field" value={format} onChange={(e) => setFormat(e.target.value as Format)}>
+              <Select className="field" value={format} onChange={(e) => setFormat(e.target.value as Format)}>
                 {FORMATS.map((f) => <option key={f} value={f}>{label(f)}</option>)}
-              </select>
+              </Select>
             </Field>
             {folders.length > 0 && (
               <Field label="Folder">
-                <select className="field" value={folder ?? ""} onChange={(e) => setFolder(e.target.value === "" ? null : Number(e.target.value))}>
+                <Select className="field" value={folder ?? ""} onChange={(e) => setFolder(e.target.value === "" ? null : Number(e.target.value))}>
                   <option value="">No folder</option>
                   {folders.map((f) => <option key={f.id} value={f.id}>{f.name}</option>)}
-                </select>
+                </Select>
               </Field>
             )}
             <Field label="Or a link to a public deck on Moxfield, Archidekt or ManaBox">

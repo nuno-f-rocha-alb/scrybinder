@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import { Select } from "./select";
 import { api, eur, FINISH } from "../api";
 import { Badge, CardImg, HoverZoom, Modal } from "./ui";
 
@@ -61,10 +62,10 @@ export default function PrintingDialog({ deckId, oracleId, name, current, curren
     <Modal title={`Switch printing of ${name}`} onClose={onClose}>
       <div className="mb-4 flex flex-wrap items-center gap-3">
         <h2 className="text-lg font-semibold">Switch printing</h2><span className="text-mute">{name}</span>
-        <select className="field !w-52 !py-1 ml-auto text-xs" aria-label="Filter by set" value={set} onChange={(e) => setSet(e.target.value)}>
+        <Select className="field !w-52 !py-1 ml-auto text-xs" aria-label="Filter by set" value={set} onChange={(e) => setSet(e.target.value)}>
           <option value="">All sets</option>
           {sets.map(([code, n]) => <option key={code} value={code}>{n} ({code.toUpperCase()})</option>)}
-        </select>
+        </Select>
       </div>
       {!prints && !err && <p className="text-sm text-mute">Loading…</p>}
       {owned.length > 0 && <section aria-label="Owned">

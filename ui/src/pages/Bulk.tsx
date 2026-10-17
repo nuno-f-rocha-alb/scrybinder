@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Combo, Select } from "../components/select";
 import { IconPencil, IconTrash, IconX } from "@tabler/icons-react";
 import { api, ApiError, CONDITIONS, FINISH, LANGS } from "../api";
 import { Blocked, Modal } from "../components/ui";
@@ -71,12 +72,12 @@ export function BulkEdit({ ids, locations, onClose, onDone }: { ids: number[]; l
             <label className="mb-2 flex cursor-pointer items-center gap-2 text-sm font-medium">
               <input type="checkbox" checked={!!on[f.key]} onChange={(e) => setOn({ ...on, [f.key]: e.target.checked })} className="accent-[var(--color-accent)]" />Change {f.label.toLowerCase()}
             </label>
-            {f.kind === "text" && <><input className="field" list="bulk-locs" disabled={!on[f.key]} value={val[f.key] ?? ""} placeholder="empty = no location"
-              onChange={(e) => setVal({ ...val, [f.key]: e.target.value })} /><datalist id="bulk-locs">{locations.map((l) => <option key={l} value={l} />)}</datalist></>}
-            {f.kind === "select" && <select className="field" disabled={!on[f.key]} value={val[f.key]} onChange={(e) => setVal({ ...val, [f.key]: e.target.value })}>
-              {f.options!.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>}
-            {f.kind === "bool" && <select className="field" disabled={!on[f.key]} value={val[f.key]} onChange={(e) => setVal({ ...val, [f.key]: e.target.value })}>
-              <option value="1">Yes</option><option value="0">No</option></select>}
+            {f.kind === "text" && <><Combo className="field" suggestions={locations} disabled={!on[f.key]} value={val[f.key] ?? ""} placeholder="empty = no location"
+              onChange={(v) => setVal({ ...val, [f.key]: v })} /></>}
+            {f.kind === "select" && <Select className="field" disabled={!on[f.key]} value={val[f.key]} onChange={(e) => setVal({ ...val, [f.key]: e.target.value })}>
+              {f.options!.map(([k, l]) => <option key={k} value={k}>{l}</option>)}</Select>}
+            {f.kind === "bool" && <Select className="field" disabled={!on[f.key]} value={val[f.key]} onChange={(e) => setVal({ ...val, [f.key]: e.target.value })}>
+              <option value="1">Yes</option><option value="0">No</option></Select>}
             {f.kind === "number" && <input type="number" min={0} step="0.01" className="field" disabled={!on[f.key]} value={val[f.key] ?? ""} placeholder="empty = no price"
               onChange={(e) => setVal({ ...val, [f.key]: e.target.value })} />}
             {f.kind === "area" && <textarea className="field min-h-16" disabled={!on[f.key]} value={val[f.key] ?? ""} onChange={(e) => setVal({ ...val, [f.key]: e.target.value })} />}

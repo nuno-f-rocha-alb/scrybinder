@@ -4,6 +4,10 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Changed
+- Collection: all your cards load at once; the "Show more" button stopped at 500 cards and is gone.
+- Dropdowns and location suggestions use the app's own styled lists instead of the browser's.
+
 ## [0.6.6] — 2026-10-16
 
 ### Added
