@@ -4,6 +4,8 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+## [0.6.8] — 2026-10-17
+
 ### Added
 - Suggestions can be sorted (popularity, synergy, name, color, mana value, owned first) and grouped (category, color, none).
 
