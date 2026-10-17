@@ -4,6 +4,8 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+## [0.7.1] — 2026-10-17
+
 ### Added
 - Playtest: the table follows the tournament layout (nonlands on top, lands below, tapped cards sideways), with the library, graveyard, exile and command zone on one side and a right-click menu to move cards.
 - Playtest: search the library (to fetch a land with a fetch land, a tutor...) and shuffle it.
