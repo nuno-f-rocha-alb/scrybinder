@@ -5,6 +5,7 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 ## [Unreleased]
 
 ### Added
+- Playtest tab on a deck: goldfish alone with a shuffled library, opening hand, London mulligan, turns, battlefield with tapping, graveyard, exile and the command zone.
 - Card size: Ctrl + mouse wheel over any card grid makes the cards bigger or smaller (fewer or more columns when the columns are fixed).
 - Suggestions: a card size / columns control, and the card zooms when you hover it.
 
