@@ -199,6 +199,24 @@ def search(db, q="", set_code="", location=None, finish="", language="", sort="n
     return {"rows": out, "total_rows": tot, "total_cards": agg["cards"], "total_value": round(agg["value"], 2)}
 
 
+def record_snapshot(db) -> dict:
+    """Today's value of the whole collection (the unfiltered total of `search`: proxies included, unknown prices as 0); a second
+    call the same day replaces the first."""
+    agg = db.execute(f"SELECT COALESCE(SUM(c.quantity),0) AS cards, COALESCE(SUM(c.quantity*({_PRICE})),0) AS value"
+                     " FROM collection c JOIN cards k ON k.id=c.scryfall_id").fetchone()
+    today = db.execute("SELECT strftime('%Y-%m-%d','now')").fetchone()[0]
+    value = round(agg["value"], 2)
+    with db:
+        db.execute("INSERT INTO price_snapshots (date, location, total_value, total_cards) VALUES (?, '', ?, ?)"
+                   " ON CONFLICT(date, location) DO UPDATE SET total_value=excluded.total_value, total_cards=excluded.total_cards,"
+                   " created_at=strftime('%Y-%m-%dT%H:%M:%SZ','now')", (today, value, agg["cards"]))
+    return {"date": today, "total_value": value, "total_cards": agg["cards"]}
+
+
+def value_history(db) -> list[dict]:
+    return [dict(r) for r in db.execute("SELECT date, total_value, total_cards FROM price_snapshots WHERE location='' ORDER BY date")]
+
+
 def set_progress(db, location=None, q="", hide_empty=True, group=False) -> list[dict]:
     """Per set: printings you own / total non-digital printings in the bulk.
     group=True: the same card (oracle_id) with different art/frames counts as 1."""

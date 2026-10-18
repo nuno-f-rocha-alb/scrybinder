@@ -7,6 +7,7 @@ import { GridControls, sourceFor, useCardGrid } from "../components/cardgrid";
 import { BulkBar, BulkDelete, BulkEdit } from "./Bulk";
 import { MenuItem, nameAndLinks, useContextMenu } from "../components/contextmenu";
 import DeckPicker from "../components/deckpicker";
+import ValueHistory from "../components/valuehistory";
 import CardDetails, { CardInfoLoader } from "../components/carddetails";
 import LocationPicker from "../components/locationpicker";
 
@@ -142,6 +143,7 @@ export default function Collection({ initialSet, initialLocation, onOpenDeck }: 
               value <b className="text-gold">{eur(data.total_value)}</b>
             </p>
           )}
+          <ValueHistory current={data?.total_value} />
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <div className="relative">
