@@ -635,6 +635,26 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
         _wrap(decks.delete, db, deck_id)
         return {"ok": True}
 
+    @app.get("/api/decks/{deck_id}/snapshots")
+    def deck_snapshots(deck_id: int):
+        return _wrap(decks.snapshots, db, deck_id)
+
+    @app.post("/api/decks/{deck_id}/snapshots")
+    def deck_snapshot_create(deck_id: int, body: dict = Body(...)):
+        return {"id": _wrap(decks.save_snapshot, db, deck_id, body.get("name"))}
+
+    @app.delete("/api/decks/{deck_id}/snapshots/{snapshot_id}")
+    def deck_snapshot_delete(deck_id: int, snapshot_id: int):
+        _wrap(decks.delete_snapshot, db, deck_id, snapshot_id)
+        return {"ok": True}
+
+    @app.get("/api/decks/{deck_id}/compare")
+    def deck_compare(deck_id: int, base: str = "latest", target: str = "current"):
+        if not all(v in ("latest", "current") or v.isdigit() for v in (base, target)):
+            raise HTTPException(422, "base and target: current, latest or a snapshot id")
+        pick = lambda v: int(v) if v.isdigit() else v
+        return _wrap(decks.compare, db, deck_id, pick(base), pick(target))
+
     @app.get("/api/decks/{deck_id}/legality")
     def decks_legality(deck_id: int, reference: str | None = None):
         return _wrap(decks.legality, db, deck_id, reference)

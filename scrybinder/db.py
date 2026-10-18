@@ -112,6 +112,15 @@ CREATE TABLE IF NOT EXISTS deck_cards (  -- scryfall_id is the preferred printin
     quantity INTEGER NOT NULL CHECK (quantity > 0), board TEXT NOT NULL DEFAULT 'main' CHECK (board IN ('main','side','commander','maybe')),
     finish TEXT  -- the finish of the preferred printing (NULL = not chosen)
 );
+CREATE TABLE IF NOT EXISTS deck_snapshots (  -- a saved copy of a deck's card list, to compare later
+    id INTEGER PRIMARY KEY, deck_id INTEGER NOT NULL REFERENCES decks(id) ON DELETE CASCADE, name TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+CREATE TABLE IF NOT EXISTS deck_snapshot_cards (
+    snapshot_id INTEGER NOT NULL REFERENCES deck_snapshots(id) ON DELETE CASCADE, oracle_id TEXT NOT NULL, scryfall_id TEXT, finish TEXT,
+    board TEXT NOT NULL, quantity INTEGER NOT NULL, name TEXT NOT NULL, price REAL
+);
+CREATE INDEX IF NOT EXISTS deck_snapshot_cards_snap ON deck_snapshot_cards(snapshot_id);
 CREATE TABLE IF NOT EXISTS deck_card_tags (
     deck_card_id INTEGER NOT NULL REFERENCES deck_cards(id) ON DELETE CASCADE, tag TEXT NOT NULL, PRIMARY KEY (deck_card_id, tag)
 );
