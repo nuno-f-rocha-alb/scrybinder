@@ -79,3 +79,31 @@ export function nextTurn(g: Game): Game {
 export const isLand = (c: GCard) => primaryType(c.type_line) === "land";
 
 export const shuffleLibrary = (g: Game, rnd?: () => number): Game => ({ ...g, library: shuffle(g.library, rnd) });
+
+export type SimResult = { hands: number; keepableShare: number; avgLandsOpening: number; avgLandsByTurn4: number; allColorsByTurn4Share: number; deckColors: string[] };
+
+/** A small seeded generator (mulberry32) so a simulation gives the same numbers for the same deck. */
+export function seeded(seed: number): () => number {
+  return () => { seed = (seed + 0x6d2b79f5) | 0; let t = Math.imul(seed ^ (seed >>> 15), 1 | seed); t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t; return ((t ^ (t >>> 14)) >>> 0) / 4294967296; };
+}
+
+/**
+ * Deal `n` opening sevens (no mulligans) and measure them. Keepable: 2-4 lands (3-5 in Commander). "By turn 4": the seven plus
+ * three draws, on the play. A colour is available when a land that makes it (its produced mana, else its colour identity) was seen; rocks and dorks do not count.
+ */
+export function simulate(cards: DeckCard[], commander: boolean, n: number, rnd: () => number): SimResult {
+  const pool = cards.filter((c) => c.board === "main").flatMap((c) => Array.from({ length: c.quantity }, () => ({ land: primaryType(c.type_line) === "land", ci: c.produced_mana?.length ? c.produced_mana : c.color_identity })));
+  const deckColors = [...new Set(cards.filter((c) => c.board === "main" || c.board === "commander").flatMap((c) => c.color_identity))].sort();
+  const [lo, hi] = commander ? [3, 5] : [2, 4];
+  let keep = 0, open = 0, t4 = 0, colors = 0;
+  const hands = Math.max(0, Math.floor(n));
+  for (let i = 0; i < hands; i++) {
+    const seen = shuffle(pool, rnd).slice(0, HAND + 3);
+    const opening = seen.slice(0, HAND).filter((c) => c.land).length;
+    open += opening; keep += opening >= lo && opening <= hi ? 1 : 0;
+    t4 += seen.filter((c) => c.land).length;
+    colors += deckColors.every((x) => seen.some((c) => c.land && c.ci.includes(x))) ? 1 : 0;
+  }
+  const mean = (x: number) => (hands ? x / hands : 0);
+  return { hands, keepableShare: mean(keep), avgLandsOpening: mean(open), avgLandsByTurn4: mean(t4), allColorsByTurn4Share: mean(colors), deckColors };
+}
