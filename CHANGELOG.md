@@ -5,6 +5,7 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 ## [Unreleased]
 
 ### Added
+- Collection value over time: the value of your collection is noted each time the card prices are updated, and shown (a small line and the last days) under the total on the Collection page.
 - Playtest: a commander can be sent back to the command zone from its right-click menu.
 
 ## [0.7.1] — 2026-10-17

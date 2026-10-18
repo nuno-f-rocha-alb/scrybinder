@@ -82,6 +82,10 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
             job.update(state="import", done=0, total=0)
             conn = dbmod.connect(db.execute("PRAGMA database_list").fetchone()[2])  # own connection for this thread
             job["cards"] = scryfall.import_bulk(conn, path, progress=lambda n: job.update(done=n))
+            try:
+                collection.record_snapshot(conn)  # prices just changed: note the collection's value for the history
+            except Exception:  # the history is optional: it must not fail the update
+                logging.getLogger("scrybinder").exception("could not record the value snapshot")
             conn.close()
             try:
                 scryfall.fetch_sets(db)
@@ -482,6 +486,10 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
     def coll(q: str = "", set: str = "", location: list[str] | None = Query(None), finish: str = "", language: str = "",
              sort: str = "name", limit: int = 100, offset: int = 0, group: str = "location"):
         return collection.search(db, q, set, location, finish, language, sort, min(limit, 100000), offset, group)
+
+    @app.get("/api/collection/value-history")
+    def value_history():
+        return {"snapshots": collection.value_history(db)}
 
     @app.get("/api/locations")
     def locs():

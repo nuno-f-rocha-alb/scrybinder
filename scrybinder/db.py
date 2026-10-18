@@ -73,6 +73,11 @@ CREATE TABLE IF NOT EXISTS scan_log (
 
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT);
 
+CREATE TABLE IF NOT EXISTS price_snapshots (  -- the collection's value after each price refresh, one row a day ('' = the whole collection)
+    date TEXT NOT NULL, location TEXT NOT NULL DEFAULT '', total_value REAL NOT NULL, total_cards INTEGER NOT NULL,
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')), PRIMARY KEY (date, location)
+);
+
 CREATE TABLE IF NOT EXISTS card_faces (  -- one row per face that has its own image (visual index)
     card_id TEXT NOT NULL REFERENCES cards(id), face INTEGER NOT NULL, illustration_id TEXT, image_normal TEXT,
     PRIMARY KEY (card_id, face)
