@@ -2,7 +2,7 @@ import { useRef, useState } from "react";
 import { CardImg, Modal } from "./ui";
 import { MenuItem, useContextMenu } from "./contextmenu";
 import type { DeckCard } from "../decks";
-import { GCard, Game, SimResult, Zone, addCounter, bottomOne, draw, isLand, keep, move, mulligan, newGame, nextTurn, peek, pushHistory, reorderTop, seeded, shuffleLibrary, simulate, toggleTap, token } from "../goldfish";
+import { GCard, Game, SimResult, Zone, addCounter, addNamed, bottomOne, draw, isLand, keep, move, mulligan, newGame, nextTurn, peek, pushHistory, reorderTop, seeded, shuffleLibrary, simulate, toggleTap, token } from "../goldfish";
 
 const btn = "cursor-pointer rounded-lg border border-line px-3 py-1.5 text-sm outline-none hover:bg-raised focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-40";
 const ZONE_LABEL: Record<Zone, string> = { hand: "Hand", battlefield: "Battlefield", graveyard: "Graveyard", exile: "Exile", library: "Library", command: "Command zone" };
@@ -16,11 +16,12 @@ function Face({ c, w = "w-24" }: { c: GCard; w?: string }) {
 }
 
 /** A card on the table: click acts, right-click lists the moves. A tapped card turns sideways in a square cell so its neighbours do not overlap. */
-function Card({ c, onClick, onMenu, square, onHover }: { c: GCard; onClick?: () => void; onMenu: (e: React.MouseEvent) => void; square?: boolean; onHover?: (c: GCard | null) => void }) {
-  const counters = [c.plus ? `${c.plus > 0 ? "+" : "−"}${Math.abs(c.plus)}/${c.plus > 0 ? "+" : "−"}${Math.abs(c.plus)}` : "", c.counters ? `${c.counters} counter${c.counters > 1 ? "s" : ""}` : ""].filter(Boolean);
+function Card({ c, onClick, onMenu, square, onHover, onDrag }: { c: GCard; onClick?: () => void; onMenu: (e: React.MouseEvent) => void; square?: boolean; onHover?: (c: GCard | null) => void; onDrag?: (on: boolean) => void }) {
+  const counters = [c.plus ? `${c.plus > 0 ? "+" : "−"}${Math.abs(c.plus)}/${c.plus > 0 ? "+" : "−"}${Math.abs(c.plus)}` : "", ...Object.entries(c.named ?? {}).map(([k, n]) => `${k} ${n}`)].filter(Boolean);
   return (
     <button onClick={onClick} onContextMenu={onMenu} aria-label={`${c.name}${c.tapped ? " (tapped)" : ""}${counters.length ? `, ${counters.join(", ")}` : ""}`} title={`${c.name} — right-click for more`}
       onMouseEnter={() => onHover?.(c)} onMouseLeave={() => onHover?.(null)} onFocus={() => onHover?.(c)} onBlur={() => onHover?.(null)}
+      draggable={!!onDrag} onDragStart={(e) => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", c.name); onHover?.(null); onDrag?.(true); }} onDragEnd={() => onDrag?.(false)}
       className={`relative flex shrink-0 cursor-pointer items-center justify-center rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-accent ${square ? "size-[8.6rem]" : ""}`}>
       <span className={`block transition-transform ${c.tapped ? "rotate-90" : ""}`}><Face c={c} /></span>
       {counters.length > 0 && <span className="absolute bottom-1 left-1/2 flex -translate-x-1/2 flex-col items-center gap-0.5 text-[11px] font-semibold">
@@ -30,11 +31,11 @@ function Card({ c, onClick, onMenu, square, onHover }: { c: GCard; onClick?: () 
 }
 
 /** A pile to the side of the battlefield: the top card (or an empty slot), a name and a count. */
-function Pile({ label, cards, onClick, back }: { label: string; cards: GCard[]; onClick?: () => void; back?: boolean }) {
+function Pile({ label, cards, onClick, back, drop }: { label: string; cards: GCard[]; onClick?: () => void; back?: boolean; drop?: React.HTMLAttributes<HTMLElement> }) {
   const top = cards[0];
   return (
-    <button onClick={onClick} disabled={!onClick} aria-label={`${label}: ${cards.length} cards`}
-      className="flex w-28 cursor-pointer flex-col items-center gap-1 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default">
+    <button onClick={onClick} disabled={!onClick} aria-label={`${label}: ${cards.length} cards`} {...(drop as object)}
+      className={`flex w-28 cursor-pointer flex-col items-center gap-1 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default ${drop?.className ?? ""}`}>
       {back && cards.length ? <div className="aspect-[63/88] w-24 rounded-[4.5%] border border-line bg-gradient-to-br from-raised to-surface" />
         : !back && top ? <Face c={top} />
         : <div className="aspect-[63/88] w-24 rounded-[4.5%] border border-dashed border-line" />}
@@ -85,6 +86,10 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
   const [tokenForm, setTokenForm] = useState<{ name: string; pt: string } | null>(null);
   const [scry, setScry] = useState<{ n: number; bottom: Set<number> } | null>(null);
   const gRef = useRef<Game | null>(null);
+  const dragUid = useRef<number | null>(null);  // the card being dragged
+  const [over, setOver] = useState<Zone | null>(null);  // the zone it is over
+  const [counterForm, setCounterForm] = useState<{ uid: number; name: string; n: number } | null>(null);
+  const [ending, setEnding] = useState(false);
   gRef.current = g;
   const start = () => { setHist([]); setG(newGame(cards, commander, onPlay)); };
 
@@ -106,6 +111,28 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
     const next = f(cur);
     if (next !== cur) { setHist((h) => pushHistory(h, cur)); setG(next); setZoom(null); }  // the card under the pointer may be gone
   };
+  const endGame = () => {
+    if (!ending) { setEnding(true); setTimeout(() => setEnding(false), 4000); return; }
+    setG(null); setHist([]); setZoom(null); setScry(null); setTokenForm(null); setSearch(null); setPile(null); setEnding(false);
+  };
+  /** Drag a card with the mouse (press, hold, move) onto a zone: the table, the hand, a pile or the command zone. */
+  const drop = (z: Zone): React.HTMLAttributes<HTMLElement> => ({
+    onDragOver: (e) => { if (dragUid.current !== null) { e.preventDefault(); setOver(z); } },
+    onDragLeave: () => setOver((o) => (o === z ? null : o)),
+    onDrop: (e) => {
+      e.preventDefault();
+      const uid = dragUid.current;
+      dragUid.current = null; setOver(null);
+      if (uid === null) return;
+      set((x) => {
+        const from = (["library", "hand", "battlefield", "graveyard", "exile", "command"] as Zone[]).find((k) => x[k].some((c) => c.uid === uid));
+        const card = from && x[from].find((c) => c.uid === uid);
+        return !card || from === z || (z === "command" && !card.commander) ? x : move(x, uid, z);
+      });
+    },
+    className: over === z ? "ring-2 ring-accent" : "",
+  });
+  const dragging = (on: boolean, uid: number) => { dragUid.current = on ? uid : null; if (!on) setOver(null); };
   const undo = () => { const last = hist[hist.length - 1]; if (last) { setG(last); setHist(hist.slice(0, -1)); setZoom(null); } };
   const playing = g.phase === "playing";
   const cardMenu = (c: GCard, zone: Zone) => (e: React.MouseEvent) => {
@@ -116,8 +143,10 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
         { label: c.tapped ? "Untap" : "Tap", onSelect: () => set((x) => toggleTap(x, c.uid)) }, "sep" as const,
         { label: "+1/+1 counter", onSelect: () => set((x) => addCounter(x, c.uid, "plus", 1)) },
         { label: "−1/−1 counter", onSelect: () => set((x) => addCounter(x, c.uid, "plus", -1)) },
-        { label: "Add a counter", onSelect: () => set((x) => addCounter(x, c.uid, "generic", 1)) },
-        { label: "Remove a counter", disabled: !c.counters, onSelect: () => set((x) => addCounter(x, c.uid, "generic", -1)) },
+        { label: "Add a counter…", onSelect: () => setCounterForm({ uid: c.uid, name: "", n: 1 }) },
+        ...Object.keys(c.named ?? {}).flatMap((k) => [
+          { label: `${k} +1`, onSelect: () => set((x) => addNamed(x, c.uid, k, 1)) },
+          { label: `${k} −1`, onSelect: () => set((x) => addNamed(x, c.uid, k, -1)) }]),
         "sep" as const] : []),
       ...(["battlefield", "hand", "graveyard", "exile"] as const).filter((z) => z !== zone).map((z) => to(z)),
       ...(c.commander && zone !== "command" ? [to("command")] : []),  // a commander may return to the command zone instead
@@ -129,7 +158,7 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
   const area = (title: string, list: GCard[]) => (
     <div className="min-h-[9.5rem] p-2" role="group" aria-label={title}>
       <h3 className="mb-1 text-xs uppercase tracking-wide text-mute">{title} ({list.length})</h3>
-      <div className="flex flex-wrap">{list.map((c) => <Card key={c.uid} c={c} square onHover={setZoom} onClick={() => set((x) => toggleTap(x, c.uid))} onMenu={cardMenu(c, "battlefield")} />)}</div>
+      <div className="flex flex-wrap">{list.map((c) => <Card key={c.uid} c={c} square onHover={setZoom} onDrag={playing ? (on) => dragging(on, c.uid) : undefined} onClick={() => set((x) => toggleTap(x, c.uid))} onMenu={cardMenu(c, "battlefield")} />)}</div>
     </div>
   );
 
@@ -157,25 +186,26 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
         <button className={btn} disabled={!hist.length} onClick={undo}>Undo</button>
         <label className="flex items-center gap-1 text-sm"><input type="checkbox" checked={onPlay} onChange={(e) => setOnPlay(e.target.checked)} />On the play</label>
         <button className={btn} onClick={start}>New game</button>
+        <button className={btn} onClick={endGame}>{ending ? "Click again to end" : "End playtest"}</button>
       </div>
       {g.phase === "bottom" && <p className="mb-3 text-sm text-accent" role="status">Click {g.toBottom} card{g.toBottom > 1 ? "s" : ""} in your hand to put on the bottom of the library.</p>}
-      {playing && <p className="mb-2 text-xs text-mute">Click a battlefield card to tap it, a hand card to play it. Right-click any card for more.</p>}
+      {playing && <p className="mb-2 text-xs text-mute">Click a battlefield card to tap it, a hand card to play it, or press and drag a card onto a zone. Right-click any card for more.</p>}
 
       <div className="flex items-start gap-4">
         {/* the table: nonlands nearest the opponent (top), lands nearest the player (bottom) */}
-        <section aria-label="Battlefield" className="min-w-0 flex-1 rounded-xl border border-line">
+        <section aria-label="Battlefield" {...(playing ? drop("battlefield") : {})} className={`min-w-0 flex-1 rounded-xl border border-line ${playing && over === "battlefield" ? "ring-2 ring-accent" : ""}`}>
           {area("Nonland permanents", g.battlefield.filter((c) => !landArea(c)))}
           <div className="border-t border-dashed border-line" />
           {area("Lands", g.battlefield.filter(landArea))}
         </section>
         {/* library, graveyard and exile together on one side, with the command zone */}
         <aside aria-label="Zones" className="flex shrink-0 flex-col gap-3">
-          <Pile label="Library" cards={g.library} back onClick={playing && g.library.length ? () => set((x) => draw(x)) : undefined} />
-          <Pile label="Graveyard" cards={g.graveyard} onClick={g.graveyard.length ? () => setPile("graveyard") : undefined} />
-          <Pile label="Exile" cards={g.exile} onClick={g.exile.length ? () => setPile("exile") : undefined} />
+          <Pile label="Library" cards={g.library} back drop={playing ? drop("library") : undefined} onClick={playing && g.library.length ? () => set((x) => draw(x)) : undefined} />
+          <Pile label="Graveyard" cards={g.graveyard} drop={playing ? drop("graveyard") : undefined} onClick={g.graveyard.length ? () => setPile("graveyard") : undefined} />
+          <Pile label="Exile" cards={g.exile} drop={playing ? drop("exile") : undefined} onClick={g.exile.length ? () => setPile("exile") : undefined} />
           {commander && (
-            <div className="flex flex-col items-center gap-1" role="group" aria-label="Command zone">
-              {g.command.map((c) => <Card key={c.uid} c={c} onClick={playing ? () => set((x) => move(x, c.uid, "battlefield")) : undefined} onMenu={cardMenu(c, "command")} />)}
+            <div {...(playing ? drop("command") : {})} className={`flex flex-col items-center gap-1 rounded-lg ${playing && over === "command" ? "ring-2 ring-accent" : ""}`} role="group" aria-label="Command zone">
+              {g.command.map((c) => <Card key={c.uid} c={c} onDrag={playing ? (on) => dragging(on, c.uid) : undefined} onClick={playing ? () => set((x) => move(x, c.uid, "battlefield")) : undefined} onMenu={cardMenu(c, "command")} />)}
               {!g.command.length && <div className="aspect-[63/88] w-24 rounded-[4.5%] border border-dashed border-line" />}
               <span className="text-xs text-mute">Command zone ({g.command.length})</span>
             </div>
@@ -183,10 +213,10 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
         </aside>
       </div>
 
-      <section aria-label="Hand" className="mt-4">
+      <section aria-label="Hand" {...(playing ? drop("hand") : {})} className={`mt-4 rounded-xl ${playing && over === "hand" ? "ring-2 ring-accent" : ""}`}>
         <h3 className="mb-1 text-sm font-medium text-mute">{g.phase === "mulligan" ? "Opening hand" : "Hand"} ({g.hand.length})</h3>
         <div className="flex min-h-12 flex-wrap gap-1">
-          {g.hand.map((c) => <Card key={c.uid} c={c} onHover={setZoom} onClick={() => handClick(c)} onMenu={cardMenu(c, "hand")} />)}
+          {g.hand.map((c) => <Card key={c.uid} c={c} onHover={setZoom} onDrag={playing ? (on) => dragging(on, c.uid) : undefined} onClick={() => handClick(c)} onMenu={cardMenu(c, "hand")} />)}
         </div>
       </section>
 
@@ -201,6 +231,19 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
       )}
       {zoom && <div className="pointer-events-none fixed bottom-4 right-4 z-40 w-64 drop-shadow-2xl" aria-hidden>
         {zoom.image_id ? <CardImg id={zoom.image_id} size="normal" /> : <div className="rounded-xl bg-raised p-4 text-center text-sm">{zoom.name}</div>}</div>}
+      {counterForm && (
+        <Modal title="Add a counter" onClose={() => setCounterForm(null)}>
+          <h2 className="mb-3 text-lg font-semibold">Add a counter</h2>
+          <form className="flex flex-wrap items-end gap-3" onSubmit={(e) => { e.preventDefault(); if (counterForm.name.trim()) set((x) => addNamed(x, counterForm.uid, counterForm.name, counterForm.n)); setCounterForm(null); }}>
+            <label className="text-xs font-medium text-mute">Counter name
+              <input autoFocus className="field mt-1 block w-48" maxLength={20} value={counterForm.name} onChange={(e) => setCounterForm({ ...counterForm, name: e.target.value })} placeholder="Charge, loyalty, time…" /></label>
+            <label className="text-xs font-medium text-mute">How many
+              <input type="number" min={1} max={99} className="field mt-1 block w-24" value={counterForm.n} onChange={(e) => setCounterForm({ ...counterForm, n: Math.max(1, Math.floor(+e.target.value) || 1) })} /></label>
+            <button type="submit" className={btn} disabled={!counterForm.name.trim()}>Add counter</button>
+          </form>
+          <p className="mt-3 text-xs text-mute">Right-click the card to add or remove more of it later. It goes away when it reaches 0, or when the card leaves the table.</p>
+        </Modal>
+      )}
       {tokenForm && (
         <Modal title="Make a token" onClose={() => setTokenForm(null)}>
           <h2 className="mb-3 text-lg font-semibold">Make a token</h2>

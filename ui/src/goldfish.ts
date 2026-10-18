@@ -3,7 +3,7 @@ import { primaryType } from "./decks";
 import type { DeckCard } from "./decks";
 
 export type Zone = "library" | "hand" | "battlefield" | "graveyard" | "exile" | "command";
-export type GCard = { uid: number; name: string; image_id: string | null; type_line: string | null; tapped: boolean; commander?: boolean; plus?: number; counters?: number; token?: boolean };
+export type GCard = { uid: number; name: string; image_id: string | null; type_line: string | null; tapped: boolean; commander?: boolean; plus?: number; counters?: number; named?: Record<string, number>; token?: boolean };
 export type Game = Record<Zone, GCard[]> & {
   turn: number; life: number; mulligans: number; onPlay: boolean;
   phase: "mulligan" | "bottom" | "playing"; toBottom: number; freeMulligan: boolean;
@@ -56,7 +56,7 @@ export function move(g: Game, uid: number, to: Zone, bottom = false): Game {
   const found = g[from].find((c) => c.uid === uid) as GCard;
   const out = { ...g, [from]: g[from].filter((c) => c.uid !== uid) };
   if (found.token && from === "battlefield" && to !== "battlefield") return out;  // a token that leaves the battlefield ceases to exist
-  const { plus: _p, counters: _c, ...rest } = found;  // counters stay on the battlefield
+  const { plus: _p, counters: _c, named: _n, ...rest } = found;  // counters stay on the battlefield
   const card = { ...rest, tapped: false };
   out[to] = (to === "library" && bottom) || to === "battlefield" ? [...out[to], card] : [card, ...out[to]];
   return out;
@@ -136,3 +136,14 @@ export function reorderTop(g: Game, top: number[], bottom: number[]): Game {
 
 /** A bounded undo history: the previous states, oldest dropped past `cap`. */
 export const pushHistory = <T,>(stack: T[], state: T, cap = 50): T[] => [...stack, state].slice(-cap);
+
+/** Add `delta` to a counter with a name of your own ("Charge", "Loyalty"...) on a battlefield card; at 0 it goes away. */
+export function addNamed(g: Game, uid: number, name: string, delta: number): Game {
+  const key = name.trim().slice(0, 20);
+  if (!key) return g;
+  return { ...g, battlefield: g.battlefield.map((c) => {
+    if (c.uid !== uid) return c;
+    const n = Math.max(0, (c.named?.[key] ?? 0) + delta), { [key]: _gone, ...rest } = c.named ?? {};
+    return { ...c, named: n ? { ...rest, [key]: n } : rest };
+  }) };
+}

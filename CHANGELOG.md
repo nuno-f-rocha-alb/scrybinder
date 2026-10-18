@@ -4,6 +4,8 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Added
+- Playtest: press and drag a card onto the table, the hand, the graveyard, exile, the library or the command zone; counters with a name of your own (right-click a card on the table); an "End playtest" button.
 ### Changed
 - Add cards: the search shows the cards as images (the newest printing of each); clicking one opens a window with all its printings, finish, quantity, condition, language, location and price, and it stays open to add another copy or printing.
 ### Fixed

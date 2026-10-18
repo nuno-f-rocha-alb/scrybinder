@@ -1,5 +1,5 @@
 // Run: npx tsx check/extras.check.ts  (from ui/)
-import { addCounter, move, newGame, peek, pushHistory, reorderTop, token } from "../src/goldfish";
+import { addCounter, addNamed, move, newGame, peek, pushHistory, reorderTop, token } from "../src/goldfish";
 import type { DeckCard } from "../src/decks";
 import assert from "node:assert/strict";
 
@@ -46,4 +46,14 @@ assert.equal(reorderTop(g, [9999], []).library.length, lib.length);        // an
 let h: number[] = [];
 for (let i = 1; i <= 60; i++) h = pushHistory(h, i, 50);
 assert.deepEqual([h.length, h[0], h[49]], [50, 11, 60]);
+// named counters: your own names, 0 removes them, only on the battlefield, lost when the card leaves
+let n = addNamed(addNamed(g, bf, " Charge ", 2), bf, "Loyalty", 3);
+assert.deepEqual(n.battlefield[0].named, { Charge: 2, Loyalty: 3 });
+n = addNamed(n, bf, "Charge", -1);
+assert.equal(n.battlefield[0].named!.Charge, 1);
+n = addNamed(n, bf, "Charge", -9);
+assert.deepEqual(n.battlefield[0].named, { Loyalty: 3 });
+assert.equal(addNamed(g, bf, "  ", 1), g);                                    // no name: nothing happens
+assert.equal(addNamed(g, inHand, "Charge", 1).hand.find((c) => c.uid === inHand)!.named, undefined);
+assert.equal(move(n, bf, "graveyard").graveyard[0].named, undefined);
 console.log("extras ok");
