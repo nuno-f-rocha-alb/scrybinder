@@ -472,6 +472,17 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
                 pass
         return collection.set_progress(db, location, q, hide_empty, group)
 
+    @app.get("/api/sets/{code}/missing")
+    def set_missing(code: str, group: bool = False, location: list[str] | None = Query(None), format: str = "json"):
+        sm = _wrap(collection.set_missing, db, code, group, location)
+        if format == "text":
+            return Response(collection.set_missing_text(sm), media_type="text/plain; charset=utf-8",
+                            headers={"Content-Disposition": f'attachment; filename="scrybinder-missing-{sm["set_code"]}.txt"'})
+        if format == "csv":
+            return Response(collection.set_missing_csv(sm), media_type="text/csv; charset=utf-8",
+                            headers={"Content-Disposition": f'attachment; filename="scrybinder-missing-{sm["set_code"]}.csv"'})
+        return sm
+
     @app.get("/api/seticon/{code}")
     def seticon(code: str):
         p = scryfall.icon_path(db, code)
