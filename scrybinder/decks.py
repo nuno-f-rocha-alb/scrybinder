@@ -806,6 +806,27 @@ def delete_snapshot(db, deck_id: int, snapshot_id: int) -> None:
         db.execute("DELETE FROM deck_snapshots WHERE id=?", (snapshot_id,))  # its cards go with it (ON DELETE CASCADE)
 
 
+def restore_snapshot(db, deck_id: int, snapshot_id: int) -> dict:
+    """Put the deck back as it was in a snapshot: the deck now is saved first as a snapshot of its own, so nothing is lost, then its cards
+    are replaced by the snapshot's. Tags and the assigned copies are not part of a snapshot: the copies go back to the collection
+    (use "Assign free copies" to put them in the deck again)."""
+    snap = _snapshot(db, deck_id, snapshot_id)
+    lines = [dict(r) for r in db.execute("SELECT oracle_id, scryfall_id, finish, board, quantity FROM deck_snapshot_cards WHERE snapshot_id=?", (snapshot_id,))]
+    safety = save_snapshot(db, deck_id, f"Before restoring {snap['name']}"[:SNAPSHOT_NAME_MAX])
+    for c in cards(db, deck_id):
+        remove_card(db, deck_id, c["id"])
+    skipped = 0
+    for ln in lines:
+        try:
+            add_card(db, deck_id, ln["oracle_id"], ln["quantity"], ln["board"], ln["scryfall_id"], finish=ln["finish"])
+        except ValueError:  # the printing is gone from the card data (a bulk update): any printing will do
+            try:
+                add_card(db, deck_id, ln["oracle_id"], ln["quantity"], ln["board"])
+            except ValueError:
+                skipped += 1
+    return {"safety_snapshot": safety, "restored": len(lines) - skipped, "skipped": skipped}
+
+
 def _side(db, deck_id: int, which) -> tuple[dict, bool]:
     """The lines of one side of a comparison, summed per (card, board): `{key: {name, qty, price}}`, and whether it is the live deck."""
     if which == "current":

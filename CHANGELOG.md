@@ -6,10 +6,19 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ### Added
 - Collection: "Move to…" in the right-click menu of a card moves some or all of its copies to another location.
+- Deck snapshots: a Restore button puts the deck back as it was in a snapshot (the deck as it is now is saved as a snapshot first, so you can come back to it). Tags and assigned copies are not part of a snapshot.
+- Playtest: press and drag a card onto the table, the hand, the graveyard, exile, the library or the command zone; counters with a name of your own (right-click a card on the table); an "End playtest" button.
+### Changed
+- Add cards: the search shows the cards as images (the newest printing of each); clicking one opens a window with all its printings, finish, quantity, condition, language, location and price, and it stays open to add another copy or printing.
+### Fixed
+- A restore staged in Settings is no longer skipped when Scrybinder is reopened while the old window is still shutting down: it waits up to 30 s for it, and Settings says when a restore is still waiting.
+### Changed
+- Releases now also publish the Linux build (`Scrybinder-X.Y.Z-linux-x64.tar.gz`, extract and run; no in-app updates on Linux).
 
 ## [0.8.0] — 2026-10-18
 
 ### Added
+- Inside a set (Collection filtered by a set): a "Show missing" checkbox shows the printings you do not own, faded, after your cards.
 - Deck snapshots: save a named copy of a deck's card list and compare it with the deck now (cards added, removed and changed, and what the change costs at today's prices).
 - Settings: back up the database to a single file and restore a backup (checked first; applied at the next start, the current database is kept as `scrybinder.db.before-restore`).
 - Playtest: +1/+1 and generic counters, tokens, undo, scry / peek at the top of the library and a zoom when you hover a card.

@@ -125,3 +125,50 @@ def test_snapshots_api(db):
     assert c.delete(f"/api/decks/{d}/snapshots/{sid}").status_code == 200
     assert c.delete(f"/api/decks/{d}/snapshots/{sid}").status_code == 404
     assert c.get("/api/decks/999/snapshots").status_code == 404
+
+
+def test_restore_puts_the_deck_back_and_saves_the_current_one_first(db):
+    d, a, b, c = _deck(db)
+    snap = decks.save_snapshot(db, d, "good one")
+    line = lambda oid, board="main": next(x for x in decks.get(db, d)["cards"] if x["oracle_id"] == oid and x["board"] == board)
+    decks.update_card(db, d, line(a)["id"], quantity=7)       # a: 2 -> 7
+    decks.remove_card(db, d, line(b)["id"])                    # b gone
+    extra = _oracles(db, 4)[3]
+    decks.add_card(db, d, extra, 3)                            # a card that was not in it
+    r = decks.restore_snapshot(db, d, snap)
+    assert (r["restored"], r["skipped"]) == (3, 0)
+    now = {(x["oracle_id"], x["board"]): x["quantity"] for x in decks.get(db, d)["cards"]}
+    assert now == {(a, "main"): 2, (b, "main"): 1, (c, "side"): 1}  # exactly the snapshot
+    assert decks.compare(db, d, snap, "current")["price_difference"] == 0
+    safety = next(s for s in decks.snapshots(db, d) if s["name"] == "Before restoring good one")
+    assert safety["cards"] == 11 and r["safety_snapshot"] == safety["id"]  # 7 + 1 (c) + 3 extra
+    back = decks.restore_snapshot(db, d, safety["id"])  # and the deck from before can be restored too
+    assert {(x["oracle_id"], x["board"]): x["quantity"] for x in decks.get(db, d)["cards"]} == {(a, "main"): 7, (c, "side"): 1, (extra, "main"): 3}
+    assert back["skipped"] == 0
+
+
+def test_restore_frees_assigned_copies_and_survives_a_missing_printing(db):
+    from scrybinder import collection
+    d, a, b, c = _deck(db)
+    sid = db.execute("SELECT id FROM cards WHERE oracle_id=?", (a,)).fetchone()[0]
+    row = collection.add(db, scryfall_id=sid, quantity=2)
+    decks.assign(db, d, next(x for x in decks.get(db, d)["cards"] if x["oracle_id"] == a)["id"], [{"collection_id": row, "quantity": 2}])
+    snap = decks.save_snapshot(db, d, "s")
+    db.execute("UPDATE deck_snapshot_cards SET scryfall_id='gone' WHERE oracle_id=?", (a,))  # a printing that no longer exists
+    db.commit()
+    r = decks.restore_snapshot(db, d, snap)
+    assert r["skipped"] == 0 and next(x for x in decks.get(db, d)["cards"] if x["oracle_id"] == a)["quantity"] == 2
+    assert collection.search(db)["total_cards"] == 2  # the copies are still in the collection
+
+
+def test_restore_api(db):
+    c = TestClient(create_app(db, token=TOKEN, allowed_hosts={"testserver"}))
+    c.get(f"/api/status?t={TOKEN}")
+    d, a, *_ = _deck(db)
+    sid = c.post(f"/api/decks/{d}/snapshots", json={"name": "api"}).json()["id"]
+    c.post(f"/api/decks/{d}/cards", json={"oracle_id": a, "quantity": 4})
+    r = c.post(f"/api/decks/{d}/snapshots/{sid}/restore")
+    assert r.status_code == 200 and r.json()["restored"] == 3
+    assert next(x for x in c.get(f"/api/decks/{d}").json()["cards"] if x["oracle_id"] == a)["quantity"] == 2
+    assert c.post(f"/api/decks/{d}/snapshots/999/restore").status_code == 404
+    assert c.post(f"/api/decks/{d}/snapshots/{sid}/restore").status_code == 200

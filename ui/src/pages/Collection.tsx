@@ -24,6 +24,8 @@ export default function Collection({ initialSet, initialLocation, onOpenDeck }: 
   const [q, setQ] = useState("");
   const [spareView, setSpareView] = useState(false);
   const [moving, setMoving] = useState<Row | null>(null);  // the row whose "Move to…" dialog is open
+  const [showMissing, setShowMissing] = useState(false);  // inside a set: the printings you do not own, faded
+  const [missing, setMissing] = useState<{ scryfall_id: string; name: string; collector_number: string; price: number | null }[]>([]);
   const [locations, setLocations] = useState<string[]>(initialLocation !== undefined ? [initialLocation] : []);  // none = all
   const [setCode, setSetCode] = useState(initialSet ?? "");
   const [group, setGroup] = useGroup();
@@ -62,6 +64,13 @@ export default function Collection({ initialSet, initialLocation, onOpenDeck }: 
     api<{ code: string; owned: number; total: number; percent: number }[]>("/sets?" + qsl({ q: setCode, hide_empty: "false", group: group ? "true" : "false" }, locations))
       .then((r) => setProg(r.find((s) => s.code === setCode) ?? null)).catch(() => setProg(null));
   }, [setCode, locations, group, data?.total_cards]);
+  useEffect(() => {
+    if (!setCode || !showMissing) { setMissing([]); return; }
+    let live = true;  // a slower earlier answer must not replace a newer one
+    api<{ missing: typeof missing }>(`/sets/${setCode}/missing?` + qsl({ group: group ? "true" : "false" }, locations))
+      .then((r) => live && setMissing(r.missing)).catch(() => live && setMissing([]));
+    return () => { live = false; };
+  }, [setCode, showMissing, group, locations, data?.total_cards]);
   useEffect(() => { setSel(new Set()); lastPick.current = null; }, [q, setCode, locations, finish, groupBy]);  // the selection belongs to the current filter
   useEffect(() => {
     if (!selecting) return;
@@ -193,6 +202,9 @@ export default function Collection({ initialSet, initialLocation, onOpenDeck }: 
           <label className="flex cursor-pointer items-center gap-2 text-sm text-mute" title="The same card with different art/frames counts as 1 in the totals">
             <input type="checkbox" checked={group} onChange={(e) => setGroup(e.target.checked)} className="accent-[var(--color-accent)]" />Group printings
           </label>
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-mute" title="Show the printings of this set you do not own, faded, after your cards">
+            <input type="checkbox" checked={showMissing} onChange={(e) => setShowMissing(e.target.checked)} className="accent-[var(--color-accent)]" />Show missing
+          </label>
         </div>
       )}
 
@@ -261,6 +273,24 @@ export default function Collection({ initialSet, initialLocation, onOpenDeck }: 
           </table>
         </div>
       )}
+
+      {setCode && showMissing && (() => {
+        const shown = missing.filter((m) => !q || m.name.toLowerCase().includes(q.toLowerCase()));
+        return shown.length > 0 && (
+          <section className="mb-6" aria-label="Missing from this set">
+            <h2 className="mb-2 mt-1 flex items-center gap-2 border-b border-line pb-1 text-sm font-semibold">Missing<span className="text-xs font-normal text-mute tabular-nums">{shown.length}</span></h2>
+            <div className="grid gap-4" style={grid.style}>
+              {shown.map((m) => (
+                <div key={m.scryfall_id} className="opacity-40 grayscale transition hover:opacity-70 hover:grayscale-0" title={`${m.name} — you do not own this`}>
+                  <CardImg id={m.scryfall_id} size={sourceFor(grid.tilePx)} />
+                  <div className="mt-2 truncate text-sm font-medium">{m.name}</div>
+                  <div className="flex items-center justify-between gap-2 text-xs text-mute"><span>{setCode.toUpperCase()} · {m.collector_number}</span><span className="text-gold">{eur(m.price)}</span></div>
+                </div>
+              ))}
+            </div>
+          </section>
+        );
+      })()}
 
       {selecting && <BulkBar count={sel.size} total={data?.total_rows ?? 0} onSelectAll={selectAll} onClear={() => setSel(new Set())}
         onEdit={() => setBulk("edit")} onDelete={() => setBulk("delete")} onExit={() => { setSelecting(false); setSel(new Set()); }} />}

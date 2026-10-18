@@ -1,7 +1,9 @@
 """SQLite: connection and schema. Data lives in data/ (not in git)."""
 import os
+import logging
 import sqlite3
 import sys
+import time
 from pathlib import Path
 
 
@@ -167,6 +169,7 @@ def _adopt_legacy_db(path: Path):
                 Path(str(old) + suffix).rename(Path(str(path) + suffix))
 
 
+RESTORE_WAIT_TRIES, RESTORE_WAIT_STEP = 60, 0.5  # up to 30 s for the previous instance to let go of the database
 REQUIRED_TABLES = ("cards", "collection", "decks", "deck_cards", "deck_assignments", "oracle_cards")
 
 
@@ -250,11 +253,16 @@ def _apply_pending_restore(path: Path):
             con.close()
         except sqlite3.Error:
             pass
-        try:
-            before.unlink(missing_ok=True)
-            os.replace(path, before)
-        except OSError:  # the database is in use (another Scrybinder is open?): start with it as it is and try again next time
-            return
+        for attempt in range(RESTORE_WAIT_TRIES):  # the Scrybinder that was just closed may still be shutting down and holding the file
+            try:
+                before.unlink(missing_ok=True)
+                os.replace(path, before)
+                break
+            except OSError:
+                if attempt == RESTORE_WAIT_TRIES - 1:  # really in use: start with the database as it is; the restore stays staged
+                    logging.getLogger("scrybinder").warning("restore waiting: %s is in use (is another Scrybinder still open?)", path.name)
+                    return
+                time.sleep(RESTORE_WAIT_STEP)
     for suffix in ("-wal", "-shm"):  # the journal of the old database must not be replayed onto the restored one
         Path(str(path) + suffix).unlink(missing_ok=True)
     try:
