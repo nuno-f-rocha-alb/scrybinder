@@ -238,7 +238,7 @@ export default function Deck({ id, onBack, focusOracle }: { id: number; onBack: 
 
         <div hidden={tab !== "playtest"}><Playtest cards={deck.cards} commander={deck.format === "commander"} /></div>  {/* stays mounted: switching tabs keeps the game */}
 
-        {tab === "snapshots" && <Snapshots deckId={id} toast={toast} />}
+        {tab === "snapshots" && <Snapshots deckId={id} toast={toast} onRestored={reload} />}
 
         {tab === "suggestions" && deck.format === "commander" && <Suggestions deckId={id} toast={toast} onAdded={reload} />}
 

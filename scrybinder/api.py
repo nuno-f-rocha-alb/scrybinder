@@ -649,6 +649,10 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
         _wrap(decks.delete_snapshot, db, deck_id, snapshot_id)
         return {"ok": True}
 
+    @app.post("/api/decks/{deck_id}/snapshots/{snapshot_id}/restore")
+    def deck_snapshot_restore(deck_id: int, snapshot_id: int):
+        return _wrap(decks.restore_snapshot, db, deck_id, snapshot_id)
+
     @app.get("/api/decks/{deck_id}/compare")
     def deck_compare(deck_id: int, base: str = "latest", target: str = "current"):
         if not all(v in ("latest", "current") or v.isdigit() for v in (base, target)):
