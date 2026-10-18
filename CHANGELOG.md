@@ -4,6 +4,8 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Changed
+- Add cards: the search shows the cards as images (the newest printing of each); clicking one opens a window with all its printings, finish, quantity, condition, language, location and price, and it stays open to add another copy or printing.
 ### Fixed
 - A restore staged in Settings is no longer skipped when Scrybinder is reopened while the old window is still shutting down: it waits up to 30 s for it, and Settings says when a restore is still waiting.
 ### Changed
