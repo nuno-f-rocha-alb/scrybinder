@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { Select } from "../components/select";
 import { IconSearch } from "@tabler/icons-react";
 import { api, qs, useGroup } from "../api";
+import SetMissing from "../components/setmissing";
 
 type SetRow = { code: string; name: string; released_at: string; total: number; owned: number; copies: number; percent: number; has_icon: number };
 
@@ -22,6 +23,7 @@ export default function Sets({ onOpen }: { onOpen: (code: string, location?: str
   const [sort, setSort] = useState<"percent" | "recent" | "name">("percent");
   const [locs, setLocs] = useState<string[]>([]);
   const [err, setErr] = useState("");
+  const [missing, setMissing] = useState<{ code: string; name: string } | null>(null);
 
   useEffect(() => { api<{ location: string }[]>("/locations").then((l) => setLocs(l.map((x) => x.location))).catch(() => {}); }, []);
   useEffect(() => {
@@ -29,6 +31,8 @@ export default function Sets({ onOpen }: { onOpen: (code: string, location?: str
       .then((r) => { setRows(r); setErr(""); }).catch((e) => setErr(e.message)), 150);
     return () => clearTimeout(t);
   }, [q, location, hideEmpty, group]);
+
+  if (missing) return <SetMissing code={missing.code} name={missing.name} group={group} location={location} onBack={() => setMissing(null)} />;
 
   const sorted = rows && [...rows].sort((a, b) =>
     sort === "percent" ? b.percent - a.percent || b.owned - a.owned
@@ -65,7 +69,8 @@ export default function Sets({ onOpen }: { onOpen: (code: string, location?: str
       {sorted && sorted.length === 0 && <div className="rounded-2xl border border-dashed border-line p-16 text-center text-mute">No sets to show.</div>}
       <div className="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-3">
         {sorted?.map((s) => (
-          <button key={s.code} onClick={() => onOpen(s.code, location)}
+          <div key={s.code} className="relative">
+          <button onClick={() => onOpen(s.code, location)}
             className="group relative flex cursor-pointer items-center gap-3 overflow-hidden rounded-xl border border-line bg-surface px-4 pb-5 pt-3.5 text-left outline-none transition hover:border-accent hover:bg-raised focus-visible:ring-2 focus-visible:ring-accent">
             <Icon code={s.code} on={!!s.has_icon} />
             <div className="min-w-0 flex-1">
@@ -78,6 +83,8 @@ export default function Sets({ onOpen }: { onOpen: (code: string, location?: str
               <span className={`block h-full ${s.percent >= 100 ? "bg-ok" : "bg-accent"}`} style={{ width: `${Math.min(100, s.percent)}%` }} />
             </span>
           </button>
+          {s.owned < s.total && <button onClick={() => setMissing({ code: s.code, name: s.name })} title="The printings you do not own" className="absolute right-2 top-1.5 cursor-pointer rounded px-1.5 py-0.5 text-[11px] text-mute outline-none hover:bg-raised hover:text-ink focus-visible:ring-2 focus-visible:ring-accent">Missing</button>}
+          </div>
         ))}
       </div>
     </div>
