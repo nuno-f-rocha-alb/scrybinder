@@ -6,10 +6,13 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ### Fixed
 - A restore staged in Settings is no longer skipped when Scrybinder is reopened while the old window is still shutting down: it waits up to 30 s for it, and Settings says when a restore is still waiting.
+### Changed
+- Releases now also publish the Linux build (`Scrybinder-X.Y.Z-linux-x64.tar.gz`, extract and run; no in-app updates on Linux).
 
 ## [0.8.0] — 2026-10-18
 
 ### Added
+- Inside a set (Collection filtered by a set): a "Show missing" checkbox shows the printings you do not own, faded, after your cards.
 - Deck snapshots: save a named copy of a deck's card list and compare it with the deck now (cards added, removed and changed, and what the change costs at today's prices).
 - Settings: back up the database to a single file and restore a backup (checked first; applied at the next start, the current database is kept as `scrybinder.db.before-restore`).
 - Playtest: +1/+1 and generic counters, tokens, undo, scry / peek at the top of the library and a zoom when you hover a card.
