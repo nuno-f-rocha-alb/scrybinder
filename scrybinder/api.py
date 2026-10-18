@@ -546,6 +546,17 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
         _wrap(decks.delete_folder, db, folder_id)
         return {"ok": True}
 
+    @app.get("/api/decks/shopping-list")  # before /api/decks/{deck_id}: that route would take "shopping-list" for an id
+    def decks_shopping_list(format: str = "json", include_side: bool = False):
+        sl = _wrap(decks.shopping_list, db, include_side)
+        if format == "text":
+            return Response(decks.shopping_text(sl), media_type="text/plain; charset=utf-8",
+                            headers={"Content-Disposition": 'attachment; filename="scrybinder-shopping-list.txt"'})
+        if format == "csv":
+            return Response(decks.shopping_csv(sl), media_type="text/csv; charset=utf-8",
+                            headers={"Content-Disposition": 'attachment; filename="scrybinder-shopping-list.csv"'})
+        return sl
+
     @app.get("/api/decks/{deck_id}")
     def decks_get(deck_id: int):
         return _wrap(decks.get, db, deck_id)

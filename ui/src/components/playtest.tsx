@@ -2,7 +2,7 @@ import { useState } from "react";
 import { CardImg, Modal } from "./ui";
 import { MenuItem, useContextMenu } from "./contextmenu";
 import type { DeckCard } from "../decks";
-import { GCard, Game, Zone, bottomOne, draw, isLand, keep, move, mulligan, newGame, nextTurn, shuffleLibrary, toggleTap } from "../goldfish";
+import { GCard, Game, SimResult, Zone, bottomOne, draw, isLand, keep, move, mulligan, newGame, nextTurn, seeded, shuffleLibrary, simulate, toggleTap } from "../goldfish";
 
 const btn = "cursor-pointer rounded-lg border border-line px-3 py-1.5 text-sm outline-none hover:bg-raised focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-40";
 const ZONE_LABEL: Record<Zone, string> = { hand: "Hand", battlefield: "Battlefield", graveyard: "Graveyard", exile: "Exile", library: "Library", command: "Command zone" };
@@ -39,6 +39,36 @@ function Pile({ label, cards, onClick, back }: { label: string; cards: GCard[]; 
   );
 }
 
+const pct = (x: number) => `${(x * 100).toFixed(1)}%`;
+
+/** Deals many opening hands to see how consistent the deck is: land counts, keepable hands, colours by turn 4. */
+function Simulate({ cards, commander }: { cards: DeckCard[]; commander: boolean }) {
+  const [n, setN] = useState(1000);
+  const [res, setRes] = useState<SimResult | null>(null);
+  const run = () => setRes(simulate(cards, commander, Math.min(Math.max(1, n || 1), 100000), seeded(Date.now())));
+  const [lo, hi] = commander ? [3, 5] : [2, 4];
+  return (
+    <section aria-label="Simulate opening hands" className="mt-8 rounded-xl border border-line p-4">
+      <h3 className="mb-2 text-sm font-medium">Simulate opening hands</h3>
+      <div className="flex flex-wrap items-center gap-2">
+        <label className="flex items-center gap-2 text-sm">Hands
+          <input type="number" min={1} max={100000} value={n} onChange={(e) => setN(Number(e.target.value))} aria-label="Number of hands"
+            className="w-24 rounded-lg border border-line bg-raised px-2 py-1 text-sm outline-none focus-visible:ring-2 focus-visible:ring-accent" /></label>
+        <button className={btn} onClick={run}>Run</button>
+      </div>
+      {res && (
+        <dl className="mt-3 grid max-w-md grid-cols-[1fr_auto] gap-x-6 gap-y-1 text-sm" aria-live="polite">
+          <dt>Keepable hands ({lo}–{hi} lands)</dt><dd className="font-medium">{pct(res.keepableShare)}</dd>
+          <dt>Lands in the opening seven</dt><dd className="font-medium">{res.avgLandsOpening.toFixed(2)}</dd>
+          <dt>Lands seen by turn 4</dt><dd className="font-medium">{res.avgLandsByTurn4.toFixed(2)}</dd>
+          <dt>Every colour from a land by turn 4</dt><dd className="font-medium">{pct(res.allColorsByTurn4Share)}</dd>
+        </dl>
+      )}
+      <p className="mt-2 text-xs text-mute">Raw opening sevens without mulligans, on the play (turn 4 = seven cards plus three draws). Mana rocks and dorks do not count as colour sources.</p>
+    </section>
+  );
+}
+
 /** Solo playtest of a deck: draw, mulligan and play turns against nobody. */
 export default function Playtest({ cards, commander }: { cards: DeckCard[]; commander: boolean }) {
   const [onPlay, setOnPlay] = useState(true);
@@ -56,6 +86,7 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={onPlay} onChange={(e) => setOnPlay(e.target.checked)} />On the play (no draw on turn 1)</label>
         <button className={btn} onClick={start}>Start playtest</button>
       </>}
+      <Simulate cards={cards} commander={commander} />
     </div>
   );
 
@@ -165,6 +196,7 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
           </ul>
         </Modal>
       )}
+      <Simulate cards={cards} commander={commander} />
       {menu.node}
     </div>
   );
