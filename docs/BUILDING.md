@@ -87,4 +87,4 @@ UV_PROJECT_ENVIRONMENT=.venv-cpu uv run --extra vision --with pyinstaller pyinst
 On Windows, put a copy of the Tesseract install folder at `packaging/tesseract/` before building (with `tessdata/eng.traineddata`)
 and it is bundled; the app finds it automatically. The Windows installer is built with
 [Inno Setup](https://jrsoftware.org/isinfo.php) from `packaging/scrybinder.iss`.
-Releases are Windows only. CI also builds a Linux bundle (not published) to check that packaging works; macOS is not built.
+Releases have the Windows installer, portable zip and update package, plus a Linux tar.gz that is built in CI and published as it is (no in-app updates on Linux: the updater only runs on Windows). macOS is not built.

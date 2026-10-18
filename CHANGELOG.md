@@ -4,6 +4,9 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Changed
+- Releases now also publish the Linux build (`Scrybinder-X.Y.Z-linux-x64.tar.gz`, extract and run; no in-app updates on Linux).
+
 ## [0.8.0] — 2026-10-18
 
 ### Added
