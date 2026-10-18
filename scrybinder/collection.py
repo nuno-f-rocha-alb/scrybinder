@@ -1,4 +1,6 @@
 """Collection: rows aggregated by (printing, finish, condition, language, location, flags)."""
+import csv
+import io
 import json
 import re
 
@@ -240,6 +242,47 @@ def set_progress(db, location=None, q="", hide_empty=True, group=False) -> list[
         f" FROM set_totals t LEFT JOIN ({sub}) o ON o.code=t.code LEFT JOIN sets s ON s.code=t.code"
         f" WHERE {' AND '.join(w)}" + (" AND o.owned>0" if hide_empty else ""), p).fetchall()
     return [dict(r, percent=round(100 * r["owned"] / r["total"], 1)) for r in rows]
+
+
+def _number_key(cn) -> tuple:
+    m = re.match(r"\d+", cn or "")
+    return (int(m.group()) if m else 0, cn or "")
+
+
+def set_missing(db, set_code: str, group: bool = False, location=None) -> dict:
+    """The printings of a set you do not own (real copies only, within `location` if given), as `set_progress` counts a set:
+    non-digital printings; `group` treats a card with any printing owned as owned and lists one printing (the cheapest) of the rest."""
+    code = (set_code or "").lower()
+    locs = _locs(location)
+    where = " AND c.location IN (" + ",".join("?" * len(locs)) + ")" if locs else ""
+    same = "COALESCE(k2.oracle_id,k2.id)=COALESCE(k.oracle_id,k.id)" if group else "k2.id=k.id"
+    rows = db.execute(
+        "SELECT k.id, k.oracle_id, k.name, k.collector_number, k.rarity, k.set_name, COALESCE(k.eur, k.eur_foil, k.eur_etched) AS price FROM cards k"
+        " WHERE k.set_code=? AND k.digital=0 AND NOT EXISTS (SELECT 1 FROM collection c JOIN cards k2 ON k2.id=c.scryfall_id"
+        f" WHERE c.proxy=0 AND k2.set_code=k.set_code AND {same}{where}) ORDER BY k.released_at DESC", [code, *locs]).fetchall()
+    pick = {}
+    for r in rows:  # newest first: on a price tie the newest printing stays
+        key = (r["oracle_id"] or r["id"]) if group else r["id"]
+        best = pick.get(key)
+        if best is None or (r["price"] if r["price"] is not None else 1e9) < (best["price"] if best["price"] is not None else 1e9):
+            pick[key] = r
+    missing = [{"scryfall_id": r["id"], "oracle_id": r["oracle_id"], "name": r["name"], "collector_number": r["collector_number"],
+                "rarity": r["rarity"], "price": r["price"]} for r in sorted(pick.values(), key=lambda r: _number_key(r["collector_number"]))]
+    name = rows[0]["set_name"] if rows else (db.execute("SELECT MAX(set_name) FROM cards WHERE set_code=?", (code,)).fetchone()[0] or "")
+    return {"set_code": code, "set_name": name, "missing": missing, "count": len(missing),
+            "total_price": round(sum(m["price"] or 0 for m in missing), 2)}
+
+
+def set_missing_text(sm: dict) -> str:
+    return "".join(f"{m['name']} (#{m['collector_number']})\n" for m in sm["missing"])
+
+
+def set_missing_csv(sm: dict) -> str:
+    buf = io.StringIO(newline="")
+    w = csv.writer(buf, lineterminator="\n")
+    w.writerow(["name", "collector_number", "rarity", "price_eur", "set_code"])
+    w.writerows([m["name"], m["collector_number"], m["rarity"], "" if m["price"] is None else m["price"], sm["set_code"]] for m in sm["missing"])
+    return buf.getvalue()
 
 
 def locations(db) -> list[dict]:
