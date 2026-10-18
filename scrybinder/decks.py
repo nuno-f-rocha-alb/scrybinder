@@ -765,3 +765,87 @@ def shopping_csv(sl: dict) -> str:
     w.writerow(["quantity", "name", "price_eur", "cardmarket_id"])
     w.writerows([i["needed"], i["name"], "" if i["price"] is None else i["price"], i["cardmarket_id"] or ""] for i in sl["items"])
     return buf.getvalue()
+
+
+SNAPSHOT_NAME_MAX = 60
+
+
+def _snapshot(db, deck_id: int, snapshot_id: int):
+    _deck(db, deck_id)
+    row = db.execute("SELECT * FROM deck_snapshots WHERE id=?", (snapshot_id,)).fetchone()
+    if row is None:
+        raise KeyError(snapshot_id)
+    if row["deck_id"] != deck_id:
+        raise ValueError("that snapshot belongs to another deck")
+    return row
+
+
+def save_snapshot(db, deck_id: int, name) -> int:
+    """Save the deck's cards as they are now (name, board, quantity, printing and price; not tags or assigned copies)."""
+    _deck(db, deck_id)
+    name = re.sub(r"\s+", " ", name.strip()) if isinstance(name, str) else ""
+    if not name or len(name) > SNAPSHOT_NAME_MAX:
+        raise ValueError(f"a snapshot name has 1 to {SNAPSHOT_NAME_MAX} characters")
+    with db:
+        sid = db.execute("INSERT INTO deck_snapshots (deck_id, name) VALUES (?, ?)", (deck_id, name)).lastrowid
+        db.executemany("INSERT INTO deck_snapshot_cards (snapshot_id, oracle_id, scryfall_id, finish, board, quantity, name, price) VALUES (?,?,?,?,?,?,?,?)",
+                       [(sid, c["oracle_id"], c["scryfall_id"], c["finish"], c["board"], c["quantity"], c["name"], c["price"]) for c in cards(db, deck_id)])
+    return sid
+
+
+def snapshots(db, deck_id: int) -> list[dict]:
+    _deck(db, deck_id)
+    return [dict(r, value=round(r["value"], 2)) for r in db.execute(
+        "SELECT s.id, s.name, s.created_at, COALESCE(SUM(c.quantity), 0) AS cards, COALESCE(SUM(c.quantity * COALESCE(c.price, 0)), 0) AS value"
+        " FROM deck_snapshots s LEFT JOIN deck_snapshot_cards c ON c.snapshot_id = s.id WHERE s.deck_id=? GROUP BY s.id ORDER BY s.created_at DESC, s.id DESC", (deck_id,))]
+
+
+def delete_snapshot(db, deck_id: int, snapshot_id: int) -> None:
+    _snapshot(db, deck_id, snapshot_id)
+    with db:
+        db.execute("DELETE FROM deck_snapshots WHERE id=?", (snapshot_id,))  # its cards go with it (ON DELETE CASCADE)
+
+
+def _side(db, deck_id: int, which) -> tuple[dict, bool]:
+    """The lines of one side of a comparison, summed per (card, board): `{key: {name, qty, price}}`, and whether it is the live deck."""
+    if which == "current":
+        lines, live = [(c["oracle_id"], c["board"], c["name"], c["quantity"], c["price"]) for c in cards(db, deck_id)], True
+    else:
+        _snapshot(db, deck_id, which)
+        lines = [tuple(r) for r in db.execute("SELECT oracle_id, board, name, quantity, price FROM deck_snapshot_cards WHERE snapshot_id=?", (which,))]
+        live = False
+    out = {}
+    for oid, board, name, q, price in lines:
+        e = out.setdefault((oid, board), {"name": name, "qty": 0, "price": None})
+        e["qty"] += q
+        if e["price"] is None:
+            e["price"] = price
+    return out, live
+
+
+def compare(db, deck_id: int, base="latest", target="current") -> dict:
+    """What changed between two states of a deck (each `"current"` or a snapshot id; the default is the newest snapshot against the deck
+    now): cards added, removed and with another quantity, by card and board. The price of a change is today's price when the card is in the
+    live deck, else the one saved with the snapshot."""
+    _deck(db, deck_id)
+    if base == "latest":
+        row = db.execute("SELECT id FROM deck_snapshots WHERE deck_id=? ORDER BY created_at DESC, id DESC LIMIT 1", (deck_id,)).fetchone()
+        if row is None:
+            raise ValueError("no snapshots yet")
+        base = row["id"]
+    a, _ = _side(db, deck_id, base)
+    b, _ = _side(db, deck_id, target)
+    live, _ = _side(db, deck_id, "current")
+    added, removed, changed = [], [], []
+    for key in sorted(set(a) | set(b), key=lambda k: ((b.get(k) or a.get(k))["name"].lower(), k[1])):
+        old, new = a.get(key), b.get(key)
+        o, n = old["qty"] if old else 0, new["qty"] if new else 0
+        if o == n:
+            continue
+        src = live.get(key) or new or old
+        price = src["price"]
+        entry = {"oracle_id": key[0], "name": (new or old)["name"], "board": key[1], "old_qty": o, "new_qty": n, "delta_qty": n - o,
+                 "price": price, "line_delta": round((n - o) * (price or 0), 2)}
+        (added if not o else removed if not n else changed).append(entry)
+    return {"added": added, "removed": removed, "changed": changed,
+            "price_difference": round(sum(e["line_delta"] for e in added + removed + changed), 2)}

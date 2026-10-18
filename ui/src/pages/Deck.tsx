@@ -15,6 +15,7 @@ import { DeckView, useZoom } from "../components/deckviews";
 import { LegalityPanel, StatsPanel } from "../components/deckstats";
 import AssignDialog from "../components/assign";
 import Playtest from "../components/playtest";
+import Snapshots from "../components/snapshots";
 import Suggestions from "../components/suggestions";
 import AddMissingDialog from "../components/addmissing";
 import AddCards from "../components/addcards";
@@ -74,7 +75,7 @@ export default function Deck({ id, onBack, focusOracle }: { id: number; onBack: 
   const [missingIds, setMissingIds] = useState<number[] | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const focused = useRef(false);
-  const [tab, setTab] = useState<"cards" | "stats" | "suggestions" | "playtest">("cards");
+  const [tab, setTab] = useState<"cards" | "stats" | "suggestions" | "playtest" | "snapshots">("cards");
   const [filter, setFilter] = useState<CardFilter | null>(null);
   const [showProblems, setShowProblems] = useState(false);
   const [assignId, setAssignId] = useState<number | null>(null);
@@ -224,7 +225,7 @@ export default function Deck({ id, onBack, focusOracle }: { id: number; onBack: 
         </div>
 
         <div role="tablist" aria-label="Deck sections" className="mb-4 flex gap-1 border-b border-line">
-          {([["cards", "Cards"], ["stats", "Statistics"], ["playtest", "Playtest"], ...(deck.format === "commander" ? [["suggestions", "Suggestions"] as const] : [])] as const).map(([k, l]) => (
+          {([["cards", "Cards"], ["stats", "Statistics"], ["playtest", "Playtest"], ["snapshots", "Snapshots"], ...(deck.format === "commander" ? [["suggestions", "Suggestions"] as const] : [])] as const).map(([k, l]) => (
             <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
               className={`-mb-px cursor-pointer border-b-2 px-4 py-2 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-accent ${tab === k ? "border-accent text-ink" : "border-transparent text-mute hover:text-ink"}`}>{l}</button>
           ))}
@@ -236,6 +237,8 @@ export default function Deck({ id, onBack, focusOracle }: { id: number; onBack: 
         {tab === "stats" && (stats ? <StatsPanel stats={stats} active={filter} onFilter={pick} /> : <p className="text-mute">Loading…</p>)}
 
         <div hidden={tab !== "playtest"}><Playtest cards={deck.cards} commander={deck.format === "commander"} /></div>  {/* stays mounted: switching tabs keeps the game */}
+
+        {tab === "snapshots" && <Snapshots deckId={id} toast={toast} />}
 
         {tab === "suggestions" && deck.format === "commander" && <Suggestions deckId={id} toast={toast} onAdded={reload} />}
 

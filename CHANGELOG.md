@@ -5,6 +5,7 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 ## [Unreleased]
 
 ### Added
+- Deck snapshots: save a named copy of a deck's card list and compare it with the deck now (cards added, removed and changed, and what the change costs at today's prices).
 - Shopping list on the Decks page: every card still missing across all your decks, with the decks that need it and the total in EUR; copy it as text for a Cardmarket want list or download it as CSV.
 - Playtest: simulate many opening hands to see the share of keepable hands, the average lands in the opening seven and by turn 4, and how often every colour has a land by turn 4.
 - Collection value over time: the value of your collection is noted each time the card prices are updated, and shown (a small line and the last days) under the total on the Collection page.
