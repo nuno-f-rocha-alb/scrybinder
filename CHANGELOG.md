@@ -4,6 +4,9 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Changed
+- Add cards: the search shows the cards as images (the newest printing of each); clicking one opens a window with all its printings, finish, quantity, condition, language, location and price, and it stays open to add another copy or printing.
+
 ## [0.8.0] — 2026-10-18
 
 ### Added
