@@ -69,9 +69,9 @@ export default function Sets({ onOpen }: { onOpen: (code: string, location?: str
       {sorted && sorted.length === 0 && <div className="rounded-2xl border border-dashed border-line p-16 text-center text-mute">No sets to show.</div>}
       <div className="grid grid-cols-[repeat(auto-fill,minmax(250px,1fr))] gap-3">
         {sorted?.map((s) => (
-          <div key={s.code} className="relative">
+          <div key={s.code} className="group/set relative min-w-0">
           <button onClick={() => onOpen(s.code, location)}
-            className="group relative flex cursor-pointer items-center gap-3 overflow-hidden rounded-xl border border-line bg-surface px-4 pb-5 pt-3.5 text-left outline-none transition hover:border-accent hover:bg-raised focus-visible:ring-2 focus-visible:ring-accent">
+            className="group relative flex h-full w-full cursor-pointer items-center gap-3 overflow-hidden rounded-xl border border-line bg-surface px-4 pb-5 pt-3.5 text-left outline-none transition hover:border-accent hover:bg-raised focus-visible:ring-2 focus-visible:ring-accent">
             <Icon code={s.code} on={!!s.has_icon} />
             <div className="min-w-0 flex-1">
               <div className="truncate font-medium leading-tight">{s.name}</div>
@@ -83,7 +83,7 @@ export default function Sets({ onOpen }: { onOpen: (code: string, location?: str
               <span className={`block h-full ${s.percent >= 100 ? "bg-ok" : "bg-accent"}`} style={{ width: `${Math.min(100, s.percent)}%` }} />
             </span>
           </button>
-          {s.owned < s.total && <button onClick={() => setMissing({ code: s.code, name: s.name })} title="The printings you do not own" className="absolute right-2 top-1.5 cursor-pointer rounded px-1.5 py-0.5 text-[11px] text-mute outline-none hover:bg-raised hover:text-ink focus-visible:ring-2 focus-visible:ring-accent">Missing</button>}
+          {s.owned < s.total && <button onClick={() => setMissing({ code: s.code, name: s.name })} title="The printings you do not own" className="absolute right-2 top-1.5 cursor-pointer rounded border border-line bg-raised px-1.5 py-0.5 text-[11px] text-ink opacity-0 outline-none transition group-hover/set:opacity-100 focus-visible:opacity-100 focus-visible:ring-2 focus-visible:ring-accent">Missing</button>}
           </div>
         ))}
       </div>

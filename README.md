@@ -41,7 +41,7 @@ Scrybinder is a desktop app that recognises the *exact printing* of each card yo
 
 | | Scrybinder | ManaBox / Delver Lens | [LoreFetch](https://github.com/jnapoli87/LoreFetch) |
 |---|---|---|---|
-| Runs on | Windows (Linux/macOS from source) | Phone | Windows |
+| Runs on | Windows (Linux build, macOS from source) | Phone | Windows |
 | Account / subscription | none | free tiers | none |
 | Data stays on your PC | yes | no (cloud sync) | yes |
 | Exact printing (promos, foils, serialized) | yes, with a review list | scanning picks a printing | yes |
@@ -52,15 +52,16 @@ Scrybinder does not do price history, public deck sharing, deck combos or mobile
 
 ## Download and install
 
-Get the latest build from the [Releases page](https://github.com/nuno-f-rocha-alb/scrybinder/releases). Windows 10/11 is what is tested and shipped; on Linux and macOS you [build from source](#build-from-source).
+Get the latest build from the [Releases page](https://github.com/nuno-f-rocha-alb/scrybinder/releases). Windows 10/11 is what is tested and what has an installer and in-app updates. A **Linux** build is published too (a tar.gz, [see below](#linux-and-macos)); on macOS you [build from source](#build-from-source).
 
 | File | What it is | Size |
 |---|---|---|
 | `Scrybinder-X.Y.Z-windows-setup.exe` | **Installer.** Installs for your user (no administrator needed) in `%LOCALAPPDATA%\Programs\Scrybinder`, adds a Start-menu shortcut (and an optional desktop one) and an uninstaller. Your data lives in `%LOCALAPPDATA%\Scrybinder`. | ~1.3 GB |
 | `Scrybinder-X.Y.Z-windows-portable.zip` | **Portable.** Extract anywhere and run `Scrybinder.exe`. Your data stays in a `data` folder next to it, so it can live on a USB stick. | ~1.4 GB |
+| `Scrybinder-X.Y.Z-linux-x64.tar.gz` | **Linux (x86-64).** Extract it and run `Scrybinder/Scrybinder`. Built in CI and not tested by hand; no in-app updates (see [Linux and macOS](#linux-and-macos)). | ~0.8 GB |
 | `Scrybinder-X.Y.Z-update-from-A.B.C.zip` | **Update package** from the previous version (not an installer): see [Updating](#updating). | tens of MB |
 | `manifest.json` | the SHA-256 of every app file (used to build update packages) | <1 MB |
-| `SHA256SUMS` | checksums of the files above | tiny |
+| `SHA256SUMS` | checksums of all the files above | tiny |
 
 Both Windows builds are self-contained: they include Python, Tesseract (OCR), PyTorch for the CPU and the DINOv2 model, so identification works offline once the card database and the visual index are built.
 
@@ -87,7 +88,7 @@ Your collection, images and index are never touched. The package only works on t
 
 ### Linux and macOS
 
-No ready-made build yet; they work from source and the tests run on both in CI. See [Build from source](#build-from-source). Install Tesseract yourself (`sudo apt install tesseract-ocr`, `brew install tesseract`).
+**Linux** has a ready-made build, `Scrybinder-X.Y.Z-linux-x64.tar.gz` on the Releases page: extract it and run `Scrybinder/Scrybinder`. It is built in CI and nobody tests it by hand, and **it does not update itself**: to update, download the new tarball and extract it over the old folder (your data is kept in `~/.local/share/scrybinder`). **macOS** has no build; it works from source and the tests run on it in CI. See [Build from source](#build-from-source). Install Tesseract yourself (`sudo apt install tesseract-ocr`, `brew install tesseract`).
 
 ## First steps
 
