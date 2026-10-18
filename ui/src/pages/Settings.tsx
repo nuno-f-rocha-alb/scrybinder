@@ -10,13 +10,13 @@ type Gpu = {
 type Bridge = { save_db?: (name: string) => Promise<string | null>; restore_db?: () => Promise<{ staged?: boolean; error?: string; cards?: number; collection?: number } | null> };
 
 /** A copy of the database, and putting one back (applied at the next start, because the running app has the database open). */
-function BackupSection() {
+function BackupSection({ pending }: { pending?: boolean }) {
   const [msg, setMsg] = useState("");
   const [err, setErr] = useState("");
   const [confirm, setConfirm] = useState(false);
   const bridge = (window as { pywebview?: { api?: Bridge } }).pywebview?.api;
   const name = () => `scrybinder-backup-${new Date().toISOString().slice(0, 19).replace(/[-:]/g, "").replace("T", "-")}.db`;
-  const staged = (r: { cards?: number; collection?: number }) => setMsg(`Ready to restore (${(r.collection ?? 0).toLocaleString()} collection rows). Restart Scrybinder to finish: your current database is kept next to it as scrybinder.db.before-restore.`);
+  const staged = (r: { cards?: number; collection?: number }) => setMsg(`Ready to restore (${(r.collection ?? 0).toLocaleString()} collection rows). Now close Scrybinder completely (wait until its window is gone) and open it again to finish: your current database is kept next to it as scrybinder.db.before-restore.`);
   const backup = async () => {
     setErr(""); setMsg("");
     if (!bridge?.save_db) { window.location.assign("/api/backup"); setMsg("The backup is downloading."); return; }
@@ -57,6 +57,7 @@ function BackupSection() {
               <button className="btn-ghost" onClick={() => setConfirm(false)}>Cancel</button>
             </div>}
       </div>
+      {pending && !msg && <p className="mt-3 text-sm text-gold" role="status">A restore is waiting. Close Scrybinder completely (wait until its window is gone, and check that no other Scrybinder is open) and open it again to finish it.</p>}
       {msg && <p className="mt-3 text-sm text-ok" role="status">{msg}</p>}
       {err && <p className="mt-3 text-sm text-danger" role="alert">{err}</p>}
     </section>
@@ -299,7 +300,7 @@ export default function Settings({ status, refresh }: { status: Status | null; r
         {err && <p className="mt-2 text-xs text-danger">{err}</p>}
       </section>
       <UpdateSection refresh={refresh} />
-      <BackupSection />
+      <BackupSection pending={status?.restore_pending} />
       <GpuSection />
       <p className="mt-6 text-xs text-mute">Scrybinder {status?.version} · Card data and images © Scryfall (scryfall.com). Scrybinder is an unofficial project and is not affiliated with Wizards of the Coast. Magic: The Gathering is a trademark of Wizards of the Coast.</p>
     </div>
