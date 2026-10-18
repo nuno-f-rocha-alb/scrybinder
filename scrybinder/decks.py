@@ -1,6 +1,8 @@
 """Decks: their own card list (by oracle card) with a board, a preferred printing and tags per card.
 Cards can be assigned physical copies of the collection (reserved for that deck); a card's status says how much of
 it is assigned, free to assign, held by other decks, or has to be bought."""
+import csv
+import io
 import json
 import re
 import sqlite3
@@ -725,3 +727,41 @@ def copies(db, deck_id: int, card_id: int) -> dict:
         r["elsewhere"] = other.get(r["id"], [])
         r["free"] = max(r["quantity"] - r["here"] - sum(e["quantity"] for e in r["elsewhere"]), 0)
     return {"quantity": card["quantity"], "rows": rows}
+
+
+def shopping_list(db, include_side: bool = False) -> dict:
+    """What is still missing across every deck, one entry per card: the sum of each deck's `missing` (what the deck would have to buy;
+    a free copy two decks both see as available is not shared out between them). `maybe` never counts; `side` only on request."""
+    boards = ("main", "commander") + (("side",) if include_side else ())
+    items = {}
+    for d in db.execute("SELECT id, name FROM decks ORDER BY name, id").fetchall():
+        for c in cards(db, d["id"]):
+            if c["board"] not in boards or not c["missing"]:
+                continue
+            it = items.setdefault(c["oracle_id"], {"oracle_id": c["oracle_id"], "name": c["name"], "needed": 0, "price": c["price"],
+                                                   "cardmarket_id": c["cardmarket_id"], "decks": []})
+            it["needed"] += c["missing"]
+            if it["price"] is None:
+                it["price"] = c["price"]
+            mine = next((x for x in it["decks"] if x["deck_id"] == d["id"]), None)
+            if mine:
+                mine["needed"] += c["missing"]
+            else:
+                it["decks"].append({"deck_id": d["id"], "name": d["name"], "needed": c["missing"]})
+    out = sorted(items.values(), key=lambda i: i["name"].lower())
+    for it in out:
+        it["line_total"] = round(it["needed"] * (it["price"] or 0), 2)
+    return {"items": out, "total_needed": sum(i["needed"] for i in out), "total_value": round(sum(i["line_total"] for i in out), 2)}
+
+
+def shopping_text(sl: dict) -> str:
+    """`N Name` per line: what Cardmarket's want-list search accepts pasted."""
+    return "".join(f"{i['needed']} {i['name']}\n" for i in sl["items"])
+
+
+def shopping_csv(sl: dict) -> str:
+    buf = io.StringIO(newline="")
+    w = csv.writer(buf, lineterminator="\n")
+    w.writerow(["quantity", "name", "price_eur", "cardmarket_id"])
+    w.writerows([i["needed"], i["name"], "" if i["price"] is None else i["price"], i["cardmarket_id"] or ""] for i in sl["items"])
+    return buf.getvalue()
