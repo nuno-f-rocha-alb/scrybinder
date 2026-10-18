@@ -472,6 +472,17 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
                 pass
         return collection.set_progress(db, location, q, hide_empty, group)
 
+    @app.get("/api/sets/{code}/missing")
+    def set_missing(code: str, group: bool = False, location: list[str] | None = Query(None), format: str = "json"):
+        sm = _wrap(collection.set_missing, db, code, group, location)
+        if format == "text":
+            return Response(collection.set_missing_text(sm), media_type="text/plain; charset=utf-8",
+                            headers={"Content-Disposition": f'attachment; filename="scrybinder-missing-{sm["set_code"]}.txt"'})
+        if format == "csv":
+            return Response(collection.set_missing_csv(sm), media_type="text/csv; charset=utf-8",
+                            headers={"Content-Disposition": f'attachment; filename="scrybinder-missing-{sm["set_code"]}.csv"'})
+        return sm
+
     @app.get("/api/seticon/{code}")
     def seticon(code: str):
         p = scryfall.icon_path(db, code)
@@ -486,6 +497,17 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
     def coll(q: str = "", set: str = "", location: list[str] | None = Query(None), finish: str = "", language: str = "",
              sort: str = "name", limit: int = 100, offset: int = 0, group: str = "location"):
         return collection.search(db, q, set, location, finish, language, sort, min(limit, 100000), offset, group)
+
+    @app.get("/api/collection/spare")
+    def collection_spare(format: str = "json", keep: int = 0):
+        sp = _wrap(collection.spare, db, keep)
+        if format == "text":
+            return Response(collection.spare_text(sp), media_type="text/plain; charset=utf-8",
+                            headers={"Content-Disposition": 'attachment; filename="scrybinder-spare-cards.txt"'})
+        if format == "csv":
+            return Response(collection.spare_csv(sp), media_type="text/csv; charset=utf-8",
+                            headers={"Content-Disposition": 'attachment; filename="scrybinder-spare-cards.csv"'})
+        return sp
 
     @app.get("/api/collection/value-history")
     def value_history():

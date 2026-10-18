@@ -8,6 +8,7 @@ import { BulkBar, BulkDelete, BulkEdit } from "./Bulk";
 import { MenuItem, nameAndLinks, useContextMenu } from "../components/contextmenu";
 import DeckPicker from "../components/deckpicker";
 import ValueHistory from "../components/valuehistory";
+import SpareCards from "../components/sparecards";
 import CardDetails, { CardInfoLoader } from "../components/carddetails";
 import LocationPicker from "../components/locationpicker";
 
@@ -21,6 +22,7 @@ const groupLabel = (by: GroupBy, key: string) => (by === "location" ? placeName(
 
 export default function Collection({ initialSet, initialLocation, onOpenDeck }: { initialSet?: string; initialLocation?: string; onOpenDeck: (deckId: number, oracleId?: string) => void }) {
   const [q, setQ] = useState("");
+  const [spareView, setSpareView] = useState(false);
   const [locations, setLocations] = useState<string[]>(initialLocation !== undefined ? [initialLocation] : []);  // none = all
   const [setCode, setSetCode] = useState(initialSet ?? "");
   const [group, setGroup] = useGroup();
@@ -126,6 +128,8 @@ export default function Collection({ initialSet, initialLocation, onOpenDeck }: 
   };
   const setV = (v: "grid" | "table") => { setView(v); try { localStorage.setItem("scrybinder.view", v); } catch { /* no storage */ } };
   const where = (r: Row) => r.places.map((p) => `${p.quantity}× ${placeName(p.location)}`).join("\n");
+  if (spareView) return <SpareCards onBack={() => setSpareView(false)} />;
+
   const heading = (s: { key: string; label: string; items: { r: Row }[] }) => groupBy === "none" ? null : (
     <h2 className="mb-2 mt-1 flex items-center gap-2 border-b border-line pb-1 text-sm font-semibold">
       {groupBy === "location" && locs.find((l) => l.location === s.key)?.deck_id != null && <IconStack2 className="size-4 text-accent" aria-label="Deck" />}
@@ -150,6 +154,7 @@ export default function Collection({ initialSet, initialLocation, onOpenDeck }: 
             <IconSearch className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-mute" />
             <input className="field w-60 pl-9" placeholder="Search by name…" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search" />
           </div>
+          <button className="btn-ghost" title="Copies that are in no deck: your trade binder" onClick={() => setSpareView(true)}><IconCards className="size-4" />Spare cards</button>
           <LocationPicker locs={locs} value={locations} onChange={setLocations} onRemove={setDelLoc} onMerge={setMerging} />
           <button className="btn-ghost" title="Make a location, empty, to move cards into" onClick={() => setNewLoc("")}><IconFolderPlus className="size-4" />New location</button>
           <Select className="field w-auto" value={finish} onChange={(e) => setFinish(e.target.value)} aria-label="Finish">
