@@ -5,6 +5,7 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 ## [Unreleased]
 
 ### Added
+- Settings: back up the database to a single file and restore a backup (checked first; applied at the next start, the current database is kept as `scrybinder.db.before-restore`).
 - Playtest: +1/+1 and generic counters, tokens, undo, scry / peek at the top of the library and a zoom when you hover a card.
 - Sets: a "Missing" button on each set lists the printings you do not own with the price to complete it (honouring Group printings and the location), to copy as text or download as CSV.
 - Spare cards on the Collection page: the copies that are in no deck (a trade binder), with a "keep N of each card" setting, copy as text and CSV download.
