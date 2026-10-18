@@ -4,6 +4,8 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+## [0.8.1] — 2026-10-19
+
 ### Added
 - Collection: "Move to…" in the right-click menu of a card moves some or all of its copies to another location.
 - Deck snapshots: a Restore button puts the deck back as it was in a snapshot (the deck as it is now is saved as a snapshot first, so you can come back to it). Tags and assigned copies are not part of a snapshot.
