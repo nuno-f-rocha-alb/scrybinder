@@ -48,7 +48,7 @@ Scrybinder is a desktop app that recognises the *exact printing* of each card yo
 | Import / export | ManaBox, Moxfield, Cardmarket, deck lists | own formats | CSV |
 | Open source | MIT | no | GPL-3.0 |
 
-Scrybinder does not do price history, playtesting, public deck sharing, deck combos or mobile scanning; use it alongside tools like Moxfield, Archidekt or ManaBox.
+Scrybinder does not do price history, public deck sharing, deck combos or mobile scanning; use it alongside tools like Moxfield, Archidekt or ManaBox.
 
 ## Download and install
 
