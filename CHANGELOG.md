@@ -4,6 +4,9 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Added
+- Collection: "Move to…" in the right-click menu of a card moves some or all of its copies to another location.
+
 ## [0.8.0] — 2026-10-18
 
 ### Added
