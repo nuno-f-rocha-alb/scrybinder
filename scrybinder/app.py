@@ -44,6 +44,28 @@ class Bridge:
     def save_text(self, name: str, text: str) -> str | None:  # a deck list
         return self._save(name, text, ("Text files (*.txt)",))
 
+    def save_db(self, name: str) -> str | None:
+        """Ask where, then write a consistent backup of the database there (the file is too big to pass through the page)."""
+        import webview
+        from . import db
+        got = webview.windows[0].create_file_dialog(webview.FileDialog.SAVE, save_filename=Path(name).name, file_types=("Database files (*.db)",))
+        if not got:
+            return None
+        return db.backup(db.DATA_DIR / "scrybinder.db", Path(got if isinstance(got, str) else got[0]))["path"]
+
+    def restore_db(self) -> dict | None:
+        """Ask for a backup file, check it and stage it for the next start (None if the dialog was cancelled)."""
+        import webview
+        from . import db
+        got = webview.windows[0].create_file_dialog(webview.FileDialog.OPEN, file_types=("Database files (*.db)", "All files (*.*)"))
+        if not got:
+            return None
+        try:
+            info = db.stage_restore(db.DATA_DIR / "scrybinder.db", Path(got if isinstance(got, str) else got[0]))
+        except ValueError as e:
+            return {"error": str(e)}
+        return {"staged": True, "cards": info["cards"], "collection": info["collection"]}
+
 
 def _redirect_output_to_log():
     """pythonw / packaged app without a console: uvicorn needs a stderr, so send it to a file."""

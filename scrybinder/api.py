@@ -75,6 +75,13 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
                 "credit": "Card data and images © Scryfall — scryfall.com", "version": __version__,
                 "update_available": (updstate["plan"] or {}).get("latest") if not (updstate["plan"] or {}).get("up_to_date", True) else None}
 
+    def _rm_db(path):  # a temporary database and the -wal/-shm files that checking it may leave
+        for suffix in ("", "-wal", "-shm"):
+            Path(str(path) + suffix).unlink(missing_ok=True)
+
+    def _db_path() -> Path:
+        return Path(db.execute("PRAGMA database_list").fetchone()[2])
+
     def _run_bulk():
         try:
             job.update(state="download", done=0, total=0, error=None)
@@ -490,6 +497,41 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
     @app.get("/api/collection/value-history")
     def value_history():
         return {"snapshots": collection.value_history(db)}
+
+    @app.get("/api/backup")
+    def backup_download():
+        """A fresh consistent copy of the database as a download (plain browser; the app window saves through its own dialog)."""
+        import tempfile
+        from starlette.background import BackgroundTask
+        fd, tmp = tempfile.mkstemp(suffix=".db", dir=_db_path().parent)
+        os.close(fd)
+        try:
+            dbmod.backup(db, tmp)
+        except Exception as e:
+            _rm_db(tmp)
+            raise HTTPException(500, f"the backup failed: {e}")
+        return FileResponse(tmp, media_type="application/vnd.sqlite3", filename=time.strftime("scrybinder-backup-%Y%m%d-%H%M%S.db"),
+                            background=BackgroundTask(lambda: _rm_db(tmp)))
+
+    @app.post("/api/restore")
+    async def restore_upload(request: Request):
+        """Check an uploaded backup and stage it: it replaces the database at the next start."""
+        import tempfile
+        fd, tmp = tempfile.mkstemp(suffix=".db", dir=_db_path().parent)
+        try:
+            size = 0
+            with os.fdopen(fd, "wb") as f:
+                async for chunk in request.stream():  # a big database is not held in memory
+                    size += len(chunk)
+                    f.write(chunk)
+            if not size:
+                raise ValueError("no file")
+            info = await run_in_threadpool(dbmod.stage_restore, _db_path(), tmp)
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        finally:
+            _rm_db(tmp)
+        return {"staged": True, "restart_required": True, "cards": info["cards"], "collection": info["collection"]}
 
     @app.get("/api/locations")
     def locs():
