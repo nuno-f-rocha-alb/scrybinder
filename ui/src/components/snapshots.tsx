@@ -27,7 +27,7 @@ function Rows({ title, rows, tone }: { title: string; rows: Entry[]; tone: strin
 }
 
 /** Saved copies of a deck's card list, and what changed between any two states of the deck. */
-export default function Snapshots({ deckId, toast }: { deckId: number; toast: (m: string, err?: boolean) => void }) {
+export default function Snapshots({ deckId, toast, onRestored }: { deckId: number; toast: (m: string, err?: boolean) => void; onRestored?: () => void }) {
   const [snaps, setSnaps] = useState<Snap[] | null>(null);
   const [name, setName] = useState("");
   const [base, setBase] = useState("latest");
@@ -46,6 +46,14 @@ export default function Snapshots({ deckId, toast }: { deckId: number; toast: (m
 
   const save = () => api<{ id: number }>(`/decks/${deckId}/snapshots`, { method: "POST", body: JSON.stringify({ name: name.trim() || new Date().toLocaleString() }) })
     .then((r) => { setName(""); setBase(String(r.id)); setTarget("current"); toast("Snapshot saved"); return load(); }).catch((e) => toast(e.message, true));
+  const [confirm, setConfirm] = useState<number | null>(null);  // the snapshot whose Restore was clicked once
+  const restore = (s: Snap) => {
+    if (confirm !== s.id) { setConfirm(s.id); setTimeout(() => setConfirm((c) => (c === s.id ? null : c)), 4000); return; }
+    setConfirm(null);
+    api<{ restored: number; skipped: number }>(`/decks/${deckId}/snapshots/${s.id}/restore`, { method: "POST" })
+      .then((r) => { toast(`Deck restored to "${s.name}"${r.skipped ? ` (${r.skipped} cards could not be added)` : ""}. Your previous deck is saved as a snapshot.`); setBase("latest"); setTarget("current"); onRestored?.(); return load(); })
+      .catch((e) => toast(e.message, true));
+  };
   const remove = (s: Snap) => api(`/decks/${deckId}/snapshots/${s.id}`, { method: "DELETE" })
     .then(() => { if (base === String(s.id)) setBase("latest"); if (target === String(s.id)) setTarget("current"); return load(); }).catch((e) => toast(e.message, true));
 
@@ -67,7 +75,7 @@ export default function Snapshots({ deckId, toast }: { deckId: number; toast: (m
             <tr key={s.id} className="border-b border-line/60">
               <td className="py-1.5 pr-3">{s.name}</td><td className="px-3 text-mute">{when(s.created_at)}</td>
               <td className="px-3 text-right tabular-nums">{s.cards}</td><td className="px-3 text-right tabular-nums">{eur(s.value)}</td>
-              <td className="text-right"><button className="btn-ghost" aria-label={`Delete snapshot ${s.name}`} onClick={() => remove(s)}><IconTrash className="size-4" /></button></td>
+              <td className="whitespace-nowrap text-right"><button className="btn-ghost" onClick={() => restore(s)} title="Put the deck back as it was in this snapshot (the deck now is saved first)">{confirm === s.id ? "Click again to restore" : "Restore"}</button><button className="btn-ghost" aria-label={`Delete snapshot ${s.name}`} onClick={() => remove(s)}><IconTrash className="size-4" /></button></td>
             </tr>
           ))}</tbody>
         </table>
