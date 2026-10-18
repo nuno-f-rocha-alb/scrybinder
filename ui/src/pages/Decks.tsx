@@ -1,12 +1,13 @@
 import { useEffect, useState } from "react";
 import { Select } from "../components/select";
-import { IconAlertTriangle, IconCheck, IconChevronRight, IconFolder, IconFolderPlus, IconPencil, IconPlus, IconTrash } from "@tabler/icons-react";
+import { IconShoppingCart, IconAlertTriangle, IconCheck, IconChevronRight, IconFolder, IconFolderPlus, IconPencil, IconPlus, IconTrash } from "@tabler/icons-react";
 import { api, eur, img } from "../api";
 import { DeckInfo, FORMATS, Folder, Format, Legality, exportDeckList } from "../decks";
 import { MenuItem, useContextMenu } from "../components/contextmenu";
 import { Field, Modal, useToast } from "../components/ui";
 import Deck from "./Deck";
 import { ImportReport, Skipped } from "../components/decklist";
+import ShoppingList from "../components/shoppinglist";
 
 const label = (f: string) => f[0].toUpperCase() + f.slice(1);
 const NONE = "none";  // the section of the decks that are in no folder
@@ -72,6 +73,7 @@ export default function Decks({ target }: { target?: { deckId: number; oracleId?
   const [folders, setFolders] = useState<Folder[]>([]);
   const [legal, setLegal] = useState<Record<number, Legality>>({});
   const [creating, setCreating] = useState(false);
+  const [shopping, setShopping] = useState(false);
   const [name, setName] = useState("");
   const [format, setFormat] = useState<Format>("commander");
   const [folder, setFolder] = useState<number | null>(null);
@@ -99,6 +101,7 @@ export default function Decks({ target }: { target?: { deckId: number; oracleId?
     return () => clearInterval(t);
   }, []);
 
+  if (shopping) return <ShoppingList onBack={() => setShopping(false)} />;
   if (open !== null) return <Deck id={open} focusOracle={focus} onBack={() => { setOpen(null); setFocus(undefined); }} />;
 
   const run = (p: Promise<unknown>) => p.then(() => load()).catch((e) => toast(e.message, true));
@@ -158,6 +161,7 @@ export default function Decks({ target }: { target?: { deckId: number; oracleId?
           {decks && <p className="mt-1 text-sm text-mute">{decks.length} {decks.length === 1 ? "deck" : "decks"}{folders.length ? ` · ${folders.length} ${folders.length === 1 ? "folder" : "folders"}` : ""}</p>}
         </div>
         <div className="flex gap-2">
+          <button className="btn-ghost" onClick={() => setShopping(true)}><IconShoppingCart className="size-4" />Shopping list</button>
           <button className="btn-ghost" onClick={() => { setErr(""); setFolderDialog({ name: "" }); }}><IconFolderPlus className="size-4" />New folder</button>
           <button className="btn-primary" onClick={() => { setErr(""); setFolder(null); setCreating(true); }}><IconPlus className="size-4" />New deck</button>
         </div>

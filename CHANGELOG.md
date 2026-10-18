@@ -5,6 +5,7 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 ## [Unreleased]
 
 ### Added
+- Shopping list on the Decks page: every card still missing across all your decks, with the decks that need it and the total in EUR; copy it as text for a Cardmarket want list or download it as CSV.
 - Playtest: a commander can be sent back to the command zone from its right-click menu.
 
 ## [0.7.1] — 2026-10-17
