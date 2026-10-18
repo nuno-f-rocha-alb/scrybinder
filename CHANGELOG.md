@@ -5,6 +5,7 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 ## [Unreleased]
 
 ### Added
+- Playtest: +1/+1 and generic counters, tokens, undo, scry / peek at the top of the library and a zoom when you hover a card.
 - Sets: a "Missing" button on each set lists the printings you do not own with the price to complete it (honouring Group printings and the location), to copy as text or download as CSV.
 - Spare cards on the Collection page: the copies that are in no deck (a trade binder), with a "keep N of each card" setting, copy as text and CSV download.
 - Shopping list on the Decks page: every card still missing across all your decks, with the decks that need it and the total in EUR; copy it as text for a Cardmarket want list or download it as CSV.

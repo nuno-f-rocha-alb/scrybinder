@@ -3,7 +3,7 @@ import { primaryType } from "./decks";
 import type { DeckCard } from "./decks";
 
 export type Zone = "library" | "hand" | "battlefield" | "graveyard" | "exile" | "command";
-export type GCard = { uid: number; name: string; image_id: string | null; type_line: string | null; tapped: boolean; commander?: boolean };
+export type GCard = { uid: number; name: string; image_id: string | null; type_line: string | null; tapped: boolean; commander?: boolean; plus?: number; counters?: number; token?: boolean };
 export type Game = Record<Zone, GCard[]> & {
   turn: number; life: number; mulligans: number; onPlay: boolean;
   phase: "mulligan" | "bottom" | "playing"; toBottom: number; freeMulligan: boolean;
@@ -53,8 +53,11 @@ export function keep(g: Game): Game {
 export function move(g: Game, uid: number, to: Zone, bottom = false): Game {
   const from = (Object.keys(g) as (keyof Game)[]).find((z) => Array.isArray(g[z]) && (g[z] as GCard[]).some((c) => c.uid === uid)) as Zone | undefined;
   if (!from) return g;
-  const card = { ...(g[from].find((c) => c.uid === uid) as GCard), tapped: false };
+  const found = g[from].find((c) => c.uid === uid) as GCard;
   const out = { ...g, [from]: g[from].filter((c) => c.uid !== uid) };
+  if (found.token && from === "battlefield" && to !== "battlefield") return out;  // a token that leaves the battlefield ceases to exist
+  const { plus: _p, counters: _c, ...rest } = found;  // counters stay on the battlefield
+  const card = { ...rest, tapped: false };
   out[to] = (to === "library" && bottom) || to === "battlefield" ? [...out[to], card] : [card, ...out[to]];
   return out;
 }
@@ -107,3 +110,29 @@ export function simulate(cards: DeckCard[], commander: boolean, n: number, rnd: 
   const mean = (x: number) => (hands ? x / hands : 0);
   return { hands, keepableShare: mean(keep), avgLandsOpening: mean(open), avgLandsByTurn4: mean(t4), allColorsByTurn4Share: mean(colors), deckColors };
 }
+
+/** Add `delta` +1/+1 counters ("plus", may go negative) or generic counters (never below 0) to a card on the battlefield. */
+export function addCounter(g: Game, uid: number, kind: "plus" | "generic", delta: number): Game {
+  return { ...g, battlefield: g.battlefield.map((c) => c.uid !== uid ? c : kind === "plus" ? { ...c, plus: (c.plus ?? 0) + delta } : { ...c, counters: Math.max(0, (c.counters ?? 0) + delta) }) };
+}
+
+/** A token on the battlefield (no image; `pt` such as "1/1" is shown with the name). */
+export function token(g: Game, t: { name: string; pt?: string }): Game {
+  const uid = 1 + Math.max(-1, ...(Object.values(g).filter(Array.isArray).flat() as GCard[]).map((c) => c.uid));
+  const label = t.pt?.trim() ? `${t.name.trim()} (${t.pt.trim()})` : t.name.trim();
+  return { ...g, battlefield: [...g.battlefield, { uid, name: label || "Token", image_id: null, type_line: "Token", tapped: false, token: true }] };
+}
+
+/** The top `n` cards of the library, without changing anything. */
+export const peek = (g: Game, n: number): GCard[] => g.library.slice(0, Math.max(0, n));
+
+/** Put the cards `top` (in that order) back on top of the library and the cards `bottom` at the end; the rest keep their order. */
+export function reorderTop(g: Game, top: number[], bottom: number[]): Game {
+  const by = new Map(g.library.map((c) => [c.uid, c]));
+  const pick = (ids: number[]) => ids.map((u) => by.get(u)).filter((c): c is GCard => !!c);
+  const moved = new Set([...top, ...bottom]);
+  return { ...g, library: [...pick(top), ...g.library.filter((c) => !moved.has(c.uid)), ...pick(bottom)] };
+}
+
+/** A bounded undo history: the previous states, oldest dropped past `cap`. */
+export const pushHistory = <T,>(stack: T[], state: T, cap = 50): T[] => [...stack, state].slice(-cap);
