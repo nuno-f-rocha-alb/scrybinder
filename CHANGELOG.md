@@ -4,6 +4,9 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Fixed
+- A restore staged in Settings is no longer skipped when Scrybinder is reopened while the old window is still shutting down: it waits up to 30 s for it, and Settings says when a restore is still waiting.
+
 ## [0.8.0] — 2026-10-18
 
 ### Added

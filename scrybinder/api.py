@@ -73,6 +73,7 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
         return {"cards_in_db": n, "oracle_cards": db.execute("SELECT COUNT(*) FROM oracle_cards").fetchone()[0], "bulk_age_days": age,
                 "bulk_stale": age is None or age > scryfall.BULK_STALE_DAYS, "job": job, "index": _index_status(), "index_job": ixjob,
                 "credit": "Card data and images © Scryfall — scryfall.com", "version": __version__,
+                "restore_pending": Path(str(_db_path()) + ".restore-pending").exists(),
                 "update_available": (updstate["plan"] or {}).get("latest") if not (updstate["plan"] or {}).get("up_to_date", True) else None}
 
     def _rm_db(path):  # a temporary database and the -wal/-shm files that checking it may leave

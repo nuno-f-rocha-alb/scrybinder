@@ -24,6 +24,7 @@ export type Print = {
   eur: number | null; eur_foil: number | null; eur_etched: number | null; lang: string; cardmarket_id?: number | null;
 };
 export type Status = {
+  restore_pending?: boolean;
   cards_in_db: number; bulk_age_days: number | null; bulk_stale: boolean; credit: string; version?: string; update_available?: string | null;
   job: { state: string; done: number; total: number; error: string | null; cards: number };
   index?: { indexed: number; rows: number; eligible: number };
