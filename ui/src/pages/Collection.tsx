@@ -23,6 +23,7 @@ const groupLabel = (by: GroupBy, key: string) => (by === "location" ? placeName(
 export default function Collection({ initialSet, initialLocation, onOpenDeck }: { initialSet?: string; initialLocation?: string; onOpenDeck: (deckId: number, oracleId?: string) => void }) {
   const [q, setQ] = useState("");
   const [spareView, setSpareView] = useState(false);
+  const [moving, setMoving] = useState<Row | null>(null);  // the row whose "Move to…" dialog is open
   const [showMissing, setShowMissing] = useState(false);  // inside a set: the printings you do not own, faded
   const [missing, setMissing] = useState<{ scryfall_id: string; name: string; collector_number: string; price: number | null }[]>([]);
   const [locations, setLocations] = useState<string[]>(initialLocation !== undefined ? [initialLocation] : []);  // none = all
@@ -127,6 +128,7 @@ export default function Collection({ initialSet, initialLocation, onOpenDeck }: 
       { label: "Add one copy", onSelect: () => api(`/collection/${o.id}`, { method: "PATCH", body: JSON.stringify({ quantity: o.quantity + 1 }) }).then(() => { load(); toast(`${o.quantity + 1}× ${r.name}`); }).catch((e) => toast(e.message, true)) },
       { label: "View details", onSelect: () => setDetailsAt(i) },
       { label: "Add to a deck…", onSelect: () => setToDeck(o) },
+      { label: "Move to…", onSelect: () => setMoving(o) },
       ...(r.decks.length ? r.decks.map((d) => ({ label: `Go to ${d.name}`, onSelect: () => onOpenDeck(d.deck_id, r.oracle_id) })) : []),
       { label: "Select", onSelect: () => { setSelecting(true); setSel(new Set(idsOf(r))); lastPick.current = i; } },
       "sep",
@@ -302,6 +304,8 @@ export default function Collection({ initialSet, initialLocation, onOpenDeck }: 
       {edit && <EditModal key={edit.id} row={edit} locations={locs.map((l) => l.location).filter(Boolean)} onClose={() => setEdit(null)} onSwitch={setEdit}
         onOpenDeck={(deckId) => { setEdit(null); onOpenDeck(deckId, edit.oracle_id); }}
         onDone={(m) => { setEdit(null); load(); toast(m); }} onError={(m) => toast(m, true)} />}
+      {moving && <MoveDialog row={moving} locations={locs.map((l) => l.location).filter(Boolean)} onClose={() => setMoving(null)}
+        onDone={(m) => { setMoving(null); load(); toast(m); }} />}
       {newLoc !== null && (
         <Modal title="New location" onClose={() => setNewLoc(null)}>
           <h2 className="mb-3 text-lg font-semibold">New location</h2>
@@ -340,6 +344,45 @@ function MergeLocations({ names, locs, onClose, onDone, onError }: { names: stri
       <div className="mt-5 flex justify-end gap-2">
         <button className="btn-ghost" onClick={onClose}>Cancel</button>
         <button className="btn-primary" disabled={!into.trim()} onClick={go}>Merge</button>
+      </div>
+    </Modal>
+  );
+}
+
+/** Move some or all copies of a card to another location (the "Move to…" of the right-click menu). */
+function MoveDialog({ row, locations, onClose, onDone }: { row: Row; locations: string[]; onClose: () => void; onDone: (msg: string) => void }) {
+  const [from, setFrom] = useState(row.places.find((p) => p.id === row.id)?.id ?? row.places[0].id);  // the copies that are moved, when the card is in several locations
+  const place = row.places.find((p) => p.id === from) ?? row.places[0];
+  const [to, setTo] = useState("");
+  const [qty, setQty] = useState(place.quantity);
+  const [blocked, setBlocked] = useState<string | null>(null);
+  const [err, setErr] = useState("");
+  const pick = (id: number) => { setFrom(id); setQty(row.places.find((p) => p.id === id)?.quantity ?? 1); setBlocked(null); setErr(""); };
+  const dest = to.trim();
+  const go = (release = "") => api(`/collection/${place.id}/move${release}`, { method: "POST", body: JSON.stringify({ location: dest, quantity: qty }) })
+    .then(() => onDone(`Moved ${qty}× ${row.name} to ${dest || "(no location)"}`))
+    .catch((e) => (e instanceof ApiError && e.status === 409 ? setBlocked(e.message) : setErr(e.message)));
+  const same = dest === place.location;
+  return (
+    <Modal title="Move to…" onClose={onClose}>
+      <h2 className="mb-1 text-lg font-semibold">Move {row.name}</h2>
+      <p className="mb-4 text-sm text-mute">{row.set_code.toUpperCase()} · {row.collector_number}</p>
+      <div className="grid gap-3 sm:grid-cols-2">
+        {row.places.length > 1 && (
+          <Field label="From">
+            <Select className="field" value={String(from)} onChange={(e) => pick(+e.target.value)}>
+              {row.places.map((p) => <option key={p.id} value={p.id}>{placeName(p.location)} × {p.quantity}</option>)}
+            </Select>
+          </Field>
+        )}
+        <Field label="Move to"><Combo className="field" suggestions={locations} value={to} onChange={setTo} placeholder="Location (empty: none)" /></Field>
+        <Field label="Quantity"><input type="number" min={1} max={place.quantity} className="field" value={qty} onChange={(e) => setQty(Math.min(place.quantity, Math.max(1, Math.floor(+e.target.value) || 1)))} /></Field>
+      </div>
+      {blocked && <Blocked message={blocked} onRelease={() => go("?release=1")} onCancel={() => setBlocked(null)} />}
+      {err && <p className="mt-3 text-sm text-danger" role="alert">{err}</p>}
+      <div className="mt-5 flex justify-end gap-2">
+        <button className="btn-ghost" onClick={onClose}>Cancel</button>
+        <button className="btn-primary" disabled={same} onClick={() => go()}>Move</button>
       </div>
     </Modal>
   );

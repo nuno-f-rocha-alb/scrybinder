@@ -5,6 +5,7 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 ## [Unreleased]
 
 ### Added
+- Collection: "Move to…" in the right-click menu of a card moves some or all of its copies to another location.
 - Deck snapshots: a Restore button puts the deck back as it was in a snapshot (the deck as it is now is saved as a snapshot first, so you can come back to it). Tags and assigned copies are not part of a snapshot.
 - Playtest: press and drag a card onto the table, the hand, the graveyard, exile, the library or the command zone; counters with a name of your own (right-click a card on the table); an "End playtest" button.
 ### Changed
