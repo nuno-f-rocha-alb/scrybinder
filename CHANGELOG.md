@@ -4,6 +4,9 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Added
+- Playtest: press and drag a card onto the table, the hand, the graveyard, exile, the library or the command zone; counters with a name of your own (right-click a card on the table); an "End playtest" button.
+
 ## [0.8.0] — 2026-10-18
 
 ### Added
