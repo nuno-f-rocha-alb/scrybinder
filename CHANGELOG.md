@@ -5,6 +5,7 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 ## [Unreleased]
 
 ### Added
+- Playtest: simulate many opening hands to see the share of keepable hands, the average lands in the opening seven and by turn 4, and how often every colour has a land by turn 4.
 - Playtest: a commander can be sent back to the command zone from its right-click menu.
 
 ## [0.7.1] — 2026-10-17
