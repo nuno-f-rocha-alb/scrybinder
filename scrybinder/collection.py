@@ -219,6 +219,44 @@ def value_history(db) -> list[dict]:
     return [dict(r) for r in db.execute("SELECT date, total_value, total_cards FROM price_snapshots WHERE location='' ORDER BY date")]
 
 
+SPARE_COLS = ["quantity", "name", "set_code", "collector_number", "finish", "condition", "language", "location", "price_eur", "cardmarket_id"]
+
+
+def spare(db, keep: int = 0) -> dict:
+    """Copies not reserved by any deck (proxies never): per collection row, quantity minus what the decks have assigned. `keep` copies
+    of each card (by oracle_id) are held back, taken from its newest rows first."""
+    if not isinstance(keep, int) or isinstance(keep, bool) or keep < 0:
+        raise ValueError("keep: a number of copies, 0 or more")
+    rows = [dict(r) for r in db.execute(
+        f"SELECT c.id, c.scryfall_id, k.oracle_id, k.name, k.set_code, k.collector_number, c.finish, c.condition, c.language, c.location,"
+        f" c.quantity - COALESCE((SELECT SUM(a.quantity) FROM deck_assignments a WHERE a.collection_id=c.id), 0) AS spare,"
+        f" ({_PRICE}) AS price, k.cardmarket_id FROM collection c JOIN cards k ON k.id=c.scryfall_id WHERE c.proxy=0")]
+    held = {}
+    for r in sorted(rows, key=lambda r: -r["id"]):  # newest rows give up their copies first
+        left = held.setdefault(r["oracle_id"], keep)
+        take = min(left, max(r["spare"], 0))
+        r["spare"] -= take
+        held[r["oracle_id"]] = left - take
+    items = sorted((r for r in rows if r["spare"] > 0), key=lambda r: (r["name"].lower(), r["set_code"] or "", r["collector_number"] or "", r["id"]))
+    for r in items:
+        r["line_value"] = round(r["spare"] * (r["price"] or 0), 2)
+        del r["oracle_id"]
+    return {"items": items, "total_spare": sum(r["spare"] for r in items), "total_value": round(sum(r["line_value"] for r in items), 2)}
+
+
+def spare_text(sp: dict) -> str:
+    return "".join(f"{i['spare']} {i['name']} ({(i['set_code'] or '').upper()} #{i['collector_number']}, {i['finish']})\n" for i in sp["items"])
+
+
+def spare_csv(sp: dict) -> str:
+    buf = io.StringIO(newline="")
+    w = csv.writer(buf, lineterminator="\n")
+    w.writerow(SPARE_COLS)
+    w.writerows([i["spare"], i["name"], i["set_code"], i["collector_number"], i["finish"], i["condition"], i["language"], i["location"],
+                 "" if i["price"] is None else i["price"], i["cardmarket_id"] or ""] for i in sp["items"])
+    return buf.getvalue()
+
+
 def set_progress(db, location=None, q="", hide_empty=True, group=False) -> list[dict]:
     """Per set: printings you own / total non-digital printings in the bulk.
     group=True: the same card (oracle_id) with different art/frames counts as 1."""

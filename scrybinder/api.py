@@ -498,6 +498,17 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
              sort: str = "name", limit: int = 100, offset: int = 0, group: str = "location"):
         return collection.search(db, q, set, location, finish, language, sort, min(limit, 100000), offset, group)
 
+    @app.get("/api/collection/spare")
+    def collection_spare(format: str = "json", keep: int = 0):
+        sp = _wrap(collection.spare, db, keep)
+        if format == "text":
+            return Response(collection.spare_text(sp), media_type="text/plain; charset=utf-8",
+                            headers={"Content-Disposition": 'attachment; filename="scrybinder-spare-cards.txt"'})
+        if format == "csv":
+            return Response(collection.spare_csv(sp), media_type="text/csv; charset=utf-8",
+                            headers={"Content-Disposition": 'attachment; filename="scrybinder-spare-cards.csv"'})
+        return sp
+
     @app.get("/api/collection/value-history")
     def value_history():
         return {"snapshots": collection.value_history(db)}
