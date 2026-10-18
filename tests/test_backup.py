@@ -1,4 +1,5 @@
 import sqlite3
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -143,3 +144,35 @@ def test_a_backup_cannot_overwrite_its_own_source(tmp_path, bulk_file):
     with pytest.raises(ValueError):
         dbmod.backup(tmp_path / "live.db", tmp_path / "live.db")
     assert db.execute("SELECT COUNT(*) FROM collection").fetchone()[0] == 1 and _counts(tmp_path / "live.db")[0] == 1
+
+
+def test_apply_waits_for_the_previous_instance_to_let_go(tmp_path, bulk_file, monkeypatch):
+    live = _db(tmp_path, bulk_file, "scrybinder.db")
+    dbmod.backup(live, tmp_path / "b.db")
+    live.close()
+    path = tmp_path / "scrybinder.db"
+    dbmod.stage_restore(path, tmp_path / "b.db")
+    real, locked = dbmod.os.replace, {"n": 0}
+
+    def replace(src, dst):  # the database is "in use" for the first three tries
+        if Path(src) == path and locked["n"] < 3:
+            locked["n"] += 1
+            raise PermissionError("in use")
+        return real(src, dst)
+    monkeypatch.setattr(dbmod.os, "replace", replace)
+    monkeypatch.setattr(dbmod.time, "sleep", lambda s: None)
+    dbmod._apply_pending_restore(path)
+    assert locked["n"] == 3 and not (tmp_path / "scrybinder.db.restore-pending").exists() and (tmp_path / "scrybinder.db.before-restore").exists()
+
+
+def test_apply_gives_up_when_the_database_stays_in_use(tmp_path, bulk_file, monkeypatch):
+    live = _db(tmp_path, bulk_file, "scrybinder.db")
+    dbmod.backup(live, tmp_path / "b.db")
+    live.close()
+    path = tmp_path / "scrybinder.db"
+    dbmod.stage_restore(path, tmp_path / "b.db")
+    real = dbmod.os.replace
+    monkeypatch.setattr(dbmod.os, "replace", lambda s, d: (_ for _ in ()).throw(PermissionError("in use")) if Path(s) == path else real(s, d))
+    monkeypatch.setattr(dbmod.time, "sleep", lambda s: None)
+    dbmod._apply_pending_restore(path)  # no error: the app starts with what it has
+    assert (tmp_path / "scrybinder.db.restore-pending").exists() and not (tmp_path / "scrybinder.db.before-restore").exists() and _counts(path)[0] == 1
