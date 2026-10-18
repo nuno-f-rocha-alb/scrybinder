@@ -167,10 +167,109 @@ def _adopt_legacy_db(path: Path):
                 Path(str(old) + suffix).rename(Path(str(path) + suffix))
 
 
+REQUIRED_TABLES = ("cards", "collection", "decks", "deck_cards", "deck_assignments", "oracle_cards")
+
+
+def backup(src, dest) -> dict:
+    """A consistent single-file copy of a database (a connection or a path) with SQLite's online backup, safe while the app is
+    using it. Written under a temporary name and renamed, so a failure leaves no half file at `dest`."""
+    dest = Path(dest)
+    tmp = dest.with_name(dest.name + ".tmp")
+    own = None
+    here = Path(src.execute("PRAGMA database_list").fetchone()[2]) if isinstance(src, sqlite3.Connection) else Path(src)
+    if here.exists() and dest.exists() and here.resolve() == dest.resolve():
+        raise ValueError("the backup cannot be written over the database it is a copy of")
+    try:
+        if not isinstance(src, sqlite3.Connection):
+            src = own = sqlite3.connect(f"file:{Path(src).as_posix()}?mode=ro", uri=True)
+        out = sqlite3.connect(tmp)
+        try:
+            src.backup(out)
+        finally:
+            out.close()
+        os.replace(tmp, dest)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+    finally:
+        if own:
+            own.close()
+    return {"path": str(dest), "bytes": dest.stat().st_size}
+
+
+def validate_backup(path) -> dict:
+    """Is this file a Scrybinder database that can be restored? Never raises: `{ok, reason, cards, collection}`."""
+    bad = lambda why: {"ok": False, "reason": why, "cards": 0, "collection": 0}
+    try:
+        con = sqlite3.connect(f"file:{Path(path).as_posix()}?mode=ro", uri=True)
+    except sqlite3.Error as e:
+        return bad(f"cannot open the file: {e}")
+    try:
+        try:
+            if con.execute("PRAGMA integrity_check").fetchone()[0] != "ok":
+                return bad("the database is damaged (integrity check failed)")
+            have = {r[0] for r in con.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+            missing = [t for t in REQUIRED_TABLES if t not in have]
+            if missing:
+                return bad("not a Scrybinder database (missing: " + ", ".join(missing) + ")")
+            return {"ok": True, "reason": "", "cards": con.execute("SELECT COUNT(*) FROM cards").fetchone()[0],
+                    "collection": con.execute("SELECT COUNT(*) FROM collection").fetchone()[0]}
+        except sqlite3.Error as e:
+            return bad(f"not a usable database: {e}")
+    finally:
+        con.close()
+
+
+def stage_restore(db_path, src) -> dict:
+    """Check a backup and put it beside the database as `<db>.restore-pending`; it replaces the database at the next start
+    (`_apply_pending_restore`), because the running app holds the database open."""
+    info = validate_backup(src)
+    if not info["ok"]:
+        raise ValueError(info["reason"])
+    pending = Path(str(db_path) + ".restore-pending")
+    tmp = pending.with_name(pending.name + ".tmp")
+    try:
+        backup(src, tmp)  # a clean single file, even if the chosen one still has a -wal beside it
+        os.replace(tmp, pending)
+    except BaseException:
+        tmp.unlink(missing_ok=True)
+        raise
+    return info
+
+
+def _apply_pending_restore(path: Path):
+    """At start-up, before the database is opened: a staged restore replaces it. The database it replaces stays as `<db>.before-restore`."""
+    pending = Path(str(path) + ".restore-pending")
+    if not pending.exists():
+        return
+    before = Path(str(path) + ".before-restore")
+    if path.exists():
+        try:  # fold the journal into the file first: what was written but not yet checkpointed must survive in the kept copy
+            con = sqlite3.connect(path)
+            con.execute("PRAGMA wal_checkpoint(TRUNCATE)")
+            con.close()
+        except sqlite3.Error:
+            pass
+        try:
+            before.unlink(missing_ok=True)
+            os.replace(path, before)
+        except OSError:  # the database is in use (another Scrybinder is open?): start with it as it is and try again next time
+            return
+    for suffix in ("-wal", "-shm"):  # the journal of the old database must not be replayed onto the restored one
+        Path(str(path) + suffix).unlink(missing_ok=True)
+    try:
+        os.replace(pending, path)
+    except OSError:
+        if before.exists() and not path.exists():
+            os.replace(before, path)  # put the old database back rather than start with none
+        raise
+
+
 def connect(path: Path | str | None = None) -> sqlite3.Connection:
     default = path is None
     path = Path(path) if path else DATA_DIR / "scrybinder.db"
     if default:
+        _apply_pending_restore(path)
         _adopt_legacy_db(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     # a bulk update holds the writer for ~1 min: wait instead of failing. The API shares this connection between threads, so no

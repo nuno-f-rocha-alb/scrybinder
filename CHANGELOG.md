@@ -6,6 +6,10 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ### Added
 - Deck snapshots: save a named copy of a deck's card list and compare it with the deck now (cards added, removed and changed, and what the change costs at today's prices).
+- Settings: back up the database to a single file and restore a backup (checked first; applied at the next start, the current database is kept as `scrybinder.db.before-restore`).
+- Playtest: +1/+1 and generic counters, tokens, undo, scry / peek at the top of the library and a zoom when you hover a card.
+- Sets: a "Missing" button on each set lists the printings you do not own with the price to complete it (honouring Group printings and the location), to copy as text or download as CSV.
+- Spare cards on the Collection page: the copies that are in no deck (a trade binder), with a "keep N of each card" setting, copy as text and CSV download.
 - Shopping list on the Decks page: every card still missing across all your decks, with the decks that need it and the total in EUR; copy it as text for a Cardmarket want list or download it as CSV.
 - Playtest: simulate many opening hands to see the share of keepable hands, the average lands in the opening seven and by turn 4, and how often every colour has a land by turn 4.
 - Collection value over time: the value of your collection is noted each time the card prices are updated, and shown (a small line and the last days) under the total on the Collection page.

@@ -7,6 +7,62 @@ type Gpu = {
   job: { state: string; done: number; total: number; error: string | null };
 };
 
+type Bridge = { save_db?: (name: string) => Promise<string | null>; restore_db?: () => Promise<{ staged?: boolean; error?: string; cards?: number; collection?: number } | null> };
+
+/** A copy of the database, and putting one back (applied at the next start, because the running app has the database open). */
+function BackupSection() {
+  const [msg, setMsg] = useState("");
+  const [err, setErr] = useState("");
+  const [confirm, setConfirm] = useState(false);
+  const bridge = (window as { pywebview?: { api?: Bridge } }).pywebview?.api;
+  const name = () => `scrybinder-backup-${new Date().toISOString().slice(0, 19).replace(/[-:]/g, "").replace("T", "-")}.db`;
+  const staged = (r: { cards?: number; collection?: number }) => setMsg(`Ready to restore (${(r.collection ?? 0).toLocaleString()} collection rows). Restart Scrybinder to finish: your current database is kept next to it as scrybinder.db.before-restore.`);
+  const backup = async () => {
+    setErr(""); setMsg("");
+    if (!bridge?.save_db) { window.location.assign("/api/backup"); setMsg("The backup is downloading."); return; }
+    try { const path = await bridge.save_db(name()); if (path) setMsg(`Saved to ${path}`); } catch (e) { setErr((e as Error).message); }
+  };
+  const restore = async () => {
+    setErr(""); setMsg(""); setConfirm(false);
+    try {
+      if (bridge?.restore_db) {
+        const r = await bridge.restore_db();
+        if (r?.error) setErr(r.error); else if (r) staged(r);
+      }
+    } catch (e) { setErr((e as Error).message); }
+  };
+  const upload = async (f: File | null) => {
+    if (!f) return;
+    setErr(""); setMsg("");
+    try {
+      const r = await fetch("/api/restore", { method: "POST", body: f });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(typeof j.detail === "string" ? j.detail : r.statusText);
+      staged(j);
+    } catch (e) { setErr((e as Error).message); }
+  };
+  return (
+    <section className="mt-4 rounded-2xl border border-line bg-surface p-5">
+      <h2 className="font-semibold">Backup &amp; restore</h2>
+      <p className="mt-1 text-sm text-mute">A backup is one file with your whole database: collection, decks and the card data. Images, the visual index and the logs are not in it.</p>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <button className="btn-ghost" onClick={backup}>Back up now</button>
+        {!confirm
+          ? <button className="btn-ghost" onClick={() => setConfirm(true)}>Restore from a backup…</button>
+          : <div className="flex flex-wrap items-center gap-2 rounded-xl border border-gold/40 bg-gold/10 px-3 py-2 text-sm" role="alert">
+              <span>Restoring replaces your collection and decks at the next start (the current database is kept as <code>.before-restore</code>).</span>
+              {bridge?.restore_db
+                ? <button className="btn-primary" onClick={restore}>Choose a backup file</button>
+                : <label className="btn-primary cursor-pointer">Choose a backup file<input type="file" accept=".db,application/octet-stream" className="sr-only" onChange={(e) => { setConfirm(false); upload(e.target.files?.[0] ?? null); }} /></label>}
+              <button className="btn-ghost" onClick={() => setConfirm(false)}>Cancel</button>
+            </div>}
+      </div>
+      {msg && <p className="mt-3 text-sm text-ok" role="status">{msg}</p>}
+      {err && <p className="mt-3 text-sm text-danger" role="alert">{err}</p>}
+    </section>
+  );
+}
+
 /** Optional GPU acceleration for the installed app: downloads the CUDA build of PyTorch (see scrybinder/gpu.py). */
 function GpuSection() {
   const [g, setG] = useState<Gpu | null>(null);
@@ -243,6 +299,7 @@ export default function Settings({ status, refresh }: { status: Status | null; r
         {err && <p className="mt-2 text-xs text-danger">{err}</p>}
       </section>
       <UpdateSection refresh={refresh} />
+      <BackupSection />
       <GpuSection />
       <p className="mt-6 text-xs text-mute">Scrybinder {status?.version} · Card data and images © Scryfall (scryfall.com). Scrybinder is an unofficial project and is not affiliated with Wizards of the Coast. Magic: The Gathering is a trademark of Wizards of the Coast.</p>
     </div>

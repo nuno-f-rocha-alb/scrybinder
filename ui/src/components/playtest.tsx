@@ -1,8 +1,8 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { CardImg, Modal } from "./ui";
 import { MenuItem, useContextMenu } from "./contextmenu";
 import type { DeckCard } from "../decks";
-import { GCard, Game, SimResult, Zone, bottomOne, draw, isLand, keep, move, mulligan, newGame, nextTurn, seeded, shuffleLibrary, simulate, toggleTap } from "../goldfish";
+import { GCard, Game, SimResult, Zone, addCounter, bottomOne, draw, isLand, keep, move, mulligan, newGame, nextTurn, peek, pushHistory, reorderTop, seeded, shuffleLibrary, simulate, toggleTap, token } from "../goldfish";
 
 const btn = "cursor-pointer rounded-lg border border-line px-3 py-1.5 text-sm outline-none hover:bg-raised focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-40";
 const ZONE_LABEL: Record<Zone, string> = { hand: "Hand", battlefield: "Battlefield", graveyard: "Graveyard", exile: "Exile", library: "Library", command: "Command zone" };
@@ -16,11 +16,15 @@ function Face({ c, w = "w-24" }: { c: GCard; w?: string }) {
 }
 
 /** A card on the table: click acts, right-click lists the moves. A tapped card turns sideways in a square cell so its neighbours do not overlap. */
-function Card({ c, onClick, onMenu, square }: { c: GCard; onClick?: () => void; onMenu: (e: React.MouseEvent) => void; square?: boolean }) {
+function Card({ c, onClick, onMenu, square, onHover }: { c: GCard; onClick?: () => void; onMenu: (e: React.MouseEvent) => void; square?: boolean; onHover?: (c: GCard | null) => void }) {
+  const counters = [c.plus ? `${c.plus > 0 ? "+" : "−"}${Math.abs(c.plus)}/${c.plus > 0 ? "+" : "−"}${Math.abs(c.plus)}` : "", c.counters ? `${c.counters} counter${c.counters > 1 ? "s" : ""}` : ""].filter(Boolean);
   return (
-    <button onClick={onClick} onContextMenu={onMenu} aria-label={`${c.name}${c.tapped ? " (tapped)" : ""}`} title={`${c.name} — right-click for more`}
-      className={`flex shrink-0 cursor-pointer items-center justify-center rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-accent ${square ? "size-[8.6rem]" : ""}`}>
+    <button onClick={onClick} onContextMenu={onMenu} aria-label={`${c.name}${c.tapped ? " (tapped)" : ""}${counters.length ? `, ${counters.join(", ")}` : ""}`} title={`${c.name} — right-click for more`}
+      onMouseEnter={() => onHover?.(c)} onMouseLeave={() => onHover?.(null)} onFocus={() => onHover?.(c)} onBlur={() => onHover?.(null)}
+      className={`relative flex shrink-0 cursor-pointer items-center justify-center rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-accent ${square ? "size-[8.6rem]" : ""}`}>
       <span className={`block transition-transform ${c.tapped ? "rotate-90" : ""}`}><Face c={c} /></span>
+      {counters.length > 0 && <span className="absolute bottom-1 left-1/2 flex -translate-x-1/2 flex-col items-center gap-0.5 text-[11px] font-semibold">
+        {counters.map((t) => <span key={t} className="rounded bg-black/80 px-1.5 text-white">{t}</span>)}</span>}
     </button>
   );
 }
@@ -76,7 +80,13 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
   const [search, setSearch] = useState<string | null>(null);  // the library search box (null: closed)
   const [pile, setPile] = useState<"graveyard" | "exile" | null>(null);  // the pile whose cards are listed
   const menu = useContextMenu();
-  const start = () => setG(newGame(cards, commander, onPlay));
+  const [hist, setHist] = useState<Game[]>([]);  // the states before each action, for Undo (the newest last, at most 50)
+  const [zoom, setZoom] = useState<GCard | null>(null);
+  const [tokenForm, setTokenForm] = useState<{ name: string; pt: string } | null>(null);
+  const [scry, setScry] = useState<{ n: number; bottom: Set<number> } | null>(null);
+  const gRef = useRef<Game | null>(null);
+  gRef.current = g;
+  const start = () => { setHist([]); setG(newGame(cards, commander, onPlay)); };
 
   const library = cards.filter((c) => c.board === "main").reduce((n, c) => n + c.quantity, 0);
   if (!g) return (
@@ -90,13 +100,25 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
     </div>
   );
 
-  const set = (f: (x: Game) => Game) => setG((x) => (x ? f(x) : x));
+  const set = (f: (x: Game) => Game) => {  // every change remembers the state it replaced, for Undo
+    const cur = gRef.current;
+    if (!cur) return;
+    const next = f(cur);
+    if (next !== cur) { setHist((h) => pushHistory(h, cur)); setG(next); setZoom(null); }  // the card under the pointer may be gone
+  };
+  const undo = () => { const last = hist[hist.length - 1]; if (last) { setG(last); setHist(hist.slice(0, -1)); setZoom(null); } };
   const playing = g.phase === "playing";
   const cardMenu = (c: GCard, zone: Zone) => (e: React.MouseEvent) => {
     if (!playing) return;  // the opening hand is only kept or sent back
     const to = (z: Zone, bottom = false): MenuItem => ({ label: z === "library" ? (bottom ? "Bottom of library" : "Top of library") : ZONE_LABEL[z], onSelect: () => set((x) => move(x, c.uid, z, bottom)) });
     menu.open(e, [
-      ...(zone === "battlefield" ? [{ label: c.tapped ? "Untap" : "Tap", onSelect: () => set((x) => toggleTap(x, c.uid)) }, "sep" as const] : []),
+      ...(zone === "battlefield" ? [
+        { label: c.tapped ? "Untap" : "Tap", onSelect: () => set((x) => toggleTap(x, c.uid)) }, "sep" as const,
+        { label: "+1/+1 counter", onSelect: () => set((x) => addCounter(x, c.uid, "plus", 1)) },
+        { label: "−1/−1 counter", onSelect: () => set((x) => addCounter(x, c.uid, "plus", -1)) },
+        { label: "Add a counter", onSelect: () => set((x) => addCounter(x, c.uid, "generic", 1)) },
+        { label: "Remove a counter", disabled: !c.counters, onSelect: () => set((x) => addCounter(x, c.uid, "generic", -1)) },
+        "sep" as const] : []),
       ...(["battlefield", "hand", "graveyard", "exile"] as const).filter((z) => z !== zone).map((z) => to(z)),
       ...(c.commander && zone !== "command" ? [to("command")] : []),  // a commander may return to the command zone instead
       "sep", to("library"), to("library", true),
@@ -107,7 +129,7 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
   const area = (title: string, list: GCard[]) => (
     <div className="min-h-[9.5rem] p-2" role="group" aria-label={title}>
       <h3 className="mb-1 text-xs uppercase tracking-wide text-mute">{title} ({list.length})</h3>
-      <div className="flex flex-wrap">{list.map((c) => <Card key={c.uid} c={c} square onClick={() => set((x) => toggleTap(x, c.uid))} onMenu={cardMenu(c, "battlefield")} />)}</div>
+      <div className="flex flex-wrap">{list.map((c) => <Card key={c.uid} c={c} square onHover={setZoom} onClick={() => set((x) => toggleTap(x, c.uid))} onMenu={cardMenu(c, "battlefield")} />)}</div>
     </div>
   );
 
@@ -129,7 +151,10 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
           <button className={btn} disabled={!g.library.length} onClick={() => set((x) => draw(x))}>Draw</button>
           <button className={btn} onClick={() => setSearch("")}>Search library</button>
           <button className={btn} onClick={() => set((x) => shuffleLibrary(x))}>Shuffle</button>
+          <button className={btn} disabled={!g.library.length} onClick={() => setScry({ n: 1, bottom: new Set() })}>Scry / peek</button>
+          <button className={btn} onClick={() => setTokenForm({ name: "", pt: "" })}>Token</button>
         </>}
+        <button className={btn} disabled={!hist.length} onClick={undo}>Undo</button>
         <label className="flex items-center gap-1 text-sm"><input type="checkbox" checked={onPlay} onChange={(e) => setOnPlay(e.target.checked)} />On the play</label>
         <button className={btn} onClick={start}>New game</button>
       </div>
@@ -161,7 +186,7 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
       <section aria-label="Hand" className="mt-4">
         <h3 className="mb-1 text-sm font-medium text-mute">{g.phase === "mulligan" ? "Opening hand" : "Hand"} ({g.hand.length})</h3>
         <div className="flex min-h-12 flex-wrap gap-1">
-          {g.hand.map((c) => <Card key={c.uid} c={c} onClick={() => handClick(c)} onMenu={cardMenu(c, "hand")} />)}
+          {g.hand.map((c) => <Card key={c.uid} c={c} onHover={setZoom} onClick={() => handClick(c)} onMenu={cardMenu(c, "hand")} />)}
         </div>
       </section>
 
@@ -174,6 +199,42 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
           </div>
         </Modal>
       )}
+      {zoom && <div className="pointer-events-none fixed bottom-4 right-4 z-40 w-64 drop-shadow-2xl" aria-hidden>
+        {zoom.image_id ? <CardImg id={zoom.image_id} size="normal" /> : <div className="rounded-xl bg-raised p-4 text-center text-sm">{zoom.name}</div>}</div>}
+      {tokenForm && (
+        <Modal title="Make a token" onClose={() => setTokenForm(null)}>
+          <h2 className="mb-3 text-lg font-semibold">Make a token</h2>
+          <form className="flex flex-wrap items-end gap-3" onSubmit={(e) => { e.preventDefault(); set((x) => token(x, { name: tokenForm.name || "Token", pt: tokenForm.pt })); setTokenForm(null); }}>
+            <label className="text-xs font-medium text-mute">Name
+              <input autoFocus className="field mt-1 block w-48" value={tokenForm.name} onChange={(e) => setTokenForm({ ...tokenForm, name: e.target.value })} placeholder="Soldier" /></label>
+            <label className="text-xs font-medium text-mute">Power/toughness
+              <input className="field mt-1 block w-28" value={tokenForm.pt} onChange={(e) => setTokenForm({ ...tokenForm, pt: e.target.value })} placeholder="1/1" /></label>
+            <button type="submit" className={btn}>Make token</button>
+          </form>
+          <p className="mt-3 text-xs text-mute">The token goes to the battlefield and disappears when it leaves it.</p>
+        </Modal>
+      )}
+      {scry && (() => {
+        const top = peek(g, scry.n);
+        const apply = () => { set((x) => reorderTop(x, top.filter((c) => !scry.bottom.has(c.uid)).map((c) => c.uid), top.filter((c) => scry.bottom.has(c.uid)).map((c) => c.uid))); setScry(null); };
+        return (
+          <Modal title="Scry" onClose={() => setScry(null)} wide>
+            <h2 className="mb-3 text-lg font-semibold">Top of the library</h2>
+            <label className="mb-3 flex items-center gap-2 text-sm">Look at
+              <input type="number" min={1} max={10} className="field w-20" value={scry.n} onChange={(e) => setScry({ n: Math.min(10, Math.max(1, Math.floor(Number(e.target.value)) || 1)), bottom: new Set() })} aria-label="Cards to look at" /> cards</label>
+            <div className="flex flex-wrap gap-3">
+              {top.map((c, i) => (
+                <div key={c.uid} className="flex w-28 flex-col items-center gap-1">
+                  <Face c={c} />
+                  <span className="text-xs text-mute">{i + 1}. {scry.bottom.has(c.uid) ? "to the bottom" : "stays on top"}</span>
+                  <button className={btn} onClick={() => { const b = new Set(scry.bottom); b.has(c.uid) ? b.delete(c.uid) : b.add(c.uid); setScry({ ...scry, bottom: b }); }}>{scry.bottom.has(c.uid) ? "Keep on top" : "Send to bottom"}</button>
+                </div>
+              ))}
+            </div>
+            <button className={`${btn} mt-4`} onClick={apply}>Done</button>
+          </Modal>
+        );
+      })()}
       {search !== null && (
         <Modal title="Search library" onClose={() => setSearch(null)}>
           <h2 className="mb-2 text-lg font-semibold">Search library ({g.library.length})</h2>
