@@ -34,7 +34,8 @@ export default function Suggestions({ deckId, onAdded, toast }: { deckId: number
   const grid = useCardGrid();
   const [sort, setSort] = useState<SortBy>("popularity");
   const [groupBy, setGroupBy] = useState<GroupBy>("category");
-  const [folded, setFolded] = useState<Set<string>>(new Set());
+  const [folded, setFolded] = useState<Set<string>>(() => { try { return new Set<string>(JSON.parse(localStorage.getItem("scrybinder.folded") ?? "[]")); } catch { return new Set<string>(); } });
+  const setFoldedKeys = (next: Set<string>) => { setFolded(next); try { const kept = (JSON.parse(localStorage.getItem("scrybinder.folded") ?? "[]") as string[]).filter((k) => !k.startsWith("sug:")); localStorage.setItem("scrybinder.folded", JSON.stringify([...kept, ...[...next].filter((k) => k.startsWith("sug:"))])); }  /* shared with the Cards tab: keep its entries */ catch { /* no storage */ } };
 
   const load = useCallback((on: boolean) => {
     setBusy(true); setErr("");
@@ -96,7 +97,7 @@ export default function Suggestions({ deckId, onAdded, toast }: { deckId: number
           <label className="flex cursor-pointer items-center gap-2 text-sm text-mute"><input type="checkbox" checked={own} onChange={(e) => setOwn(e.target.checked)} className="accent-[var(--color-accent)]" />Only what I own</label>
           <label className="flex cursor-pointer items-center gap-2 text-sm text-mute" title="Copies not assigned to any deck"><input type="checkbox" checked={freeOnly} onChange={(e) => setFreeOnly(e.target.checked)} className="accent-[var(--color-accent)]" />Only free copies</label>
           <GridControls g={grid} />
-          {groupBy !== "none" && <button className="btn-ghost !py-1 text-xs" title="Fold or unfold every group" onClick={() => setFolded(groups.every((g) => folded.has(g.k)) ? new Set() : new Set(groups.map((g) => g.k)))}>{groups.every((g) => folded.has(g.k)) ? "Unfold all" : "Fold all"}</button>}
+          {groupBy !== "none" && <button className="btn-ghost !py-1 text-xs" title="Fold or unfold every group" onClick={() => setFoldedKeys(groups.every((g) => folded.has(`sug:${g.k}`)) ? new Set() : new Set(groups.map((g) => `sug:${g.k}`)))}>{groups.every((g) => folded.has(`sug:${g.k}`)) ? "Unfold all" : "Fold all"}</button>}
           <span className="text-xs text-mute tabular-nums">{shown.length} cards</span>
         </div>
       )}
@@ -105,12 +106,12 @@ export default function Suggestions({ deckId, onAdded, toast }: { deckId: number
       {groups.map((g) => (
         <section key={g.k} className="mb-6" aria-label={g.label || "Suggestions"}>
           {groupBy !== "none" && <h2 className="mb-2 border-b border-line text-sm font-semibold">
-            <button className="flex w-full cursor-pointer items-center gap-2 rounded pb-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-accent" aria-expanded={!folded.has(g.k)} title={folded.has(g.k) ? "Show these cards" : "Hide these cards"}
-              onClick={() => setFolded((f) => { const n = new Set(f); n.has(g.k) ? n.delete(g.k) : n.add(g.k); return n; })}>
-              {folded.has(g.k) ? <IconChevronRight className="size-4 shrink-0 text-mute" aria-hidden /> : <IconChevronDown className="size-4 shrink-0 text-mute" aria-hidden />}
+            <button className="flex w-full cursor-pointer items-center gap-2 rounded pb-1 text-left outline-none focus-visible:ring-2 focus-visible:ring-accent" aria-expanded={!folded.has(`sug:${g.k}`)} title={folded.has(`sug:${g.k}`) ? "Show these cards" : "Hide these cards"}
+              onClick={() => { const n = new Set(folded); n.has(`sug:${g.k}`) ? n.delete(`sug:${g.k}`) : n.add(`sug:${g.k}`); setFoldedKeys(n); }}>
+              {folded.has(`sug:${g.k}`) ? <IconChevronRight className="size-4 shrink-0 text-mute" aria-hidden /> : <IconChevronDown className="size-4 shrink-0 text-mute" aria-hidden />}
               {g.label}<span className="text-xs font-normal text-mute tabular-nums">{g.cards.length}</span>
             </button></h2>}
-          {!folded.has(g.k) && <div className="grid gap-4" style={grid.style}>
+          {!folded.has(`sug:${g.k}`) && <div className="grid gap-4" style={grid.style}>
             {g.cards.map((c) => (
               <div key={c.oracle_id} className="flex flex-col">
                 <HoverZoom className="relative" zoom={c.image_id ? <CardImg id={c.image_id} size="large" /> : null}>

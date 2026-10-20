@@ -82,7 +82,7 @@ export default function Deck({ id, onBack, focusOracle }: { id: number; onBack: 
   const [importing, setImporting] = useState(false);
   const [adding, setAdding] = useState(false);
   const [folded, setFolded] = useState<Set<string>>(() => { try { return new Set<string>(JSON.parse(localStorage.getItem("scrybinder.folded") ?? "[]")); } catch { return new Set<string>(); } });
-  const setFoldedKeys = (next: Set<string>) => { setFolded(next); try { localStorage.setItem("scrybinder.folded", JSON.stringify([...next])); } catch { /* no storage */ } };
+  const setFoldedKeys = (next: Set<string>) => { setFolded(next); try { const kept = (JSON.parse(localStorage.getItem("scrybinder.folded") ?? "[]") as string[]).filter((k) => k.startsWith("sug:")); localStorage.setItem("scrybinder.folded", JSON.stringify([...[...next].filter((k) => !k.startsWith("sug:")), ...kept])); }  /* the Suggestions tab shares this key: keep its entries */ catch { /* no storage */ } };
   const [switchId, setSwitchId] = useState<number | null>(null);
   const [pickId, setPickId] = useState<number | null>(null);
   const [missingFor, setMissingFor] = useState<DeckCardT | null>(null);
