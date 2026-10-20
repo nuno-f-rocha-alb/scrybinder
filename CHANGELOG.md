@@ -5,6 +5,7 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 ## [Unreleased]
 
 ### Changed
+- Playtest: dragging a card now works in the installed app (it uses its own pointer drag instead of the browser's); the opening hand is a window with Keep / Mulligan and the cards for the bottom picked in it; the game starts at upkeep and you draw on leaving it (in Commander the first player draws on turn 1 too); a bar shows the phases of the turn (untap and draw are automatic); keyboard shortcuts (D, N, Shift+N, U, Ctrl+Z, and T, G, E, H, B over a card); the hand is a fan with a zoom on hover, the card preview opens beside the card, the actions sit above the hand, the zones are rearranged to fit the screen, the images are sharper, scry also has surveil (send to the graveyard), and the right-click menu opens the card's details and rulings.
 - Decks (grid view): the set and number, the finish, the quantity, the selection mark and the status icon sit at the bottom of the card, so they no longer cover its name and mana cost; the − / + buttons appear in the middle of the card on hover.
 - Deck suggestions: click the title of a group (Creatures, Lands…) to fold or unfold it, and a "Fold all" button does every group. Which groups are folded is remembered, as in the Cards tab.
 

@@ -4,8 +4,11 @@ import type { DeckCard } from "./decks";
 
 export type Zone = "library" | "hand" | "battlefield" | "graveyard" | "exile" | "command";
 export type GCard = { uid: number; name: string; image_id: string | null; type_line: string | null; tapped: boolean; commander?: boolean; plus?: number; counters?: number; named?: Record<string, number>; token?: boolean };
+/** The steps where the game stops. Untap and draw happen by themselves: untap on the way into a new turn, the draw on leaving upkeep. */
+export const STEPS = ["upkeep", "main1", "combat", "main2", "end"] as const;
+export type Step = (typeof STEPS)[number];
 export type Game = Record<Zone, GCard[]> & {
-  turn: number; life: number; mulligans: number; onPlay: boolean;
+  turn: number; step: Step; life: number; mulligans: number; onPlay: boolean; commander: boolean;
   phase: "mulligan" | "bottom" | "playing"; toBottom: number; freeMulligan: boolean;
 };
 
@@ -24,7 +27,7 @@ export function newGame(cards: DeckCard[], commander: boolean, onPlay = true, rn
     Array.from({ length: c.quantity }, () => ({ uid: uid++, name: c.name, image_id: c.image_id, type_line: c.type_line, tapped: false, commander: board === "commander" })));
   const g: Game = {
     library: shuffle(all("main"), rnd), hand: [], battlefield: [], graveyard: [], exile: [], command: all("commander"),
-    turn: 1, life: commander ? 40 : 20, mulligans: 0, onPlay, phase: "mulligan", toBottom: 0, freeMulligan: commander,
+    turn: 1, step: "upkeep", life: commander ? 40 : 20, mulligans: 0, onPlay, commander, phase: "mulligan", toBottom: 0, freeMulligan: commander,
   };
   return draw(g, HAND);
 }
@@ -40,8 +43,8 @@ export function mulligan(g: Game, rnd?: () => number): Game {
   return draw(back, HAND);
 }
 
-/** Start playing; on the draw the first turn has a draw step. */
-const begin = (g: Game): Game => draw({ ...g, phase: "playing" }, g.onPlay ? 0 : 1);
+/** Start playing, at the upkeep of turn 1: the opening hand is not a draw, the draw of the first turn comes on leaving upkeep. */
+const begin = (g: Game): Game => ({ ...g, phase: "playing" });
 
 /** Keep the hand: London mulligan, so one card goes to the bottom per mulligan taken (the first is free in Commander). */
 export function keep(g: Game): Game {
@@ -73,10 +76,26 @@ export function toggleTap(g: Game, uid: number): Game {
   return { ...g, battlefield: g.battlefield.map((c) => (c.uid === uid ? { ...c, tapped: !c.tapped } : c)) };
 }
 
-/** Untap everything and draw (no draw on turn 1 when on the play). */
+/** Jump to main 1 of the next turn: untap everything and draw a card. */
 export function nextTurn(g: Game): Game {
-  const t = { ...g, turn: g.turn + 1, battlefield: g.battlefield.map((c) => ({ ...c, tapped: false })) };
+  const t = { ...g, turn: g.turn + 1, step: "main1" as Step, battlefield: g.battlefield.map((c) => ({ ...c, tapped: false })) };
   return draw(t, 1);
+}
+
+/** Walk the steps of a turn. From end the next turn begins: everything untaps (no stop) and the game waits at upkeep. Leaving upkeep draws a card (none on turn 1 on the play in a two-player game; in Commander, three or more players, everyone draws) and lands on main 1. */
+export function nextPhase(g: Game): Game {
+  if (g.step === "upkeep") return draw({ ...g, step: "main1" }, g.turn === 1 && g.onPlay && !g.commander ? 0 : 1);
+  if (g.step === "end") return untapAll({ ...g, step: "upkeep", turn: g.turn + 1 });
+  return { ...g, step: STEPS[STEPS.indexOf(g.step) + 1] };
+}
+
+export const untapAll = (g: Game): Game => ({ ...g, battlefield: g.battlefield.map((c) => (c.tapped ? { ...c, tapped: false } : c)) });
+
+/** London mulligan, all at once: exactly `toBottom` cards of the hand go under the library (in the order given) and the game starts. */
+export function bottomMany(g: Game, uids: number[]): Game {
+  if (g.phase !== "bottom" || uids.length !== g.toBottom || new Set(uids).size !== uids.length || !uids.every((u) => g.hand.some((c) => c.uid === u))) return g;
+  const out = uids.reduce((x, u) => move(x, u, "library", true), g);
+  return begin({ ...out, toBottom: 0 });
 }
 
 export const isLand = (c: GCard) => primaryType(c.type_line) === "land";
