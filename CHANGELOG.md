@@ -4,6 +4,9 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Changed
+- Decks (grid view): the set and number, the finish, the quantity, the selection mark and the status icon sit at the bottom of the card, so they no longer cover its name and mana cost; the − / + buttons appear in the middle of the card on hover.
+
 ## [0.8.1] — 2026-10-19
 
 ### Added

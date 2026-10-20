@@ -124,18 +124,18 @@ function Tile({ c, ctx, layout, crop }: { c: DeckCard; ctx: Ctx; layout: Layout;
       className={`group relative overflow-hidden rounded-[4.5%] outline-none ring-2 ring-offset-0 transition focus-visible:ring-accent ${picked(ctx, c) ? "ring-accent brightness-75" : STATUS_RING[c.status]} hover:ring-accent`}>
       {c.image_id ? <CardImg id={c.image_id} size={sourceFor(layout.tilePx)} className={crop ? "!aspect-[63/62] object-top" : ""} />
         : <div className={`flex w-full items-center justify-center bg-raised p-2 text-center text-xs text-mute ${crop ? "aspect-[63/62]" : "aspect-[63/88]"}`}>{c.name}</div>}
-      <span className="absolute left-1.5 top-1.5 flex flex-col items-start gap-1">
+      <span className="absolute bottom-1.5 left-1.5 flex flex-col items-start gap-1">
         <SelMark ctx={ctx} c={c} />
         {c.quantity > 1 && <span className="rounded-md bg-bg/90 px-1.5 py-0.5 text-xs font-semibold tabular-nums">×{c.quantity}</span>}
         {shownPrints(c).slice(0, 2).map((p, i) => <span key={i} className="flex items-center gap-1"><span className="rounded-md bg-bg/90 px-1.5 py-0.5 text-[10.5px] uppercase tabular-nums">{p.set_code} #{p.collector_number}</span><FinishTag finish={p.finish} /></span>)}
       </span>
-      <span className="absolute right-1.5 top-1.5"><AssignBtn c={c} ctx={ctx}><StatusDot status={c.status} title={elsewhereHint(c)} /></AssignBtn></span>
-      <span className="absolute inset-x-0 bottom-0 flex justify-center gap-1 bg-gradient-to-t from-black/80 to-transparent px-2 pb-1.5 pt-6 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
+      <span className="absolute bottom-1.5 right-1.5"><AssignBtn c={c} ctx={ctx}><StatusDot status={c.status} title={elsewhereHint(c)} /></AssignBtn></span>
+      <span className="absolute inset-x-0 pointer-events-none top-1/2 flex -translate-y-1/2 justify-center gap-1 opacity-0 transition-opacity group-hover:opacity-100 group-focus-within:opacity-100"
         onClick={(e) => e.stopPropagation()}>
-        <button className="flex size-7 items-center justify-center rounded-md bg-bg/90 text-ink hover:bg-accent" aria-label={c.quantity === 1 ? `Remove ${c.name}` : `One less ${c.name}`} onClick={o.less}>
+        <button className="pointer-events-auto flex size-7 items-center justify-center rounded-md bg-bg/90 text-ink hover:bg-accent" aria-label={c.quantity === 1 ? `Remove ${c.name}` : `One less ${c.name}`} onClick={o.less}>
           {c.quantity === 1 ? <IconTrash className="size-4" /> : <IconMinus className="size-4" />}
         </button>
-        <button className="flex size-7 items-center justify-center rounded-md bg-bg/90 text-ink hover:bg-accent" aria-label={`One more ${c.name}`} onClick={o.more}><IconPlus className="size-4" /></button>
+        <button className="pointer-events-auto flex size-7 items-center justify-center rounded-md bg-bg/90 text-ink hover:bg-accent" aria-label={`One more ${c.name}`} onClick={o.more}><IconPlus className="size-4" /></button>
       </span>
     </div>
   );
