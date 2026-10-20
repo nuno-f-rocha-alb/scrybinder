@@ -4,6 +4,9 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Changed
+- Deck suggestions: click the title of a group (Creatures, Lands…) to fold or unfold it, and a "Fold all" button does every group.
+
 ## [0.8.1] — 2026-10-19
 
 ### Added
