@@ -815,7 +815,7 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
 
     @app.patch("/api/trades/{trade_id}")
     def trades_edit(trade_id: int, body: dict = Body(...)):
-        _wrap(trades.update, db, trade_id, **body)
+        _wrap(trades.update, db, trade_id, **{k: v for k, v in body.items() if k in trades.TRADE_EDIT})
         return {"ok": True}
 
     @app.delete("/api/trades/{trade_id}")
@@ -841,7 +841,7 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
     def trades_edit_line(trade_id: int, side: str, line_id: int, body: dict = Body(...)):
         if side not in ("out", "in"):
             raise HTTPException(404)
-        _wrap(trades.edit_line, db, trade_id, side, line_id, **body)
+        _wrap(trades.edit_line, db, trade_id, side, line_id, **{k: v for k, v in body.items() if k in trades.LINE_FIELDS})
         return {"ok": True}
 
     @app.delete("/api/trades/{trade_id}/{side}/{line_id}")

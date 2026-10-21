@@ -10,6 +10,8 @@ _OUT_KEY = tuple(k for k in collection.KEY if k != "proxy")  # proxies never go 
 _IN_KEY = ("scryfall_id", "finish", "condition", "language", "location")
 _PRICE = "CASE {t}.finish WHEN 'foil' THEN k.eur_foil WHEN 'etched' THEN k.eur_etched ELSE k.eur END"
 _SIDES = {"out": ("trade_out", _OUT_KEY + ("untracked",)), "in": ("trade_in", _IN_KEY)}
+TRADE_EDIT = ("who", "note", "cash", "date")
+LINE_FIELDS = ("quantity", "price", "finish", "condition", "language", "location")  # what a line edit may carry
 _LINE_EDIT = {"out": ("quantity", "price"), "extra": ("quantity", "price", "finish", "condition", "language"), "in": ("quantity", "price", "finish", "condition", "language", "location")}
 
 

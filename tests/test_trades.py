@@ -125,3 +125,23 @@ def test_trade_date(db):
     assert trades.get(db, t)["traded_on"] == "2026-09-30"
     with pytest.raises(ValueError, match="date"):
         trades.update(db, t, date="yesterday")
+
+
+def test_trades_api_round_trip(db):
+    from fastapi.testclient import TestClient
+    from scrybinder.api import create_app
+    c = TestClient(create_app(db, token="t", allowed_hosts={"testserver"}))
+    c.get("/api/status?t=t")
+    a, b = _cards(db)
+    row = collection.add(db, scryfall_id=a, quantity=2)
+    tid = c.post("/api/trades", json={"who": "Rui"}).json()["id"]
+    assert c.post(f"/api/trades/{tid}/out", json={"collection_id": row, "quantity": 1}).status_code == 200
+    line = c.post(f"/api/trades/{tid}/in", json={"scryfall_id": b, "quantity": 2}).json()["id"]
+    assert c.patch(f"/api/trades/{tid}/in/{line}", json={"quantity": 3, "trade_id": 9, "side": "x"}).status_code == 200  # stray keys are ignored
+    assert c.patch(f"/api/trades/{tid}", json={"cash": 1, "db": 1}).status_code == 200
+    assert c.post(f"/api/trades/{tid}/extra", json={"scryfall_id": b, "finish": "etched"}).status_code == 422
+    assert c.post(f"/api/trades/{tid}/confirm").status_code == 200
+    assert c.post(f"/api/trades/{tid}/confirm").status_code == 422
+    assert (_qty(db, a), _qty(db, b)) == (1, 3)
+    assert c.get("/api/trades").json()[0]["status"] == "done"
+    assert c.delete(f"/api/trades/{tid}").status_code == 200 and c.get(f"/api/trades/{tid}").status_code == 404
