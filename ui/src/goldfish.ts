@@ -3,13 +3,14 @@ import { primaryType } from "./decks";
 import type { DeckCard } from "./decks";
 
 export type Zone = "library" | "hand" | "battlefield" | "graveyard" | "exile" | "command";
-export type GCard = { uid: number; name: string; image_id: string | null; type_line: string | null; tapped: boolean; commander?: boolean; plus?: number; counters?: number; named?: Record<string, number>; token?: boolean };
+export type GCard = { uid: number; name: string; image_id: string | null; type_line: string | null; tapped: boolean; commander?: boolean; plus?: number; counters?: number; named?: Record<string, number>; token?: boolean; x?: number; y?: number; z?: number; attachedTo?: number; toughness?: string };
 /** The steps where the game stops. Untap and draw happen by themselves: untap on the way into a new turn, the draw on leaving upkeep. */
 export const STEPS = ["upkeep", "main1", "combat", "main2", "end"] as const;
 export type Step = (typeof STEPS)[number];
 export type Game = Record<Zone, GCard[]> & {
   turn: number; step: Step; life: number; mulligans: number; onPlay: boolean; commander: boolean;
   phase: "mulligan" | "bottom" | "playing"; toBottom: number; freeMulligan: boolean;
+  zTop: number;  // the highest `z` handed out on the free table: the card placed last is on top
 };
 
 const HAND = 7;
@@ -24,10 +25,10 @@ export function shuffle<T>(a: T[], rnd: () => number = Math.random): T[] {
 export function newGame(cards: DeckCard[], commander: boolean, onPlay = true, rnd?: () => number): Game {
   let uid = 0;
   const all = (board: string) => cards.filter((c) => c.board === board).flatMap((c) =>
-    Array.from({ length: c.quantity }, () => ({ uid: uid++, name: c.name, image_id: c.image_id, type_line: c.type_line, tapped: false, commander: board === "commander" })));
+    Array.from({ length: c.quantity }, () => ({ uid: uid++, name: c.name, image_id: c.image_id, type_line: c.type_line, tapped: false, commander: board === "commander", ...(c.toughness ? { toughness: c.toughness } : {}) })));
   const g: Game = {
     library: shuffle(all("main"), rnd), hand: [], battlefield: [], graveyard: [], exile: [], command: all("commander"),
-    turn: 1, step: "upkeep", life: commander ? 40 : 20, mulligans: 0, onPlay, commander, phase: "mulligan", toBottom: 0, freeMulligan: commander,
+    turn: 1, step: "upkeep", life: commander ? 40 : 20, mulligans: 0, onPlay, commander, phase: "mulligan", toBottom: 0, freeMulligan: commander, zTop: 0,
   };
   return draw(g, HAND);
 }
@@ -58,8 +59,9 @@ export function move(g: Game, uid: number, to: Zone, bottom = false): Game {
   if (!from) return g;
   const found = g[from].find((c) => c.uid === uid) as GCard;
   const out = { ...g, [from]: g[from].filter((c) => c.uid !== uid) };
+  if (from === "battlefield") out.battlefield = out.battlefield.map((c) => (c.attachedTo === uid ? { ...c, attachedTo: undefined } : c));  // what was attached to it stays on the table
   if (found.token && from === "battlefield" && to !== "battlefield") return out;  // a token that leaves the battlefield ceases to exist
-  const { plus: _p, counters: _c, named: _n, ...rest } = found;  // counters stay on the battlefield
+  const { plus: _p, counters: _c, named: _n, x: _x, y: _y, z: _z, attachedTo: _a, ...rest } = found;  // counters and the table position stay on the battlefield
   const card = { ...rest, tapped: false };
   out[to] = (to === "library" && bottom) || to === "battlefield" ? [...out[to], card] : [card, ...out[to]];
   return out;
@@ -100,6 +102,62 @@ export function bottomMany(g: Game, uids: number[]): Game {
 
 export const isLand = (c: GCard) => primaryType(c.type_line) === "land";
 
+/** The size of a card on the table as a fraction of the table's width and height. */
+export type Box = { w: number; h: number };
+const DEFAULT_BOX: Box = { w: 0.08, h: 0.25 };
+const clamp = (v: number, hi: number) => Math.min(Math.max(v, 0), Math.max(hi, 0));
+
+/** Put a battlefield card at (x, y), fractions of the table, kept inside it, and on top of every other card. */
+export function placeCard(g: Game, uid: number, x: number, y: number, box: Box = DEFAULT_BOX): Game {
+  if (!Number.isFinite(x) || !Number.isFinite(y) || !g.battlefield.some((c) => c.uid === uid)) return g;
+  const z = g.zTop + 1;
+  return { ...g, zTop: z, battlefield: g.battlefield.map((c) => { const { attachedTo: _a, ...rest } = c; return c.uid === uid ? { ...rest, x: clamp(x, 1 - box.w), y: clamp(y, 1 - box.h), z } : c; }) };  // put on the table by hand, it is no longer attached
+}
+
+/** Attach a battlefield card (an aura, an equipment...) to another. Not to itself, not to a card that is attached, not a card that has cards attached to it. */
+export function attach(g: Game, uid: number, host: number): Game {
+  const on = (u: number) => g.battlefield.find((c) => c.uid === u);
+  if (uid === host || !on(uid) || !on(host) || on(host)!.attachedTo !== undefined || g.battlefield.some((c) => c.attachedTo === uid)) return g;
+  return { ...g, battlefield: g.battlefield.map((c) => (c.uid === uid ? { ...c, attachedTo: host } : c)) };
+}
+
+export const detach = (g: Game, uid: number): Game =>
+  g.battlefield.find((c) => c.uid === uid)?.attachedTo === undefined ? g : { ...g, battlefield: g.battlefield.map((c) => (c.uid === uid ? { ...c, attachedTo: undefined } : c)) };
+
+/** Where a battlefield card shows: its own spot, or for an attached card the host's, shifted left and down (more for each one attached before it, up to four) and stacked just under it. `z` is doubled so "just under" is a whole number. */
+export function placeOf(g: Game, c: GCard, box: Box = DEFAULT_BOX): { x: number; y: number; z: number } {
+  const host = c.attachedTo === undefined ? undefined : g.battlefield.find((h) => h.uid === c.attachedTo);
+  if (!host || host.x === undefined || host.y === undefined) return { x: c.x ?? 0, y: c.y ?? 0, z: 2 * (c.z ?? 0) };
+  const k = Math.min(g.battlefield.filter((o) => o.attachedTo === host.uid).findIndex((o) => o.uid === c.uid) + 1, 4);
+  return { x: clamp(host.x - 0.22 * box.w * k, 1 - box.w), y: clamp(host.y + 0.16 * box.h * k, 1 - box.h), z: 2 * (host.z ?? 0) - 1 };
+}
+
+/** Bring a battlefield card to the top, leaving it where it is. */
+export function raise(g: Game, uid: number): Game {
+  if (!g.battlefield.some((c) => c.uid === uid)) return g;
+  const z = g.zTop + 1;
+  return { ...g, zTop: z, battlefield: g.battlefield.map((c) => (c.uid === uid ? { ...c, z } : c)) };
+}
+
+/** Creatures (and tokens) in the front row at the top, other permanents in the middle, lands at the bottom nearest the player. */
+const band = (c: GCard): 0 | 1 | 2 => (isLand(c) && !/creature/i.test(c.type_line ?? "") ? 2 : c.token || /creature/i.test(c.type_line ?? "") ? 0 : 1);
+
+/** Place a card in the first free spot of its row, scanning left to right (stacked a little off when the row is full). */
+export function autoPlace(g: Game, uid: number, box: Box = DEFAULT_BOX): Game {
+  const c = g.battlefield.find((k) => k.uid === uid);
+  if (!c) return g;
+  const y = ((1 - box.h) * band(c)) / 2;
+  const others = g.battlefield.filter((o) => o.uid !== uid && o.x !== undefined && o.y !== undefined);
+  const free = (x: number) => !others.some((o) => Math.abs(o.x! - x) < box.w / 2 && Math.abs(o.y! - y) < box.h / 2);
+  let x = 0.02;
+  while (x <= 1 - box.w && !free(x)) x += box.w + 0.01;
+  if (x > 1 - box.w) x = 0.02 + (others.filter((o) => Math.abs(o.y! - y) < box.h / 2).length % 5) * 0.02;
+  return placeCard(g, uid, x, y, box);
+}
+
+/** Give every battlefield card that has no position yet one (cards played, searched, made as tokens...). Returns `g` itself when there is nothing to do. */
+export const settle = (g: Game, box: Box = DEFAULT_BOX): Game => g.battlefield.filter((c) => c.x === undefined && c.attachedTo === undefined).reduce((x, c) => autoPlace(x, c.uid, box), g);
+
 export const shuffleLibrary = (g: Game, rnd?: () => number): Game => ({ ...g, library: shuffle(g.library, rnd) });
 
 export type SimResult = { hands: number; keepableShare: number; avgLandsOpening: number; avgLandsByTurn4: number; allColorsByTurn4Share: number; deckColors: string[] };
@@ -138,8 +196,9 @@ export function addCounter(g: Game, uid: number, kind: "plus" | "generic", delta
 /** A token on the battlefield (no image; `pt` such as "1/1" is shown with the name). */
 export function token(g: Game, t: { name: string; pt?: string }): Game {
   const uid = 1 + Math.max(-1, ...(Object.values(g).filter(Array.isArray).flat() as GCard[]).map((c) => c.uid));
+  const toughness = t.pt?.split("/")[1]?.trim() ?? "";
   const label = t.pt?.trim() ? `${t.name.trim()} (${t.pt.trim()})` : t.name.trim();
-  return { ...g, battlefield: [...g.battlefield, { uid, name: label || "Token", image_id: null, type_line: "Token", tapped: false, token: true }] };
+  return { ...g, battlefield: [...g.battlefield, { uid, name: label || "Token", image_id: null, type_line: "Token", tapped: false, token: true, ...(/^\d+$/.test(toughness) ? { toughness } : {}) }] };
 }
 
 /** The top `n` cards of the library, without changing anything. */

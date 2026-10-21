@@ -62,7 +62,7 @@ def face_rows(c: dict) -> list[tuple]:
 
 _NO_ORACLE = {"token", "double_faced_token", "emblem", "art_series"}  # no rules text worth a deck slot
 _ORACLE = ("oracle_id name mana_cost cmc type_line colors color_identity oracle_text keywords produced_mana "
-           "legalities game_changer edhrec_rank layout released_at").split()
+           "legalities game_changer edhrec_rank power toughness layout released_at").split()
 _ORACLE_INSERT = f"INSERT OR REPLACE INTO oracle_cards ({','.join(_ORACLE)}) VALUES ({','.join('?' * len(_ORACLE))})"
 
 
@@ -80,7 +80,7 @@ def oracle_row(c: dict) -> tuple | None:
             json.dumps(c.get("colors") or f0.get("colors") or []), json.dumps(c.get("color_identity") or []),
             text, json.dumps(c.get("keywords") or []), json.dumps(c.get("produced_mana") or []),
             json.dumps(c.get("legalities") or {}), int(bool(c.get("game_changer"))), c.get("edhrec_rank"),
-            c.get("layout"), c.get("released_at") or "")
+            c.get("power") or f0.get("power"), c.get("toughness") or f0.get("toughness"), c.get("layout"), c.get("released_at") or "")
 
 
 def _iter_cards(path: Path):
