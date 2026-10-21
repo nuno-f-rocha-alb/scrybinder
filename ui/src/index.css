@@ -26,6 +26,7 @@
 html, body, #root { height: 100%; }
 body { background: var(--color-bg); color: var(--color-ink); font-family: var(--font-sans); }
 ::selection { background: var(--color-accent); color: white; }
+html { color-scheme: dark; } /* the app is dark: the calendar icon of a date field must draw light */
 * { scrollbar-width: thin; scrollbar-color: #2a3042 transparent; }
 
 @utility btn { @apply inline-flex items-center justify-center gap-2 rounded-lg px-3.5 py-2 text-sm font-medium transition active:scale-[0.97] disabled:opacity-40 disabled:pointer-events-none cursor-pointer; }
