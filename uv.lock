@@ -1005,7 +1005,7 @@ wheels = [
 
 [[package]]
 name = "scrybinder"
-version = "0.8.2"
+version = "0.8.3"
 source = { editable = "." }
 dependencies = [
     { name = "fastapi" },

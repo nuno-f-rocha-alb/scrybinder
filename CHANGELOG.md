@@ -4,6 +4,8 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+## [0.8.3] — 2026-10-21
+
 ### Added
 - Share links can be updated: the Share dialog of a deck, trade or list you already shared offers **Update link**, which puts the cards as they are now under the same address (and gives it 30 more days), and Import / Export > Shared links has an Update button on each link. Links made before this version cannot be updated. The share service has to be redeployed once (`cd share/worker; npx wrangler deploy`).
 - Sharing a trade: a new "Include the cash" option (off by default) puts what was paid or received in the link, shown in the viewer next to the card prices. The other person and the note are still never sent.
