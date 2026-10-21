@@ -45,8 +45,14 @@ function render(doc) {
   const t = totals(doc);
   document.title = `${doc.title} · Scrybinder share`;
   $("title").textContent = doc.title;
-  const bits = [doc.kind, `${t.cards} cards`, doc.meta?.format, doc.created, doc.prices ? `about ${eur(t.value)}` : ""].filter(Boolean);
-  $("sub").textContent = bits.join(" · ");
+  const kinds = { deck: "Deck", list: "List", trade: "Trade", collection: "Collection" };
+  $("kind").textContent = kinds[doc.kind] || doc.kind;
+  $("kind").hidden = false;
+  const chips = [[`${t.cards}`, t.cards === 1 ? "card" : "cards"], [`${t.lines}`, "lines"]];
+  if (doc.meta?.format) chips.push(["", doc.meta.format]);
+  if (doc.prices) chips.push([eur(t.value), "at Cardmarket prices"]);
+  if (doc.created) chips.push(["", doc.created]);
+  $("chips").replaceChildren(...chips.map(([strong, text]) => el("li", {}, ...(strong ? [el("b", { text: strong }), ` ${text}`] : [text]))));
   $("note").textContent = doc.note || "";
   $("note").hidden = !doc.note;
   const root = $("sections");
