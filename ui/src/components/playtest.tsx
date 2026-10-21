@@ -302,7 +302,7 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
             <span ref={probe} aria-hidden className="invisible absolute w-(--cw)" />
             <div className="pointer-events-none absolute inset-x-0 top-2/3 border-t border-dashed border-line" />
             {g.battlefield.map((c) => (c.x === undefined || c.y === undefined) && c.attachedTo === undefined ? null
-              : <Card key={c.uid} c={c} at={{ ...placeOf(g, c, box), box }} lifted={drag?.uid === c.uid} ring={drag ? drag.target === c.uid && drag.uid !== c.uid : attaching !== null && attaching !== c.uid} badge={g.battlefield.filter((k) => k.attachedTo === c.uid).length} onHover={hover} onPress={playing ? press(c.uid) : undefined} onClick={() => (attaching !== null ? (set((x) => attach(x, attaching, c.uid)), setAttaching(null)) : set((x) => toggleTap(x, c.uid)))} onMenu={cardMenu(c, "battlefield")} />)}
+              : <Card key={c.uid} c={c} at={{ ...placeOf(g, c, box), box }} lifted={drag?.uid === c.uid || (!!drag && c.attachedTo === drag.uid)} ring={drag ? drag.target === c.uid && drag.uid !== c.uid : attaching !== null && attaching !== c.uid} badge={g.battlefield.filter((k) => k.attachedTo === c.uid).length} onHover={hover} onPress={playing ? press(c.uid) : undefined} onClick={() => (attaching !== null ? (set((x) => attach(x, attaching, c.uid)), setAttaching(null)) : set((x) => toggleTap(x, c.uid)))} onMenu={cardMenu(c, "battlefield")} />)}
           </div>
         </section>
           {playing && <div role="toolbar" aria-label="Actions" className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-accent/40 bg-accent/15 p-2">
@@ -342,6 +342,7 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
       {!playing && <OpeningHand key={g.phase} g={g} set={set} />}
       {drag && dragged && <div className="pointer-events-none fixed z-[60] w-(--cw) opacity-90 drop-shadow-2xl" aria-hidden
         style={{ left: `calc(${drag.x}px - ${drag.fx} * var(--cw))`, top: `calc(${drag.y}px - ${drag.fy} * var(--cw) * 88 / 63)` }}>  {/* the size of a card on the table, held by the point you grabbed: where it shows is where it lands */}
+        {g!.battlefield.filter((k) => k.attachedTo === dragged.uid).map((k, i) => <div key={k.uid} className="absolute w-(--cw)" style={{ zIndex: -1, left: `calc(var(--cw) * ${-0.22 * Math.min(i + 1, 4)})`, top: `calc(var(--cw) * 88 / 63 * ${0.16 * Math.min(i + 1, 4)})` }}><Face c={k} w="w-(--cw)" /></div>)}  {/* what is attached to it travels with it */}
         <Face c={dragged} w="w-(--cw)" /></div>}
       {pile && (
         <Modal title={ZONE_LABEL[pile]} onClose={() => setPile(null)} wide>
