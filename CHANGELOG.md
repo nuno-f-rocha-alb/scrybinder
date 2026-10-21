@@ -4,6 +4,8 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+## [0.8.2] — 2026-10-21
+
 ### Changed
 - Deck suggestions: an "Only what I don't own" filter shows only cards you have no copy of (it excludes "Only what I own" and "Only free copies").
 - Playtest: rule warnings (they warn, never block): two legendary permanents with the same name (704.5j), a creature with toughness 0 or less (704.5f), an Aura that is not attached (704.5m) and more than seven cards in hand at the end step (514.1), with the rule number, an amber ring on the cards and an Ignore button. Toughness is read from the card database, so it needs a card-database update to show up for the 704.5f warning.
