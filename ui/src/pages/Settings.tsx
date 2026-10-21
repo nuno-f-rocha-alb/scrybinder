@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, Status } from "../api";
+import { PlaymatSection } from "../components/playmat";
 
 type Gpu = {
   supported: boolean; driver: number | null; gpu: string | null; wheel: { tag: string; torch: string; size: number } | null;
@@ -299,6 +300,7 @@ export default function Settings({ status, refresh }: { status: Status | null; r
         )}
         {err && <p className="mt-2 text-xs text-danger">{err}</p>}
       </section>
+      <PlaymatSection />
       <UpdateSection refresh={refresh} />
       <BackupSection pending={status?.restore_pending} />
       <GpuSection />

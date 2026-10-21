@@ -19,8 +19,8 @@ CONDITIONS = ("NM", "LP", "MP", "HP", "DMG")
 MAX_LINES, MAX_BYTES = 20000, 2 * 1024 * 1024
 MAX_QTY, MAX_TEXT = 9999, 200
 # Where the Worker and the viewer are deployed (the README says how); SCRYBINDER_SHARE_API / SCRYBINDER_SHARE_VIEWER override them.
-SHARE_API = ""
-SHARE_VIEWER = ""
+SHARE_API = "https://scrybinder-share.scrybinder-share.workers.dev"
+SHARE_VIEWER = "https://nuno-f-rocha-alb.github.io/scrybinder"
 TRANSPORT = None  # tests plug an httpx transport in here
 
 
