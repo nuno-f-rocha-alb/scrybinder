@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { CardImg, Modal } from "./ui";
 import { MenuItem, useContextMenu } from "./contextmenu";
 import { usePointerDrag } from "./pointerdrag";
@@ -20,7 +20,9 @@ const TURN: { key: string; label: string; step?: Step; auto?: string }[] = [
 ];
 const ZONES: Zone[] = ["library", "hand", "battlefield", "graveyard", "exile", "command"];
 /** The card width of the table follows the window height, so the phase bar, the table and the hand fit on one screen. */
-const CARD_W = { "--cw": "clamp(4.25rem, 12vh, 6rem)", "--hw": "clamp(5.5rem, 16vh, 9.5rem)" } as React.CSSProperties;
+const CW = "clamp(4.25rem, 12vh, 6rem)";  // a card on the table at zoom 1
+const ZOOMS = [1, 1.25, 1.5, 2, 2.5, 3];
+const CARD_W = { "--cw": CW, "--hw": "clamp(5.5rem, 16vh, 9.5rem)" } as React.CSSProperties;
 
 function Face({ c, w = "w-(--cw)" }: { c: GCard; w?: string }) {
   return c.image_id ? <div className={w}><CardImg id={c.image_id} size="normal" /></div>
@@ -164,6 +166,40 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
   const boxRef = useRef(box);
   boxRef.current = box;
   const surface = useRef<HTMLDivElement>(null);  // the free table
+  const scroller = useRef<HTMLDivElement>(null);  // the window onto it: the table is bigger than it when zoomed in
+  const [zoomT, setZoomT] = useState(() => { try { const v = Number(localStorage.getItem("scrybinder.tablezoom")); return ZOOMS.includes(v) ? v : 1; } catch { return 1; } });
+  const anchor = useRef<{ fx: number; fy: number; px: number; py: number } | null>(null);  // the point of the table under the pointer, kept there while zooming
+  const zoomTo = (z: number, at?: { px: number; py: number }) => {
+    const s = scroller.current, t = surface.current;
+    if (s && t && z !== zoomT) {
+      const px = at?.px ?? s.clientWidth / 2, py = at?.py ?? s.clientHeight / 2;
+      anchor.current = { fx: (s.scrollLeft + px) / t.offsetWidth, fy: (s.scrollTop + py) / t.offsetHeight, px, py };
+    }
+    setZoomT(z);
+    try { localStorage.setItem("scrybinder.tablezoom", String(z)); } catch { /* no storage */ }
+  };
+  const zoomRef = useRef(zoomTo);
+  zoomRef.current = zoomTo;
+  const zoomStep = (dir: 1 | -1, at?: { px: number; py: number }) => { const i = ZOOMS.indexOf(zoomT); const n = ZOOMS[Math.min(ZOOMS.length - 1, Math.max(0, i + dir))]; zoomRef.current(n, at); };
+  const stepRef = useRef(zoomStep);
+  stepRef.current = zoomStep;
+  useLayoutEffect(() => {  // after the table has its new size, put the anchored point back under the pointer
+    const s = scroller.current, t = surface.current, a = anchor.current;
+    if (s && t && a) { s.scrollLeft = a.fx * t.offsetWidth - a.px; s.scrollTop = a.fy * t.offsetHeight - a.py; }
+    anchor.current = null;
+  }, [zoomT]);
+  useEffect(() => {  // Ctrl + wheel over the table zooms it (a native listener: React's wheel events cannot be cancelled)
+    const s = scroller.current;
+    if (!s) return;
+    const onWheel = (e: WheelEvent) => {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      const r = s.getBoundingClientRect();
+      stepRef.current(e.deltaY < 0 ? 1 : -1, { px: e.clientX - r.left, py: e.clientY - r.top });
+    };
+    s.addEventListener("wheel", onWheel, { passive: false });
+    return () => s.removeEventListener("wheel", onWheel);
+  }, [g !== null]);  // eslint-disable-line react-hooks/exhaustive-deps
   const probe = useRef<HTMLSpanElement>(null);   // as wide as a card on it
   const started = g !== null;
   useEffect(() => {
@@ -305,15 +341,27 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
         {/* the table: nonlands nearest the opponent (top), lands nearest the player (bottom) */}
         <div className="flex min-w-0 flex-1 flex-col">
         <section aria-label="Battlefield" {...(playing ? zone("battlefield") : {})} className={`relative isolate flex min-h-0 flex-1 flex-col rounded-xl border border-line ${playing ? zone("battlefield").className : ""}`}>
-          <MatLayer mat={mat} />
-          <h3 className="px-2 pt-2 text-xs uppercase tracking-wide text-mute">Battlefield ({g.battlefield.length}) · place cards anywhere; the last one you move stays on top; drop one on another to attach it</h3>
+          <div className="flex items-start justify-between gap-2 px-2 pt-2">
+          <h3 className="text-xs uppercase tracking-wide text-mute">Battlefield ({g.battlefield.length}) · place cards anywhere; the last one you move stays on top; drop one on another to attach it</h3>
+            <div role="group" aria-label="Zoom the table" className="flex shrink-0 items-center gap-1 text-xs">
+              <button className={`${btn} !px-2 !py-0.5`} onClick={() => zoomStep(-1)} disabled={zoomT === ZOOMS[0]} aria-label="Zoom out" title="Zoom out (Ctrl + wheel)">−</button>
+              <button className={`${btn} !px-2 !py-0.5 tabular-nums`} onClick={() => zoomTo(1)} disabled={zoomT === 1} title="Back to 100%">{Math.round(zoomT * 100)}%</button>
+              <button className={`${btn} !px-2 !py-0.5`} onClick={() => zoomStep(1)} disabled={zoomT === ZOOMS[ZOOMS.length - 1]} aria-label="Zoom in" title="Zoom in (Ctrl + wheel)">+</button>
+            </div>
+          </div>
           {attaching !== null && <p role="status" className="px-2 text-xs text-accent">Click the card to attach it to (Esc cancels).</p>}
           {/* a free table: each card sits at its own x, y; the dashed line is only a guide between the permanents and the lands */}
-          <div ref={surface} role="group" aria-label="Table" className="relative isolate min-h-[calc(var(--cw)*3.6)] flex-1">
+          {/* the window keeps its size; the table inside it grows with the zoom (cards, mat and all) and scrolls */}
+          <div className="relative min-h-[calc(var(--cw)*3.6)] flex-1">
+          <div ref={scroller} className="absolute inset-0 overflow-auto">
+          <div ref={surface} role="group" aria-label="Table" className="relative isolate" style={{ "--cw": `calc(${CW} * ${zoomT})`, width: `${zoomT * 100}%`, height: `${zoomT * 100}%` } as React.CSSProperties}>
+            <MatLayer mat={mat} />
             <span ref={probe} aria-hidden className="invisible absolute w-(--cw)" />
             <div className="pointer-events-none absolute inset-x-0 top-2/3 border-t border-dashed border-line" />
             {g.battlefield.map((c) => (c.x === undefined || c.y === undefined) && c.attachedTo === undefined ? null
               : <Card key={c.uid} c={c} at={{ ...placeOf(g, c, box), box }} lifted={drag?.uid === c.uid || (!!drag && c.attachedTo === drag.uid)} ring={drag ? drag.target === c.uid && drag.uid !== c.uid : attaching !== null && attaching !== c.uid} warn={warns.some((w) => w.uids.includes(c.uid))} badge={g.battlefield.filter((k) => k.attachedTo === c.uid).length} onHover={hover} onPress={playing ? press(c.uid) : undefined} onClick={() => (attaching !== null ? (set((x) => attach(x, attaching, c.uid)), setAttaching(null)) : set((x) => toggleTap(x, c.uid)))} onMenu={cardMenu(c, "battlefield")} />)}
+          </div>
+          </div>
           </div>
         </section>
           {playing && <div role="toolbar" aria-label="Actions" className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-accent/40 bg-accent/15 p-2">
@@ -352,7 +400,7 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
 
       {!playing && <OpeningHand key={g.phase} g={g} set={set} />}
       {drag && dragged && <div className="pointer-events-none fixed z-[60] w-(--cw) opacity-90 drop-shadow-2xl" aria-hidden
-        style={{ left: `calc(${drag.x}px - ${drag.fx} * var(--cw))`, top: `calc(${drag.y}px - ${drag.fy} * var(--cw) * 88 / 63)` }}>  {/* the size of a card on the table, held by the point you grabbed: where it shows is where it lands */}
+        style={{ "--cw": `calc(${CW} * ${zoomT})`, left: `calc(${drag.x}px - ${drag.fx} * var(--cw))`, top: `calc(${drag.y}px - ${drag.fy} * var(--cw) * 88 / 63)` } as React.CSSProperties}>  {/* the size of a card on the table, held by the point you grabbed: where it shows is where it lands */}
         {g!.battlefield.filter((k) => k.attachedTo === dragged.uid).map((k, i) => <div key={k.uid} className="absolute w-(--cw)" style={{ zIndex: -1, left: `calc(var(--cw) * ${-0.22 * Math.min(i + 1, 4)})`, top: `calc(var(--cw) * 88 / 63 * ${0.16 * Math.min(i + 1, 4)})` }}><Face c={k} w="w-(--cw)" /></div>)}  {/* what is attached to it travels with it */}
         <Face c={dragged} w="w-(--cw)" /></div>}
       {pile && (
