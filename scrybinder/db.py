@@ -132,12 +132,32 @@ CREATE TABLE IF NOT EXISTS deck_assignments (  -- copies of a collection row res
     quantity INTEGER NOT NULL CHECK (quantity > 0), PRIMARY KEY (deck_card_id, collection_id)
 );
 CREATE INDEX IF NOT EXISTS deck_assignments_coll ON deck_assignments(collection_id);
+
+CREATE TABLE IF NOT EXISTS trades (  -- an in-person trade or sale: a draft until confirmed; cash = euros received (negative = paid)
+    id INTEGER PRIMARY KEY, who TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', cash REAL NOT NULL DEFAULT 0, traded_on TEXT,
+    status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft','done')),
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')), done_at TEXT
+);
+CREATE TABLE IF NOT EXISTS trade_out (  -- copies leaving, named by collection row key (row ids change); price NULL = market price
+    id INTEGER PRIMARY KEY, trade_id INTEGER NOT NULL REFERENCES trades(id) ON DELETE CASCADE, scryfall_id TEXT NOT NULL REFERENCES cards(id),
+    finish TEXT NOT NULL, condition TEXT NOT NULL, language TEXT NOT NULL, location TEXT NOT NULL,
+    altered INTEGER NOT NULL DEFAULT 0, signed INTEGER NOT NULL DEFAULT 0, misprint INTEGER NOT NULL DEFAULT 0,
+    quantity INTEGER NOT NULL CHECK (quantity > 0), price REAL,
+    untracked INTEGER NOT NULL DEFAULT 0,  -- 1: a card you own that is not in the collection: recorded, nothing is taken out at confirm
+    UNIQUE (trade_id, scryfall_id, finish, condition, language, location, altered, signed, misprint, untracked)
+);
+CREATE TABLE IF NOT EXISTS trade_in (
+    id INTEGER PRIMARY KEY, trade_id INTEGER NOT NULL REFERENCES trades(id) ON DELETE CASCADE, scryfall_id TEXT NOT NULL REFERENCES cards(id),
+    finish TEXT NOT NULL, condition TEXT NOT NULL, language TEXT NOT NULL, location TEXT NOT NULL DEFAULT '',
+    quantity INTEGER NOT NULL CHECK (quantity > 0), price REAL,
+    UNIQUE (trade_id, scryfall_id, finish, condition, language, location)
+);
 """
 
 # additive migrations (never delete or rewrite data): (table, column, definition)
 _ADD = [("decks", "folder_id", "INTEGER REFERENCES deck_folders(id) ON DELETE SET NULL"),
         ("decks", "cover_card_id", "INTEGER REFERENCES deck_cards(id) ON DELETE SET NULL"), ("deck_cards", "finish", "TEXT"), ("cards", "illustration_id", "TEXT"), ("cards", "image_status", "TEXT"), ("scan_log", "topk_json", "TEXT"),
-        ("oracle_cards", "power", "TEXT"), ("oracle_cards", "toughness", "TEXT")]
+        ("oracle_cards", "power", "TEXT"), ("oracle_cards", "toughness", "TEXT"), ("trades", "traded_on", "TEXT")]
 
 
 def _migrate(db):
@@ -287,6 +307,9 @@ def connect(path: Path | str | None = None) -> sqlite3.Connection:
     db.row_factory = sqlite3.Row
     db.execute("PRAGMA foreign_keys=ON")
     db.execute("PRAGMA journal_mode=WAL")
+    cols = {r[1] for r in db.execute("PRAGMA table_info(trade_out)")}
+    if cols and "untracked" not in cols:  # ponytail: the table of a build that was never released: recreated, it holds nothing worth keeping
+        db.execute("DROP TABLE trade_out")
     db.executescript(SCHEMA)
     _migrate(db)
     _fix_reversible(db)
