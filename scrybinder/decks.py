@@ -22,7 +22,7 @@ SELECT x.*, (SELECT cardmarket_id FROM cards WHERE id = x.image_id) AS cardmarke
        (SELECT set_name FROM cards WHERE id = x.scryfall_id) AS set_name,
        (SELECT collector_number FROM cards WHERE id = x.scryfall_id) AS collector_number FROM (
 SELECT d.id, d.oracle_id, d.scryfall_id, d.finish, d.quantity, d.board, o.name, o.mana_cost, o.cmc, o.type_line, o.colors, o.color_identity,
-       o.produced_mana, o.game_changer,
+       o.produced_mana, o.game_changer, o.power, o.toughness,
        (SELECT COALESCE(SUM(c.quantity), 0) FROM collection c JOIN cards k ON k.id = c.scryfall_id
          WHERE k.oracle_id = d.oracle_id AND c.proxy = 0) AS owned,
        (SELECT COALESCE(SUM(quantity), 0) FROM deck_assignments WHERE deck_card_id = d.id) AS assigned,

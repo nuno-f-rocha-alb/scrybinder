@@ -9,7 +9,7 @@ export type CardStatus = "assigned" | "available" | "elsewhere" | "missing" | "p
 export type DeckCard = {
   id: number; oracle_id: string; scryfall_id: string | null; quantity: number; board: Board; name: string; mana_cost: string;
   cmc: number; type_line: string | null; colors: string[]; color_identity: string[]; owned: number; assigned: number; price: number | null;
-  image_id: string | null; cardmarket_id: number | null; owned_prints: OwnedPrint[]; produced_mana?: string[]; set_code: string | null; set_name: string | null; collector_number: string | null; finish: "nonfoil" | "foil" | "etched" | null; tags: string[]; status: CardStatus; missing: number; available: number;
+  image_id: string | null; cardmarket_id: number | null; owned_prints: OwnedPrint[]; produced_mana?: string[]; power?: string | null; toughness?: string | null; set_code: string | null; set_name: string | null; collector_number: string | null; finish: "nonfoil" | "foil" | "etched" | null; tags: string[]; status: CardStatus; missing: number; available: number;
   elsewhere: { deck_id: number; name: string; quantity: number }[]; assignments: { collection_id: number; quantity: number }[];
 };
 export type DeckSummary = { cards: number; assigned: number; available: number; missing: number; proxies: number; cost_to_complete: number };

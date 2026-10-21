@@ -3,7 +3,7 @@ import { primaryType } from "./decks";
 import type { DeckCard } from "./decks";
 
 export type Zone = "library" | "hand" | "battlefield" | "graveyard" | "exile" | "command";
-export type GCard = { uid: number; name: string; image_id: string | null; type_line: string | null; tapped: boolean; commander?: boolean; plus?: number; counters?: number; named?: Record<string, number>; token?: boolean; x?: number; y?: number; z?: number; attachedTo?: number };
+export type GCard = { uid: number; name: string; image_id: string | null; type_line: string | null; tapped: boolean; commander?: boolean; plus?: number; counters?: number; named?: Record<string, number>; token?: boolean; x?: number; y?: number; z?: number; attachedTo?: number; toughness?: string };
 /** The steps where the game stops. Untap and draw happen by themselves: untap on the way into a new turn, the draw on leaving upkeep. */
 export const STEPS = ["upkeep", "main1", "combat", "main2", "end"] as const;
 export type Step = (typeof STEPS)[number];
@@ -25,7 +25,7 @@ export function shuffle<T>(a: T[], rnd: () => number = Math.random): T[] {
 export function newGame(cards: DeckCard[], commander: boolean, onPlay = true, rnd?: () => number): Game {
   let uid = 0;
   const all = (board: string) => cards.filter((c) => c.board === board).flatMap((c) =>
-    Array.from({ length: c.quantity }, () => ({ uid: uid++, name: c.name, image_id: c.image_id, type_line: c.type_line, tapped: false, commander: board === "commander" })));
+    Array.from({ length: c.quantity }, () => ({ uid: uid++, name: c.name, image_id: c.image_id, type_line: c.type_line, tapped: false, commander: board === "commander", ...(c.toughness ? { toughness: c.toughness } : {}) })));
   const g: Game = {
     library: shuffle(all("main"), rnd), hand: [], battlefield: [], graveyard: [], exile: [], command: all("commander"),
     turn: 1, step: "upkeep", life: commander ? 40 : 20, mulligans: 0, onPlay, commander, phase: "mulligan", toBottom: 0, freeMulligan: commander, zTop: 0,
@@ -196,8 +196,9 @@ export function addCounter(g: Game, uid: number, kind: "plus" | "generic", delta
 /** A token on the battlefield (no image; `pt` such as "1/1" is shown with the name). */
 export function token(g: Game, t: { name: string; pt?: string }): Game {
   const uid = 1 + Math.max(-1, ...(Object.values(g).filter(Array.isArray).flat() as GCard[]).map((c) => c.uid));
+  const toughness = t.pt?.split("/")[1]?.trim() ?? "";
   const label = t.pt?.trim() ? `${t.name.trim()} (${t.pt.trim()})` : t.name.trim();
-  return { ...g, battlefield: [...g.battlefield, { uid, name: label || "Token", image_id: null, type_line: "Token", tapped: false, token: true }] };
+  return { ...g, battlefield: [...g.battlefield, { uid, name: label || "Token", image_id: null, type_line: "Token", tapped: false, token: true, ...(/^\d+$/.test(toughness) ? { toughness } : {}) }] };
 }
 
 /** The top `n` cards of the library, without changing anything. */
