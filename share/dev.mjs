@@ -27,7 +27,7 @@ createServer(async (req, res) => {
 }).listen(8787, "127.0.0.1");
 
 const site = join(fileURLToPath(new URL(".", import.meta.url)), "site");
-const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css" };
+const types = { ".html": "text/html", ".js": "text/javascript", ".css": "text/css", ".svg": "image/svg+xml" };
 createServer(async (req, res) => {
   const path = new URL(req.url, "http://x").pathname;
   if (path === "/config.js") { res.writeHead(200, { "Content-Type": "text/javascript" }); return res.end('export const SHARE_API = "http://127.0.0.1:8787";'); }
