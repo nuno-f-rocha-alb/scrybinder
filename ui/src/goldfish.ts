@@ -3,7 +3,7 @@ import { primaryType } from "./decks";
 import type { DeckCard } from "./decks";
 
 export type Zone = "library" | "hand" | "battlefield" | "graveyard" | "exile" | "command";
-export type GCard = { uid: number; name: string; image_id: string | null; type_line: string | null; tapped: boolean; commander?: boolean; plus?: number; counters?: number; named?: Record<string, number>; token?: boolean; x?: number; y?: number; z?: number };
+export type GCard = { uid: number; name: string; image_id: string | null; type_line: string | null; tapped: boolean; commander?: boolean; plus?: number; counters?: number; named?: Record<string, number>; token?: boolean; x?: number; y?: number; z?: number; attachedTo?: number };
 /** The steps where the game stops. Untap and draw happen by themselves: untap on the way into a new turn, the draw on leaving upkeep. */
 export const STEPS = ["upkeep", "main1", "combat", "main2", "end"] as const;
 export type Step = (typeof STEPS)[number];
@@ -59,8 +59,9 @@ export function move(g: Game, uid: number, to: Zone, bottom = false): Game {
   if (!from) return g;
   const found = g[from].find((c) => c.uid === uid) as GCard;
   const out = { ...g, [from]: g[from].filter((c) => c.uid !== uid) };
+  if (from === "battlefield") out.battlefield = out.battlefield.map((c) => (c.attachedTo === uid ? { ...c, attachedTo: undefined } : c));  // what was attached to it stays on the table
   if (found.token && from === "battlefield" && to !== "battlefield") return out;  // a token that leaves the battlefield ceases to exist
-  const { plus: _p, counters: _c, named: _n, x: _x, y: _y, z: _z, ...rest } = found;  // counters and the table position stay on the battlefield
+  const { plus: _p, counters: _c, named: _n, x: _x, y: _y, z: _z, attachedTo: _a, ...rest } = found;  // counters and the table position stay on the battlefield
   const card = { ...rest, tapped: false };
   out[to] = (to === "library" && bottom) || to === "battlefield" ? [...out[to], card] : [card, ...out[to]];
   return out;
@@ -110,7 +111,25 @@ const clamp = (v: number, hi: number) => Math.min(Math.max(v, 0), Math.max(hi, 0
 export function placeCard(g: Game, uid: number, x: number, y: number, box: Box = DEFAULT_BOX): Game {
   if (!Number.isFinite(x) || !Number.isFinite(y) || !g.battlefield.some((c) => c.uid === uid)) return g;
   const z = g.zTop + 1;
-  return { ...g, zTop: z, battlefield: g.battlefield.map((c) => (c.uid === uid ? { ...c, x: clamp(x, 1 - box.w), y: clamp(y, 1 - box.h), z } : c)) };
+  return { ...g, zTop: z, battlefield: g.battlefield.map((c) => { const { attachedTo: _a, ...rest } = c; return c.uid === uid ? { ...rest, x: clamp(x, 1 - box.w), y: clamp(y, 1 - box.h), z } : c; }) };  // put on the table by hand, it is no longer attached
+}
+
+/** Attach a battlefield card (an aura, an equipment...) to another. Not to itself, not to a card that is attached, not a card that has cards attached to it. */
+export function attach(g: Game, uid: number, host: number): Game {
+  const on = (u: number) => g.battlefield.find((c) => c.uid === u);
+  if (uid === host || !on(uid) || !on(host) || on(host)!.attachedTo !== undefined || g.battlefield.some((c) => c.attachedTo === uid)) return g;
+  return { ...g, battlefield: g.battlefield.map((c) => (c.uid === uid ? { ...c, attachedTo: host } : c)) };
+}
+
+export const detach = (g: Game, uid: number): Game =>
+  g.battlefield.find((c) => c.uid === uid)?.attachedTo === undefined ? g : { ...g, battlefield: g.battlefield.map((c) => (c.uid === uid ? { ...c, attachedTo: undefined } : c)) };
+
+/** Where a battlefield card shows: its own spot, or for an attached card the host's, shifted left and down (more for each one attached before it, up to four) and stacked just under it. `z` is doubled so "just under" is a whole number. */
+export function placeOf(g: Game, c: GCard, box: Box = DEFAULT_BOX): { x: number; y: number; z: number } {
+  const host = c.attachedTo === undefined ? undefined : g.battlefield.find((h) => h.uid === c.attachedTo);
+  if (!host || host.x === undefined || host.y === undefined) return { x: c.x ?? 0, y: c.y ?? 0, z: 2 * (c.z ?? 0) };
+  const k = Math.min(g.battlefield.filter((o) => o.attachedTo === host.uid).findIndex((o) => o.uid === c.uid) + 1, 4);
+  return { x: clamp(host.x - 0.22 * box.w * k, 1 - box.w), y: clamp(host.y + 0.16 * box.h * k, 1 - box.h), z: 2 * (host.z ?? 0) - 1 };
 }
 
 /** Bring a battlefield card to the top, leaving it where it is. */
@@ -137,7 +156,7 @@ export function autoPlace(g: Game, uid: number, box: Box = DEFAULT_BOX): Game {
 }
 
 /** Give every battlefield card that has no position yet one (cards played, searched, made as tokens...). Returns `g` itself when there is nothing to do. */
-export const settle = (g: Game, box: Box = DEFAULT_BOX): Game => g.battlefield.filter((c) => c.x === undefined).reduce((x, c) => autoPlace(x, c.uid, box), g);
+export const settle = (g: Game, box: Box = DEFAULT_BOX): Game => g.battlefield.filter((c) => c.x === undefined && c.attachedTo === undefined).reduce((x, c) => autoPlace(x, c.uid, box), g);
 
 export const shuffleLibrary = (g: Game, rnd?: () => number): Game => ({ ...g, library: shuffle(g.library, rnd) });
 
