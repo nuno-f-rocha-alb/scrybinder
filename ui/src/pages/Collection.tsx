@@ -6,6 +6,7 @@ import { Badge, Blocked, CardImg, Drawer, ExtLinks, Field, Hit, Modal, useToast 
 import { GridControls, sourceFor, useCardGrid } from "../components/cardgrid";
 import { BulkBar, BulkDelete, BulkEdit } from "./Bulk";
 import ShareDialog from "../components/sharedialog";
+import AddToList, { ListPayload } from "../components/addtolist";
 import { MenuItem, nameAndLinks, useContextMenu } from "../components/contextmenu";
 import DeckPicker from "../components/deckpicker";
 import ValueHistory from "../components/valuehistory";
@@ -44,6 +45,7 @@ export default function Collection({ initialSet, initialLocation, onOpenDeck }: 
   const [sel, setSel] = useState<Set<number>>(new Set());
   const [bulk, setBulk] = useState<"edit" | "delete" | null>(null);
   const [sharing, setSharing] = useState(false);
+  const [toList, setToList] = useState<{ payload: ListPayload; what: string } | null>(null);
   const [delIds, setDelIds] = useState<{ ids: number[]; preview: string[] } | null>(null);  // rows to delete, from the right-click menu
   const [delLoc, setDelLoc] = useState<Loc | null>(null);
   const [merging, setMerging] = useState<string[] | null>(null);  // the locations being merged, in the order they were picked
@@ -130,6 +132,7 @@ export default function Collection({ initialSet, initialLocation, onOpenDeck }: 
       { label: "Add one copy", onSelect: () => api(`/collection/${o.id}`, { method: "PATCH", body: JSON.stringify({ quantity: o.quantity + 1 }) }).then(() => { load(); toast(`${o.quantity + 1}× ${r.name}`); }).catch((e) => toast(e.message, true)) },
       { label: "View details", onSelect: () => setDetailsAt(i) },
       { label: "Add to a deck…", onSelect: () => setToDeck(o) },
+      { label: "Add to a list…", onSelect: () => setToList({ payload: { collection_ids: idsOf(r) }, what: `${r.quantity}× ${r.name}` }) },
       { label: "Move to…", onSelect: () => setMoving(o) },
       ...(r.decks.length ? r.decks.map((d) => ({ label: `Go to ${d.name}`, onSelect: () => onOpenDeck(d.deck_id, r.oracle_id) })) : []),
       { label: "Select", onSelect: () => { setSelecting(true); setSel(new Set(idsOf(r))); lastPick.current = i; } },
@@ -296,7 +299,8 @@ export default function Collection({ initialSet, initialLocation, onOpenDeck }: 
       })()}
 
       {selecting && <BulkBar count={sel.size} total={data?.total_rows ?? 0} onSelectAll={selectAll} onClear={() => setSel(new Set())}
-        onShare={() => setSharing(true)} onEdit={() => setBulk("edit")} onDelete={() => setBulk("delete")} onExit={() => { setSelecting(false); setSel(new Set()); }} />}
+        onShare={() => setSharing(true)} onList={() => setToList({ payload: { collection_ids: [...sel] }, what: `${sel.size} selected ${sel.size === 1 ? "row" : "rows"}` })} onEdit={() => setBulk("edit")} onDelete={() => setBulk("delete")} onExit={() => { setSelecting(false); setSel(new Set()); }} />}
+      {toList && <AddToList payload={toList.payload} what={toList.what} onClose={() => setToList(null)} onDone={(m) => { setToList(null); setSel(new Set()); setSelecting(false); toast(m); }} />}
       {sharing && <ShareDialog collection title={locations.length === 1 && locations[0] ? locations[0] : "Collection"} onClose={() => setSharing(false)}
         spec={sel.size ? { kind: "collection", ids: [...sel] } : { kind: "collection", filters: { q, set: setCode, location: locations, finish } }} />}
       {bulk === "edit" && <BulkEdit ids={[...sel]} locations={locs.map((l) => l.location).filter(Boolean)} onClose={() => setBulk(null)} onDone={bulkDone} />}

@@ -152,7 +152,8 @@ def build(db, spec: dict) -> dict:
             raise ValueError("filters: an object")
         return collection_doc(db, ids, spec.get("filters"), prices, bool(spec.get("locations")), note, title)
     if kind == "list":
-        raise ValueError("lists cannot be shared yet")
+        from . import lists
+        return lists.doc(db, spec.get("list_id"), prices, note, title)
     raise ValueError("kind: deck, trade, list or collection")
 
 
@@ -257,7 +258,8 @@ def import_text(db, text: str, location: str = "") -> dict:
                                language=c.get("lang", "en"), location=loc)
                 result["cards"] += c["qty"]
     else:
-        raise ValueError("lists cannot be imported yet")
+        from . import lists
+        result.update(lists.import_doc(db, doc, info))
     return result
 
 

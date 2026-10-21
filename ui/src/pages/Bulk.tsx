@@ -1,14 +1,14 @@
 import { useState } from "react";
 import { Combo, Select } from "../components/select";
-import { IconPencil, IconShare, IconTrash, IconX } from "@tabler/icons-react";
+import { IconList, IconPencil, IconShare, IconTrash, IconX } from "@tabler/icons-react";
 import { api, ApiError, CONDITIONS, FINISH, LANGS } from "../api";
 import { Blocked, Modal } from "../components/ui";
 
 type Done = (msg: string, err?: boolean) => void;
 
 /** Fixed bar at the bottom with the current selection and the bulk actions. */
-export function BulkBar({ count, total, onSelectAll, onClear, onShare, onEdit, onDelete, onExit }: {
-  count: number; total: number; onSelectAll: () => void; onClear: () => void; onShare: () => void; onEdit: () => void; onDelete: () => void; onExit: () => void;
+export function BulkBar({ count, total, onSelectAll, onClear, onShare, onList, onEdit, onDelete, onExit }: {
+  count: number; total: number; onSelectAll: () => void; onClear: () => void; onShare: () => void; onList: () => void; onEdit: () => void; onDelete: () => void; onExit: () => void;
 }) {
   return (
     <div role="toolbar" aria-label="Bulk actions"
@@ -17,6 +17,7 @@ export function BulkBar({ count, total, onSelectAll, onClear, onShare, onEdit, o
       {count < total && <button className="cursor-pointer text-sm text-accent hover:underline" onClick={onSelectAll}>Select all ({total})</button>}
       {count > 0 && <button className="cursor-pointer text-sm text-mute hover:text-ink" onClick={onClear}>Clear</button>}
       <span className="mx-1 h-5 w-px bg-line" aria-hidden />
+      <button className="btn-ghost" disabled={!count} onClick={onList}><IconList className="size-4" />Add to list</button>
       <button className="btn-ghost" disabled={!count} onClick={onShare}><IconShare className="size-4" />Share</button>
       <button className="btn-ghost" disabled={!count} onClick={onEdit}><IconPencil className="size-4" />Edit</button>
       <button className="btn-danger" disabled={!count} onClick={onDelete}><IconTrash className="size-4" />Delete</button>

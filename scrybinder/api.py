@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 
 import time
 
-from . import __version__, carddetails, collection, db as dbmod, decks, decktext, deckurl, formats, gpu as gpumod, oracle, scryfall, share, suggest, trades, updater as updmod
+from . import __version__, carddetails, collection, db as dbmod, decks, decktext, deckurl, formats, gpu as gpumod, lists, oracle, scryfall, share, suggest, trades, updater as updmod
 from .scan.session import MAX_SIDE, MAX_SIDE_PAGE, Scanner, decode
 
 UI_DIST = Path(__file__).resolve().parent.parent / "ui" / "dist"
@@ -859,6 +859,56 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
     def trades_confirm(trade_id: int):
         _wrap(trades.confirm, db, trade_id)
         return {"ok": True}
+
+    # --- lists ---
+    @app.get("/api/lists")
+    def lists_all():
+        return lists.listing(db)
+
+    @app.post("/api/lists")
+    def lists_create(body: dict = Body(...)):
+        return {"id": _wrap(lists.create, db, body.get("name"), body.get("note") or "")}
+
+    @app.post("/api/lists/from-location")  # before /api/lists/{list_id}
+    def lists_from_location(body: dict = Body(...)):
+        return {"id": _wrap(lists.create_from_location, db, body.get("location", ""), body.get("name") or "")}
+
+    @app.get("/api/lists/{list_id}")
+    def lists_get(list_id: int):
+        return _wrap(lists.get, db, list_id)
+
+    @app.patch("/api/lists/{list_id}")
+    def lists_edit(list_id: int, body: dict = Body(...)):
+        _wrap(lists.update, db, list_id, **{k: v for k, v in body.items() if k in ("name", "note")})
+        return {"ok": True}
+
+    @app.delete("/api/lists/{list_id}")
+    def lists_delete(list_id: int):
+        _wrap(lists.delete, db, list_id)
+        return {"ok": True}
+
+    @app.post("/api/lists/{list_id}/items")
+    def lists_add(list_id: int, body: dict = Body(...)):
+        if "collection_ids" in body:
+            return {"added": _wrap(lists.add_from_collection, db, list_id, body["collection_ids"])}
+        return {"added": _wrap(lists.add_items, db, list_id, body.get("items"))}
+
+    @app.patch("/api/lists/{list_id}/items/{item_id}")
+    def lists_edit_item(list_id: int, item_id: int, body: dict = Body(...)):
+        _wrap(lists.edit_item, db, list_id, item_id, **{k: v for k, v in body.items() if k in ("quantity", "finish", "condition", "language", "note")})
+        return {"ok": True}
+
+    @app.delete("/api/lists/{list_id}/items/{item_id}")
+    def lists_delete_item(list_id: int, item_id: int):
+        _wrap(lists.delete_item, db, list_id, item_id)
+        return {"ok": True}
+
+    @app.get("/api/lists/{list_id}/export")
+    def lists_export(list_id: int, format: str = "text"):
+        lst = _wrap(lists.get, db, list_id)
+        if format == "csv":
+            return Response(lists.csv_text(lst), media_type="text/csv; charset=utf-8", headers={"Content-Disposition": 'attachment; filename="scrybinder-list.csv"'})
+        return Response(lists.text(lst), media_type="text/plain; charset=utf-8")
 
     # --- share links ---
     def _share_wrap(fn, *a, **k):

@@ -146,6 +146,16 @@ CREATE TABLE IF NOT EXISTS trade_out (  -- copies leaving, named by collection r
     untracked INTEGER NOT NULL DEFAULT 0,  -- 1: a card you own that is not in the collection: recorded, nothing is taken out at confirm
     UNIQUE (trade_id, scryfall_id, finish, condition, language, location, altered, signed, misprint, untracked)
 );
+CREATE TABLE IF NOT EXISTS lists (  -- a named set of cards picked to look at and to share; not a location
+    id INTEGER PRIMARY KEY, name TEXT NOT NULL, note TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now')), updated_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
+);
+CREATE TABLE IF NOT EXISTS list_items (  -- copies of what was picked, not links to collection rows
+    id INTEGER PRIMARY KEY, list_id INTEGER NOT NULL REFERENCES lists(id) ON DELETE CASCADE, scryfall_id TEXT NOT NULL REFERENCES cards(id),
+    finish TEXT NOT NULL DEFAULT 'nonfoil', condition TEXT NOT NULL DEFAULT 'NM', language TEXT NOT NULL DEFAULT 'en',
+    quantity INTEGER NOT NULL CHECK (quantity > 0), note TEXT NOT NULL DEFAULT '',
+    UNIQUE (list_id, scryfall_id, finish, condition, language)
+);
 CREATE TABLE IF NOT EXISTS shares (  -- links made with the share service; delete_token is the secret that lets this app remove one
     id TEXT PRIMARY KEY, kind TEXT NOT NULL, title TEXT NOT NULL, url TEXT NOT NULL, delete_token TEXT NOT NULL, expires_at TEXT,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
