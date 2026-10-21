@@ -10,7 +10,7 @@ TTL_DAYS = "30"
 # Create it once with `npx wrangler kv namespace create SHARES` and paste the id it prints here.
 [[kv_namespaces]]
 binding = "SHARES"
-id = "REPLACE_WITH_THE_KV_NAMESPACE_ID"
+id = "eee1de55b7554454baa55394602cb4a5"
 
 # At most 20 shares a minute per IP address.
 [[unsafe.bindings]]
