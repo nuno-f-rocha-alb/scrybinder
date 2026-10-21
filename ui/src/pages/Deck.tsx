@@ -20,6 +20,7 @@ import Suggestions from "../components/suggestions";
 import AddMissingDialog from "../components/addmissing";
 import AddCards from "../components/addcards";
 import ShareDialog from "../components/sharedialog";
+import AddToList, { ListPayload } from "../components/addtolist";
 import ImportDialog, { Skipped } from "../components/decklist";
 import type { ImportReport } from "../components/decklist";
 
@@ -82,6 +83,7 @@ export default function Deck({ id, onBack, focusOracle }: { id: number; onBack: 
   const [assignId, setAssignId] = useState<number | null>(null);
   const [importing, setImporting] = useState(false);
   const [sharing, setSharing] = useState(false);
+  const [toList, setToList] = useState<{ payload: ListPayload; what: string } | null>(null);
   const [adding, setAdding] = useState(false);
   const [folded, setFolded] = useState<Set<string>>(() => { try { return new Set<string>(JSON.parse(localStorage.getItem("scrybinder.folded") ?? "[]")); } catch { return new Set<string>(); } });
   const setFoldedKeys = (next: Set<string>) => { setFolded(next); try { const kept = (JSON.parse(localStorage.getItem("scrybinder.folded") ?? "[]") as string[]).filter((k) => k.startsWith("sug:")); localStorage.setItem("scrybinder.folded", JSON.stringify([...[...next].filter((k) => !k.startsWith("sug:")), ...kept])); }  /* the Suggestions tab shares this key: keep its entries */ catch { /* no storage */ } };
@@ -161,6 +163,7 @@ export default function Deck({ id, onBack, focusOracle }: { id: number; onBack: 
     ...(deck.format === "commander" && c.board !== "commander" ? [{ label: "Set as commander", onSelect: () => patchCard(c, { board: "commander" }) }] : []),
     "sep",
     { label: "Add to another deck…", onSelect: () => setPickId(c.id) },
+    ...(c.image_id ? [{ label: "Add to a list…", onSelect: () => setToList({ payload: { items: [{ scryfall_id: c.image_id as string, finish: c.finish ?? undefined, quantity: c.quantity }] }, what: c.name }) }] : []),
     ...(c.missing > 0 && c.board !== "maybe" ? [{ label: `Add the missing ${c.missing} to collection…`, onSelect: () => setMissingFor(c) }] : []),
     ...(c.scryfall_id ? [{ label: "Add this printing to the collection…", onSelect: () => setCopyFor(c) }] : []),
     { label: "Copies and tags…", onSelect: () => setAssignId(c.id) },
@@ -267,6 +270,8 @@ export default function Deck({ id, onBack, focusOracle }: { id: number; onBack: 
               <Select className="field !w-auto !py-1 text-xs" aria-label="Move the selected cards to a board" disabled={!picks.length} value="" onChange={(e) => e.target.value && run(each((c) => api(`/decks/${id}/cards/${c.id}`, { method: "PATCH", body: JSON.stringify({ board: e.target.value }) })))}>
                 <option value="">Move to…</option>{BOARDS.map((b) => <option key={b} value={b}>{BOARD_LABEL[b]}</option>)}
               </Select>
+              <button className="btn-ghost !py-1" disabled={!picks.length} title="Add the selected cards to a list"
+                onClick={() => setToList({ payload: { items: picks.filter((c) => c.image_id).map((c) => ({ scryfall_id: c.image_id as string, finish: c.finish ?? undefined, quantity: c.quantity })) }, what: `${picks.length} selected ${picks.length === 1 ? "card" : "cards"}` })}>Add to list</button>
               <button className="btn-danger !py-1" disabled={!picks.length} onClick={() => {
                 if (!confirmRemove) { setConfirmRemove(true); setTimeout(() => setConfirmRemove(false), 4000); return; }
                 setConfirmRemove(false); run(each((c) => api(`/decks/${id}/cards/${c.id}`, { method: "DELETE" })));
@@ -342,6 +347,7 @@ export default function Deck({ id, onBack, focusOracle }: { id: number; onBack: 
         return <DeckPicker oracleId={c.oracle_id} scryfallId={c.scryfall_id} finish={c.finish} name={c.name} excludeId={id} onClose={() => setPickId(null)}
           onDone={(n) => { setPickId(null); toast(`${c.name} added to ${n}`); }} />; })()}
       {menu.node}
+      {toList && <AddToList payload={toList.payload} what={toList.what} onClose={() => setToList(null)} onDone={(m) => { setToList(null); toast(m); }} />}
       {sharing && deck && <ShareDialog title={deck.name} spec={{ kind: "deck", deck_id: id }} onClose={() => setSharing(false)} />}
       {importing && <ImportDialog deckId={id} onClose={() => setImporting(false)} onDone={(r) => { setImporting(false); setImported(r); reload(); }} />}
       {imported && (
