@@ -11,7 +11,9 @@ const zoneAt = (x: number, y: number): Zone | null => (document.elementFromPoint
  * A press that moves less than 5 px is a plain click; after a real drag the click that follows is swallowed.
  * `start(uid)` goes on `onPointerDown`; `drag` is the card in flight (for the ghost and the highlights).
  */
-export function usePointerDrag(onDrop: (uid: number, zone: Zone) => void) {
+export type DropAt = { x: number; y: number; fx: number; fy: number };  // the pointer, and where in the card it held it (fractions of the card)
+
+export function usePointerDrag(onDrop: (uid: number, zone: Zone, at: DropAt) => void) {
   const [drag, setDrag] = useState<Dragging | null>(null);
   const drop = useRef(onDrop);
   drop.current = onDrop;
@@ -21,6 +23,8 @@ export function usePointerDrag(onDrop: (uid: number, zone: Zone) => void) {
   const start = (uid: number) => (e: React.PointerEvent) => {
     if (e.button !== 0) return;
     const x0 = e.clientX, y0 = e.clientY;
+    const r = e.currentTarget.getBoundingClientRect();
+    const fx = r.width ? (x0 - r.left) / r.width : 0.5, fy = r.height ? (y0 - r.top) / r.height : 0.5;
     let on = false;
     const move = (ev: PointerEvent) => {
       if (!on && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 5) return;
@@ -36,7 +40,7 @@ export function usePointerDrag(onDrop: (uid: number, zone: Zone) => void) {
       setTimeout(() => window.removeEventListener("click", swallow, { capture: true }), 100);  // no click came (released elsewhere)
       setDrag(null);
       const z = release && ev instanceof PointerEvent ? zoneAt(ev.clientX, ev.clientY) : null;
-      if (z) drop.current(uid, z);
+      if (z && ev instanceof PointerEvent) drop.current(uid, z, { x: ev.clientX, y: ev.clientY, fx, fy });
     };
     const up = (ev: PointerEvent) => finish(ev, true);
     const cancel = (ev: PointerEvent) => finish(ev, false);

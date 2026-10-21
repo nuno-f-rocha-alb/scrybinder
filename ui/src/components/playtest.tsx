@@ -2,9 +2,10 @@ import { useEffect, useRef, useState } from "react";
 import { CardImg, Modal } from "./ui";
 import { MenuItem, useContextMenu } from "./contextmenu";
 import { usePointerDrag } from "./pointerdrag";
+import type { DropAt } from "./pointerdrag";
 import CardDetails from "./carddetails";
 import type { DeckCard } from "../decks";
-import { GCard, Game, STEPS, SimResult, Step, Zone, addCounter, addNamed, bottomMany, draw, isLand, keep, move, mulligan, newGame, nextPhase, nextTurn, peek, pushHistory, reorderTop, seeded, shuffleLibrary, simulate, toggleTap, token, untapAll } from "../goldfish";
+import { Box, GCard, Game, STEPS, SimResult, Step, Zone, addCounter, addNamed, bottomMany, draw, isLand, keep, move, mulligan, newGame, nextPhase, nextTurn, peek, placeCard, pushHistory, reorderTop, seeded, settle, shuffleLibrary, simulate, toggleTap, token, untapAll } from "../goldfish";
 
 const btn = "cursor-pointer rounded-lg border border-line px-3 py-1.5 text-sm outline-none hover:bg-raised focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-40";
 const act = "cursor-pointer rounded-lg border border-accent/50 bg-accent/20 px-3 py-1.5 text-sm font-medium outline-none hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-40";  // the game actions, next to the hand
@@ -19,23 +20,21 @@ const ZONES: Zone[] = ["library", "hand", "battlefield", "graveyard", "exile", "
 /** The card width of the table follows the window height, so the phase bar, the table and the hand fit on one screen. */
 const CARD_W = { "--cw": "clamp(4.25rem, 12vh, 6rem)", "--hw": "clamp(5.5rem, 16vh, 9.5rem)" } as React.CSSProperties;
 
-/** A land that is not also a creature goes in the land area; everything else in the nonland area (the tournament game layout). */
-const landArea = (c: GCard) => isLand(c) && !/creature/i.test(c.type_line ?? "");
-
 function Face({ c, w = "w-(--cw)" }: { c: GCard; w?: string }) {
   return c.image_id ? <div className={w}><CardImg id={c.image_id} size="normal" /></div>
     : <div className={`${w} flex aspect-[63/88] items-center justify-center rounded bg-raised p-1 text-center text-xs`}>{c.name}</div>;
 }
 
 /** A card on the table: click acts, press and drag moves it, right-click lists the moves. A tapped card turns sideways in a square cell so its neighbours do not overlap. */
-function Card({ c, onClick, onMenu, square, onHover, onPress, fan }: { c: GCard; onClick?: () => void; onMenu: (e: React.MouseEvent) => void; square?: boolean; onHover?: (c: GCard | null, at?: DOMRect) => void; onPress?: (e: React.PointerEvent) => void; fan?: { i: number; n: number } }) {
+function Card({ c, onClick, onMenu, at, onHover, onPress, fan }: { c: GCard; onClick?: () => void; onMenu: (e: React.MouseEvent) => void; at?: { x: number; y: number; box: Box }; onHover?: (c: GCard | null, at?: DOMRect) => void; onPress?: (e: React.PointerEvent) => void; fan?: { i: number; n: number } }) {
   const counters = [c.plus ? `${c.plus > 0 ? "+" : "−"}${Math.abs(c.plus)}/${c.plus > 0 ? "+" : "−"}${Math.abs(c.plus)}` : "", ...Object.entries(c.named ?? {}).map(([k, n]) => `${k} ${n}`)].filter(Boolean);
   const d = fan ? fan.i - (fan.n - 1) / 2 : 0;  // the fan: each card turns and sinks a little more the further it is from the middle
   return (
     <button onClick={onClick} onContextMenu={onMenu} aria-label={`${c.name}${c.tapped ? " (tapped)" : ""}${counters.length ? `, ${counters.join(", ")}` : ""}`} title={`${c.name} — drag to move, right-click for more`}
       onMouseEnter={(e) => onHover?.(c, e.currentTarget.getBoundingClientRect())} onMouseLeave={() => onHover?.(null)} onFocus={(e) => onHover?.(c, e.currentTarget.getBoundingClientRect())} onBlur={() => onHover?.(null)} onPointerDown={onPress}
-      style={fan ? { "--r": `${d * 4}deg`, "--y": `${d * d * 2}px`, marginLeft: fan.i ? `calc(var(--hw) * ${fan.n > 7 ? -0.45 : -0.2})` : 0, zIndex: fan.i } as React.CSSProperties : undefined}
-      className={`relative flex shrink-0 cursor-pointer touch-none select-none items-center justify-center rounded-lg outline-none transition-transform focus-visible:ring-2 focus-visible:ring-accent ${fan ? "[transform:translateY(var(--y))_rotate(var(--r))] hover:!z-20 hover:[transform:translateY(-3rem)_scale(1.6)] focus-visible:!z-20" : ""} ${square ? "size-[calc(var(--cw)*1.43)]" : ""}`}>
+      style={fan ? { "--r": `${d * 4}deg`, "--y": `${d * d * 2}px`, marginLeft: fan.i ? `calc(var(--hw) * ${fan.n > 7 ? -0.45 : -0.2})` : 0, zIndex: fan.i } as React.CSSProperties
+        : at ? { position: "absolute", left: `${Math.min(at.x, 1 - at.box.w) * 100}%`, top: `${Math.min(at.y, 1 - at.box.h) * 100}%`, zIndex: c.z ?? 0, width: "var(--cw)" } : undefined}  // on the free table, kept inside it
+      className={`relative flex shrink-0 cursor-pointer touch-none select-none items-center justify-center rounded-lg outline-none transition-transform focus-visible:ring-2 focus-visible:ring-accent ${fan ? "[transform:translateY(var(--y))_rotate(var(--r))] hover:!z-20 hover:[transform:translateY(-3rem)_scale(1.6)] focus-visible:!z-20" : ""}`}>
       <span className={`pointer-events-none block transition-transform ${c.tapped ? "rotate-90" : ""}`}><Face c={c} w={fan ? "w-(--hw)" : undefined} /></span>
       {counters.length > 0 && <span className="absolute bottom-1 left-1/2 flex -translate-x-1/2 flex-col items-center gap-0.5 text-[11px] font-semibold">
         {counters.map((t) => <span key={t} className="rounded bg-black/80 px-1.5 text-white">{t}</span>)}</span>}
@@ -155,7 +154,25 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
   const [details, setDetails] = useState<string | null>(null);  // the printing whose details (rules, rulings, legality...) are open
   const keyRef = useRef<(e: KeyboardEvent) => void>(() => undefined);
   gRef.current = g;
-  const start = () => { setHist([]); setZoom(null); setG(newGame(cards, commander, onPlay)); };
+  const [box, setBox] = useState<Box>({ w: 0.08, h: 0.25 });  // a card's size as a fraction of the table, measured below
+  const boxRef = useRef(box);
+  boxRef.current = box;
+  const surface = useRef<HTMLDivElement>(null);  // the free table
+  const probe = useRef<HTMLSpanElement>(null);   // as wide as a card on it
+  const started = g !== null;
+  useEffect(() => {
+    const el = surface.current;
+    if (!el) return;
+    const measure = () => {
+      const r = el.getBoundingClientRect(), pw = probe.current?.offsetWidth ?? 0;
+      if (r.width > 0 && r.height > 0 && pw > 0) setBox({ w: pw / r.width, h: (pw * 88) / 63 / r.height });
+    };
+    const ro = new ResizeObserver(measure);
+    ro.observe(el);
+    measure();
+    return () => ro.disconnect();
+  }, [started]);
+  const start =() => { setHist([]); setZoom(null); setG(newGame(cards, commander, onPlay)); };
   useEffect(() => {
     const h = (e: KeyboardEvent) => keyRef.current(e);
     window.addEventListener("keydown", h);
@@ -165,17 +182,21 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
   const set = (f: (x: Game) => Game) => {  // every change remembers the state it replaced, for Undo
     const cur = gRef.current;
     if (!cur) return;
-    const next = f(cur);
+    const next = settle(f(cur), boxRef.current);  // cards that just reached the table get a spot
     if (next !== cur) {
       setHist((h) => pushHistory(h, cur)); setG(next);
       const at = (x: Game, uid: number) => ZONES.find((k) => x[k].some((c) => c.uid === uid));
       setZoom((z) => { const k = z && at(next, z.uid); return z && k && at(cur, z.uid) === k ? next[k].find((c) => c.uid === z.uid) ?? null : null; });  // a card that left its zone is no longer under the pointer
     }
   };
-  const { drag, start: press } = usePointerDrag((uid, z) => set((x) => {
+  const { drag, start: press } = usePointerDrag((uid, z, at: DropAt) => set((x) => {
     const from = ZONES.find((k) => x[k].some((c) => c.uid === uid));
     const card = from && x[from].find((c) => c.uid === uid);
-    return !card || from === z || (z === "command" && !card.commander) ? x : move(x, uid, z);
+    if (!card || (z === "command" && !card.commander) || (from === z && z !== "battlefield")) return x;
+    const moved = from === z ? x : move(x, uid, z);
+    const r = surface.current?.getBoundingClientRect();
+    // on the table the card lands where it was let go, holding the same point of it as when picked up
+    return z === "battlefield" && r?.width && r.height ? placeCard(moved, uid, (at.x - r.left) / r.width - at.fx * boxRef.current.w, (at.y - r.top) / r.height - at.fy * boxRef.current.h, boxRef.current) : moved;
   }));
   const dragged = drag && g ? ZONES.flatMap((k) => g[k]).find((c) => c.uid === drag.uid) : undefined;
   useEffect(() => { if (drag) setZoom(null); }, [drag !== null]);  // eslint-disable-line react-hooks/exhaustive-deps
@@ -242,12 +263,6 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
   };
   const handClick = (c: GCard) => set((x) => (x.phase === "playing" ? move(x, c.uid, "battlefield") : x));
   const lands = g.battlefield.filter(isLand).length;
-  const area = (title: string, list: GCard[], grow: string) => (
-    <div className={`min-h-[calc(var(--cw)*1.43+1.75rem)] p-2 ${grow}`} role="group" aria-label={title}>
-      <h3 className="mb-1 text-xs uppercase tracking-wide text-mute">{title} ({list.length})</h3>
-      <div className="flex flex-wrap">{list.map((c) => <Card key={c.uid} c={c} square onHover={hover} onPress={playing ? press(c.uid) : undefined} onClick={() => set((x) => toggleTap(x, c.uid))} onMenu={cardMenu(c, "battlefield")} />)}</div>
-    </div>
-  );
 
   return (
     <div className="flex min-h-[calc(100vh-13rem)] flex-col" style={CARD_W}>
@@ -274,10 +289,15 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
         {/* the table: nonlands nearest the opponent (top), lands nearest the player (bottom) */}
         <div className="flex min-w-0 flex-1 flex-col">
         <section aria-label="Battlefield" {...(playing ? zone("battlefield") : {})} className={`flex min-h-0 flex-1 flex-col rounded-xl border border-line ${playing ? zone("battlefield").className : ""}`}>
-              {area("Nonland permanents", g.battlefield.filter((c) => !landArea(c)), "flex-[2]")}
-              <div className="border-t border-dashed border-line" />
-              {area("Lands", g.battlefield.filter(landArea), "flex-1")}
-            </section>
+          <h3 className="px-2 pt-2 text-xs uppercase tracking-wide text-mute">Battlefield ({g.battlefield.length}) · place cards anywhere; the last one you move stays on top</h3>
+          {/* a free table: each card sits at its own x, y; the dashed line is only a guide between the permanents and the lands */}
+          <div ref={surface} role="group" aria-label="Table" className="relative isolate min-h-[calc(var(--cw)*3.6)] flex-1">
+            <span ref={probe} aria-hidden className="invisible absolute w-(--cw)" />
+            <div className="pointer-events-none absolute inset-x-0 top-2/3 border-t border-dashed border-line" />
+            {g.battlefield.map((c) => c.x === undefined || c.y === undefined ? null
+              : <Card key={c.uid} c={c} at={{ x: c.x, y: c.y, box }} onHover={hover} onPress={playing ? press(c.uid) : undefined} onClick={() => set((x) => toggleTap(x, c.uid))} onMenu={cardMenu(c, "battlefield")} />)}
+          </div>
+        </section>
           {playing && <div role="toolbar" aria-label="Actions" className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-accent/40 bg-accent/15 p-2">
             <span className="mr-1 text-xs font-medium uppercase tracking-wide text-mute">Actions</span>
             <button className={act} onClick={() => set(nextPhase)}>Next phase</button>
