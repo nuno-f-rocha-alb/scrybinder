@@ -559,6 +559,51 @@ def assign(db, deck_id: int, card_id: int, items) -> None:
     settle(db, deck_id, before)
 
 
+def move_copy(db, deck_id: int, card_id: int, from_deck_id: int, collection_id: int, quantity: int = 1) -> int:
+    """Take `quantity` copies of a collection row from another deck for this deck card: the other deck loses them (it shows the card as
+    missing again) and the copies move into this deck's location. Returns how many were moved."""
+    card = db.execute("SELECT * FROM deck_cards WHERE id=? AND deck_id=?", (card_id, deck_id)).fetchone()
+    if not card:
+        raise KeyError(card_id)
+    _deck(db, from_deck_id)
+    quantity = _int(quantity)
+    if from_deck_id == deck_id:
+        raise ValueError("choose another deck")
+    if quantity < 1:
+        raise ValueError("quantity must be at least 1")
+    if PROXY in _card_tags(db, card_id):
+        raise ValueError("a proxy has no real copies to assign")
+    row = db.execute("SELECT c.proxy, k.oracle_id FROM collection c JOIN cards k ON k.id = c.scryfall_id WHERE c.id=?", (collection_id,)).fetchone()
+    if not row or row["oracle_id"] != card["oracle_id"] or row["proxy"]:
+        raise ValueError(f"collection row {collection_id} is not a real copy of this card")
+    theirs = db.execute("SELECT a.deck_card_id, a.quantity FROM deck_assignments a JOIN deck_cards d ON d.id = a.deck_card_id"
+                        " WHERE d.deck_id=? AND a.collection_id=? ORDER BY a.quantity DESC, a.deck_card_id", (from_deck_id, collection_id)).fetchall()
+    if quantity > sum(t["quantity"] for t in theirs):
+        raise ValueError("that deck does not hold that many copies")
+    have = db.execute("SELECT COALESCE(SUM(quantity), 0) FROM deck_assignments WHERE deck_card_id=?", (card_id,)).fetchone()[0]
+    if have + quantity > card["quantity"]:
+        raise ValueError(f"the deck has {card['quantity']} of this card: cannot assign {have + quantity}")
+    before_to, before_from = _held(db, deck_id), _held(db, from_deck_id)
+    with db:
+        left = quantity
+        for t in theirs:
+            take = min(left, t["quantity"])
+            if take == t["quantity"]:
+                db.execute("DELETE FROM deck_assignments WHERE deck_card_id=? AND collection_id=?", (t["deck_card_id"], collection_id))
+            else:
+                db.execute("UPDATE deck_assignments SET quantity=quantity-? WHERE deck_card_id=? AND collection_id=?", (take, t["deck_card_id"], collection_id))
+            left -= take
+            if not left:
+                break
+        db.execute("INSERT INTO deck_assignments VALUES (?,?,?) ON CONFLICT(deck_card_id, collection_id) DO UPDATE SET quantity = quantity + excluded.quantity",
+                   (card_id, collection_id, quantity))
+        _touch(db, deck_id)
+        _touch(db, from_deck_id)
+    settle(db, deck_id, before_to)  # the copies go into this deck's location first; the other deck then finds them gone and leaves them there
+    settle(db, from_deck_id, before_from)
+    return quantity
+
+
 def assign_free(db, deck_id: int, only=None) -> int:
     """Assign every free copy the deck still needs (preferred printing first), for the deck cards in `only` when given.
     Never touches existing assignments."""

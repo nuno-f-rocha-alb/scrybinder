@@ -24,6 +24,7 @@ export default function AssignDialog({ deckId, card, onClose, onChanged }: { dec
   const [tag, setTag] = useState("");
   const [picking, setPicking] = useState(false);
   const [adding, setAdding] = useState<false | "missing" | "printing">(false);
+  const [reload, setReload] = useState(0);  // asked again after copies were taken from another deck
   const proxy = card.tags.includes("proxy");
   const url = `/decks/${deckId}/cards/${card.id}`;
 
@@ -32,7 +33,7 @@ export default function AssignDialog({ deckId, card, onClose, onChanged }: { dec
     let live = true;  // a slower answer for an earlier state must not replace this one
     api<Copies>(`${url}/copies`).then((d) => { if (!live) return; setData(d); setWant(Object.fromEntries(d.rows.map((r) => [r.id, r.here]))); setErr(""); }).catch((e) => live && setErr(e.message));
     return () => { live = false; };
-  }, [url, proxy, card.quantity]);
+  }, [url, proxy, card.quantity, reload]);
 
   const rows = data?.rows ?? [], limit = data?.quantity ?? card.quantity;
   const total = Object.values(want).reduce((n, q) => n + q, 0);
@@ -41,6 +42,12 @@ export default function AssignDialog({ deckId, card, onClose, onChanged }: { dec
   const fill = () => { let left = limit; const next: Record<number, number> = {}; for (const r of rows) { next[r.id] = Math.min(max(r), left); left -= next[r.id]; } setWant(next); };
   const save = () => api(`${url}/assign`, { method: "PUT", body: JSON.stringify({ items: rows.filter((r) => want[r.id] > 0).map((r) => ({ collection_id: r.id, quantity: want[r.id] })) }) })
     .then(() => { onChanged(); onClose(); }).catch((e) => setErr(e.message));
+  // Take copies another deck holds: that deck loses them (and shows the card as missing) and they move to this deck.
+  const take = (r: Copy, from: { deck_id: number; name: string; quantity: number }) => {
+    const q = Math.min(from.quantity, Math.max(limit - total, 1));
+    api<{ moved: number }>(`${url}/take`, { method: "POST", body: JSON.stringify({ from_deck_id: from.deck_id, collection_id: r.id, quantity: q }) })
+      .then(() => { setErr(""); onChanged(); setReload((n) => n + 1); }).catch((e) => setErr(e.message));
+  };
   const patchTags = (tags: string[]) => api(url, { method: "PATCH", body: JSON.stringify({ tags }) }).then(() => onChanged()).catch((e) => setErr(e.message));
   const addTag = () => { const t = tag.trim().toLowerCase(); if (t && !card.tags.includes(t)) patchTags([...card.tags, t]); setTag(""); };
 
@@ -106,6 +113,10 @@ export default function AssignDialog({ deckId, card, onClose, onChanged }: { dec
                 <div className="text-xs text-mute tabular-nums">
                   {r.quantity} owned · {r.free} free{r.elsewhere.length > 0 && <> · <span className="text-gold">in {r.elsewhere.map((e) => `${e.deck_id === deckId ? "this deck (other board)" : e.name} (${e.quantity})`).join(", ")}</span></>}
                 </div>
+                {!proxy && r.elsewhere.filter((e) => e.deck_id !== deckId).map((e) => (
+                  <button key={e.deck_id} className="btn-ghost mt-1 mr-1 !py-0.5 text-xs" disabled={total >= limit}
+                    title={total >= limit ? "This card already has every copy it needs" : `Take the copy from ${e.name}: that deck will show the card as missing`} onClick={() => take(r, e)}>
+                    Take from {e.name}</button>))}
               </div>
               <div className="flex items-center gap-2">
                 <button className={STEP} aria-label={`One less from ${r.set_code} ${r.collector_number}`} disabled={!want[r.id]} onClick={() => set(r, want[r.id] - 1)}><IconMinus className="size-4" /></button>

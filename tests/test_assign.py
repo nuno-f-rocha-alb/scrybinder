@@ -327,3 +327,56 @@ def test_default_printing_and_filling_the_lines_without_one(db):
     assert (_card(db, d1, a)["scryfall_id"], _card(db, d1, a)["finish"]) == ("cheap", "foil")  # it follows its assigned copy
     assert _card(db, d1, b)["scryfall_id"] == other["id"]
     assert decks.fill_printings(db, d1) == 0  # nothing left to fill
+
+
+def _location(db, row_id):
+    return db.execute("SELECT location FROM collection WHERE id=?", (row_id,)).fetchone()[0]
+
+
+def test_take_a_copy_from_another_deck(db):
+    oid, sid, row, d1, d2 = _setup(db, qty=1)
+    c1, c2 = decks.add_card(db, d1, oid, 1), decks.add_card(db, d2, oid, 1)
+    decks.assign(db, d1, c1, [{"collection_id": row, "quantity": 1}])
+    assert _location(db, row) == "Deck: D1" and _card(db, d2, c2)["status"] == "elsewhere"
+    assert decks.move_copy(db, d2, c2, d1, row, 1) == 1
+    assert (_card(db, d2, c2)["status"], _card(db, d1, c1)["status"], _card(db, d1, c1)["missing"]) == ("assigned", "elsewhere", 1)  # D1 asks again: now D2 holds the copy
+    assert _location(db, row) == "Deck: D2"  # the copy follows into the new deck's location
+    assert decks.get(db, d2)["cards"][0]["assignments"] == [{"collection_id": row, "quantity": 1}]
+
+
+def test_take_part_of_a_row_splits_it(db):
+    oid, sid, row, d1, d2 = _setup(db, qty=3)
+    c1, c2 = decks.add_card(db, d1, oid, 2), decks.add_card(db, d2, oid, 2)
+    decks.assign(db, d1, c1, [{"collection_id": row, "quantity": 2}])
+    held = _card(db, d1, c1)["assignments"][0]["collection_id"]  # assigning split the row: D1's copies are on the new row
+    decks.move_copy(db, d2, c2, d1, held, 1)
+    a, b = _card(db, d1, c1), _card(db, d2, c2)
+    assert (a["assigned"], b["assigned"]) == (1, 1)
+    locs = {r["location"]: r["quantity"] for r in db.execute("SELECT location, quantity FROM collection WHERE scryfall_id=?", (sid,))}
+    assert locs == {"Deck: D1": 1, "Deck: D2": 1, "": 1}  # one copy per deck, one free
+
+
+def test_take_is_refused_when_it_does_not_add_up(db):
+    oid, sid, row, d1, d2 = _setup(db, qty=2)
+    c1, c2 = decks.add_card(db, d1, oid, 1), decks.add_card(db, d2, oid, 1)
+    decks.assign(db, d1, c1, [{"collection_id": row, "quantity": 1}])
+    held = _card(db, d1, c1)["assignments"][0]["collection_id"]
+    for args in ((d2, c2, d2, held, 1), (d2, c2, d1, held, 2), (d2, c2, d1, held, 0), (d2, c2, d1, 999, 1), (d2, 999, d1, held, 1)):
+        with pytest.raises((ValueError, KeyError)):
+            decks.move_copy(db, *args)
+    free = next(r["id"] for r in decks.copies(db, d2, c2)["rows"] if r["free"])
+    decks.assign(db, d2, c2, [{"collection_id": free, "quantity": 1}])  # D2 is full now
+    held = _card(db, d1, c1)["assignments"][0]["collection_id"]
+    with pytest.raises(ValueError, match="cannot assign"):
+        decks.move_copy(db, d2, c2, d1, held, 1)
+    assert _card(db, d1, c1)["assigned"] == 1  # nothing changed
+
+
+def test_take_route(db):
+    oid, sid, row, d1, d2 = _setup(db, qty=1)
+    c1, c2 = decks.add_card(db, d1, oid, 1), decks.add_card(db, d2, oid, 1)
+    decks.assign(db, d1, c1, [{"collection_id": row, "quantity": 1}])
+    c = TestClient(create_app(db, token=TOKEN, allowed_hosts={"testserver"}))
+    c.get(f"/api/status?t={TOKEN}")
+    assert c.post(f"/api/decks/{d2}/cards/{c2}/take", json={"from_deck_id": d1, "collection_id": row}).json() == {"moved": 1}
+    assert c.post(f"/api/decks/{d2}/cards/{c2}/take", json={"from_deck_id": d1, "collection_id": row}).status_code == 422
