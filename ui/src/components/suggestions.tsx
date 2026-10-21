@@ -29,6 +29,7 @@ export default function Suggestions({ deckId, onAdded, toast }: { deckId: number
   const [busy, setBusy] = useState(false);
   const [own, setOwn] = useState(false);
   const [freeOnly, setFreeOnly] = useState(false);
+  const [missing, setMissing] = useState(false);  // the opposite of own / free: only what you do not have (they exclude each other)
   const [cat, setCat] = useState("");
   const [q, setQ] = useState("");
   const grid = useCardGrid();
@@ -56,7 +57,7 @@ export default function Suggestions({ deckId, onAdded, toast }: { deckId: number
     cmc: (a, b) => (a.cmc ?? 0) - (b.cmc ?? 0),
     owned: (a, b) => Number(b.free > 0) - Number(a.free > 0) || Number(b.owned > 0) - Number(a.owned > 0),
   };
-  const shown = (res?.cards ?? []).filter((c) => (!own || c.owned > 0) && (!freeOnly || c.free > 0) && (!cat || c.category_key === cat) && c.name.toLowerCase().includes(q.trim().toLowerCase()));
+  const shown = (res?.cards ?? []).filter((c) => (!own || c.owned > 0) && (!freeOnly || c.free > 0) && (!missing || c.owned === 0) && (!cat || c.category_key === cat) && c.name.toLowerCase().includes(q.trim().toLowerCase()));
   shown.sort((a, b) => cmp[sort](a, b) || (order.get(a.oracle_id) ?? 0) - (order.get(b.oracle_id) ?? 0) || a.name.localeCompare(b.name));
   const buckets: [string, string][] = groupBy === "category" ? cats : groupBy === "color" ? COLORS : [["", ""]];
   const groups = buckets.map(([k, label]) => ({ k, label, cards: shown.filter((c) => (groupBy === "category" ? c.category_key : groupBy === "color" ? colorKey(c) : "") === k) })).filter((g) => g.cards.length);
@@ -94,8 +95,9 @@ export default function Suggestions({ deckId, onAdded, toast }: { deckId: number
           <label className="flex items-center gap-1.5 text-xs text-mute">Group
             <Select className="field w-auto" value={groupBy} onChange={(e) => setGroupBy(e.target.value as GroupBy)}>
               <option value="category">Category</option><option value="color">Color</option><option value="none">None</option></Select></label>
-          <label className="flex cursor-pointer items-center gap-2 text-sm text-mute"><input type="checkbox" checked={own} onChange={(e) => setOwn(e.target.checked)} className="accent-[var(--color-accent)]" />Only what I own</label>
-          <label className="flex cursor-pointer items-center gap-2 text-sm text-mute" title="Copies not assigned to any deck"><input type="checkbox" checked={freeOnly} onChange={(e) => setFreeOnly(e.target.checked)} className="accent-[var(--color-accent)]" />Only free copies</label>
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-mute"><input type="checkbox" checked={own} onChange={(e) => { setOwn(e.target.checked); if (e.target.checked) setMissing(false); }} className="accent-[var(--color-accent)]" />Only what I own</label>
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-mute" title="Copies not assigned to any deck"><input type="checkbox" checked={freeOnly} onChange={(e) => { setFreeOnly(e.target.checked); if (e.target.checked) setMissing(false); }} className="accent-[var(--color-accent)]" />Only free copies</label>
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-mute" title="Cards you have no copy of"><input type="checkbox" checked={missing} onChange={(e) => { setMissing(e.target.checked); if (e.target.checked) { setOwn(false); setFreeOnly(false); } }} className="accent-[var(--color-accent)]" />Only what I don't own</label>
           <GridControls g={grid} />
           {groupBy !== "none" && <button className="btn-ghost !py-1 text-xs" title="Fold or unfold every group" onClick={() => setFoldedKeys(groups.every((g) => folded.has(`sug:${g.k}`)) ? new Set() : new Set(groups.map((g) => `sug:${g.k}`)))}>{groups.every((g) => folded.has(`sug:${g.k}`)) ? "Unfold all" : "Fold all"}</button>}
           <span className="text-xs text-mute tabular-nums">{shown.length} cards</span>

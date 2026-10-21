@@ -5,6 +5,7 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 ## [Unreleased]
 
 ### Changed
+- Deck suggestions: an "Only what I don't own" filter shows only cards you have no copy of (it excludes "Only what I own" and "Only free copies").
 - Playtest: rule warnings (they warn, never block): two legendary permanents with the same name (704.5j), a creature with toughness 0 or less (704.5f), an Aura that is not attached (704.5m) and more than seven cards in hand at the end step (514.1), with the rule number, an amber ring on the cards and an Ignore button. Toughness is read from the card database, so it needs a card-database update to show up for the 704.5f warning.
 - Playtest: attach auras and equipment to a card: drop a card on another one (from the table or the hand), or right-click → Attach to… / Detach. The attached card shows under its host, follows it when it moves, and the host shows a "+n" badge; when the host leaves the table the attached cards stay where they were.
 - Playtest: the table is free: drag the cards on the battlefield wherever you like (artifacts in the middle, creatures in front, auras under them) with no snapping, and the card you moved last stays on top; cards you play with a click land in a spot by type (creatures at the top, other permanents in the middle, lands at the bottom). Undo reverts positions.
