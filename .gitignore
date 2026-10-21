@@ -10,3 +10,4 @@ ui/dist/
 /build/
 *.spec
 !/packaging/scrybinder.spec
+share/worker/.wrangler/
