@@ -174,7 +174,7 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
     measure();
     return () => ro.disconnect();
   }, [started]);
-  const start =() => { setHist([]); setZoom(null); setG(newGame(cards, commander, onPlay)); };
+  const start = () => { setHist([]); setAttaching(null); setZoom(null); setG(newGame(cards, commander, onPlay)); };
   useEffect(() => {
     const h = (e: KeyboardEvent) => keyRef.current(e);
     window.addEventListener("keydown", h);
@@ -219,7 +219,7 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
 
   const endGame = () => {
     if (!ending) { setEnding(true); setTimeout(() => setEnding(false), 4000); return; }
-    setG(null); setHist([]); setZoom(null); setScry(null); setTokenForm(null); setSearch(null); setPile(null); setEnding(false);
+    setG(null); setHist([]); setAttaching(null); setZoom(null); setScry(null); setTokenForm(null); setSearch(null); setPile(null); setEnding(false);
   };
   /** An element a card can be dropped on: outlined while a card is in flight, with a ring under the pointer. */
   const zone = (z: Zone): React.HTMLAttributes<HTMLElement> => ({
