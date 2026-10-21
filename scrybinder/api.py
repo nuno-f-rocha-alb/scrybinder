@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 
 import time
 
-from . import __version__, carddetails, collection, db as dbmod, decks, decktext, deckurl, formats, gpu as gpumod, lists, oracle, scryfall, share, suggest, trades, updater as updmod
+from . import __version__, carddetails, collection, db as dbmod, decks, decktext, deckurl, formats, gpu as gpumod, lists, oracle, playmats, scryfall, share, suggest, trades, updater as updmod
 from .scan.session import MAX_SIDE, MAX_SIDE_PAGE, Scanner, decode
 
 UI_DIST = Path(__file__).resolve().parent.parent / "ui" / "dist"
@@ -351,6 +351,33 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
         if not p:
             raise HTTPException(404)
         return FileResponse(p, headers={"Cache-Control": "max-age=31536000, immutable"})
+
+    # --- playmats ---
+    @app.get("/api/playmat")
+    def playmat_get():
+        return {"folder": str(playmats.folder()), "files": playmats.files(), "current": playmats.get(db)}
+
+    @app.put("/api/playmat")
+    def playmat_put(body: dict = Body(...)):
+        return _wrap(playmats.put, db, body)
+
+    @app.get("/api/playmat/file/{name}")
+    def playmat_file(name: str, thumb: bool = False):
+        p = playmats.thumb_path(name) if thumb else playmats.file_path(name)
+        if not p:
+            raise HTTPException(404)
+        return FileResponse(p, headers={"Cache-Control": "no-cache", "Content-Disposition": "inline"})
+
+    @app.get("/api/playmat/art/{card_id}")
+    def playmat_art(card_id: str):
+        p = playmats.art_path(db, card_id)
+        if not p:
+            raise HTTPException(404)
+        return FileResponse(p, headers={"Cache-Control": "max-age=31536000, immutable"})
+
+    @app.post("/api/playmat/open-folder")
+    def playmat_open():
+        return {"folder": _wrap(playmats.open_folder)}
 
     def _viewer_hosts():  # the share viewer, so a link just made can be opened
         h = urlparse(share._viewer()).hostname
