@@ -4,15 +4,11 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+## [0.8.3] — 2026-10-21
+
 ### Added
 - Share links can be updated: the Share dialog of a deck, trade or list you already shared offers **Update link**, which puts the cards as they are now under the same address (and gives it 30 more days), and Import / Export > Shared links has an Update button on each link. Links made before this version cannot be updated. The share service has to be redeployed once (`cd share/worker; npx wrangler deploy`).
 - Sharing a trade: a new "Include the cash" option (off by default) puts what was paid or received in the link, shown in the viewer next to the card prices. The other person and the note are still never sent.
-
-### Fixed
-- Trades: a new trade starts with today's date, and the calendar button of date fields is visible on the dark theme.
-- Card search (Trades, Lists, Add): a card whose newest printing has no picture (for example an art series card) now shows the picture of a printing that has one, and an image that fails to load no longer flashes the browser's broken-image icon.
-
-### Added
 - Trades: a card you own in several locations (for example one copy in two boxes) can go out as one line with the quantity you want: the copies are taken from every location where they are free, starting with the one you picked, and the line says where.
 - Decks: when a copy you need is held by another deck, the "Copies and tags" dialog has a "Take from <deck>" button that moves the copy from that deck to this one (the other deck shows the card as missing again and the copy moves to this deck's location).
 - Playtest: zoom the battlefield. The - / + buttons next to its title (and Ctrl + wheel over the table) make the whole table bigger, cards and playmat together, from 100% up to 300%; scroll to move around it. The window keeps its size and the zoom is remembered.
@@ -20,6 +16,10 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 - Lists tab: make named lists of cards you pick (a trade binder, cards for sale, a wants list) and share them. Right-click a card in Cards, a deck or the deck search and choose "Add to a list…", or select several cards and press "Add to list"; a list can also hold cards you do not own, can be started from a location (a binder, a box or a deck), shows how many copies of each you own, and can be shared as a link, copied as text or saved as CSV. A shared list can be imported as a new list. A list is not a location: nothing moves in your collection.
 - Share links: a Share button on decks, trades and the Cards page (the cards shown, or the ones you select) makes a link anyone can open in a web page, with the cards, quantities and, if you tick it, Cardmarket prices (never locations, notes, purchase prices or a trade's person and cash unless stated). The link works for 30 days and you can delete it earlier (Import / Export > Shared links). The viewer can copy the list as text or download a file that Scrybinder imports (a deck becomes a new deck, a collection is added to a location you choose). Needs the share service from `share/` deployed; it is not on by default.
 - Trades tab: keep a record of in-person trades and sales. A trade is a pending draft (cards going out, cards coming in, who, a note and cash received or paid, with the net value at market prices) that changes nothing until you confirm it; then the cards going out leave your collection (never copies held by a deck) and the ones coming in are added. Confirmed trades stay in a history. A card going out can be one you own but never added to the collection (it is valued in the trade and nothing is taken out), the trade has a date you can set, an "Even out with cash" button, "Copy as text" for sending the offer, and the history can be filtered by person, note or date. In the picker, cards held by decks are marked and cannot be added.
+
+### Fixed
+- Trades: a new trade starts with today's date, and the calendar button of date fields is visible on the dark theme.
+- Card search (Trades, Lists, Add): a card whose newest printing has no picture (for example an art series card) now shows the picture of a printing that has one, and an image that fails to load no longer flashes the browser's broken-image icon.
 
 ## [0.8.2] — 2026-10-21
 
