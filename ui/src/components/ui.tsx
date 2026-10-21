@@ -30,7 +30,7 @@ export function CardImg({ id, size = "normal", className = "" }: { id: string; s
   const retry = () => setTimeout(() => setTries((t) => t + 1), 1200 * (tries + 1));
   return ok ? (
     <img key={tries} src={img(id, size) + (tries ? `&r=${tries}` : "")} alt="" loading="lazy" decoding="async" onError={retry}
-      className={`aspect-[63/88] w-full rounded-[4.5%] bg-raised object-cover ${className}`} />
+      className={`aspect-[63/88] w-full rounded-[4.5%] bg-raised object-cover ${tries ? "opacity-0" : ""} ${className}`} />
   ) : (
     <div className={`flex aspect-[63/88] w-full items-center justify-center rounded-[4.5%] bg-raised text-xs text-mute ${className}`}>no image</div>
   );

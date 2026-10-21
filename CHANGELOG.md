@@ -4,6 +4,9 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Fixed
+- Card search (Trades, Lists, Add): a card whose newest printing has no picture (for example an art series card) now shows the picture of a printing that has one, and an image that fails to load no longer flashes the browser's broken-image icon.
+
 ### Added
 - Lists tab: make named lists of cards you pick (a trade binder, cards for sale, a wants list) and share them. Right-click a card in Cards, a deck or the deck search and choose "Add to a list…", or select several cards and press "Add to list"; a list can also hold cards you do not own, can be started from a location (a binder, a box or a deck), shows how many copies of each you own, and can be shared as a link, copied as text or saved as CSV. A shared list can be imported as a new list. A list is not a location: nothing moves in your collection.
 - Share links: a Share button on decks, trades and the Cards page (the cards shown, or the ones you select) makes a link anyone can open in a web page, with the cards, quantities and, if you tick it, Cardmarket prices (never locations, notes, purchase prices or a trade's person and cash unless stated). The link works for 30 days and you can delete it earlier (Import / Export > Shared links). The viewer can copy the list as text or download a file that Scrybinder imports (a deck becomes a new deck, a collection is added to a location you choose). Needs the share service from `share/` deployed; it is not on by default.
