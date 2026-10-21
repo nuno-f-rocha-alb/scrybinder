@@ -295,7 +295,7 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
         if not collection._fts(q):
             return []
         rows = db.execute(
-            "SELECT k.oracle_id, k.name, COUNT(*) AS prints, k.id AS sample_id, MAX(k.released_at) FROM cards k WHERE k.rowid IN "
+            "SELECT k.oracle_id, k.name, COUNT(*) AS prints, k.id AS sample_id, MAX(CASE WHEN k.image_normal IS NOT NULL THEN COALESCE(k.released_at, '0') ELSE '' END) FROM cards k WHERE k.rowid IN "
             "(SELECT rowid FROM cards_fts WHERE cards_fts MATCH ?) AND k.digital=0 "
             "GROUP BY COALESCE(k.oracle_id,k.id) ORDER BY k.name LIMIT ?", (collection._fts(q), min(limit, 50)))
         return [dict(r) for r in rows]

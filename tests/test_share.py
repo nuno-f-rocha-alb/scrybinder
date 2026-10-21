@@ -195,3 +195,17 @@ def test_a_worker_answer_with_a_odd_id_is_refused(db, monkeypatch):
     with pytest.raises(share.Unreachable, match="unexpected"):
         share.create_link(db, share.deck_doc(db, d))
     assert share.listing(db) == []
+
+
+def test_card_search_sample_is_a_printing_with_an_image(db):
+    a = db.execute("SELECT id FROM cards WHERE id != 'dfc-1' LIMIT 1").fetchone()[0]
+    oid = db.execute("SELECT oracle_id FROM cards WHERE id=?", (a,)).fetchone()[0]
+    row = dict(db.execute("SELECT * FROM cards WHERE id=?", (a,)).fetchone())
+    row.update(id="newer-no-image", released_at="2030-01-01", image_normal=None, image_small=None)
+    db.execute(f"INSERT INTO cards ({','.join(row)}) VALUES ({','.join('?' * len(row))})", list(row.values()))
+    db.execute("INSERT INTO cards_fts(rowid, name) SELECT rowid, name FROM cards WHERE id='newer-no-image'")
+    name = db.execute("SELECT name FROM cards WHERE id=?", (a,)).fetchone()[0]
+    c = TestClient(create_app(db, token="t", allowed_hosts={"testserver"}))
+    c.get("/api/status?t=t")
+    hits = c.get("/api/cards/search", params={"q": name.split()[0]}).json()
+    assert next(h for h in hits if h["oracle_id"] == oid)["sample_id"] == a  # not the newest printing, which has no picture
