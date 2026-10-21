@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 
 import time
 
-from . import __version__, carddetails, collection, db as dbmod, decks, decktext, deckurl, formats, gpu as gpumod, oracle, scryfall, suggest, updater as updmod
+from . import __version__, carddetails, collection, db as dbmod, decks, decktext, deckurl, formats, gpu as gpumod, oracle, scryfall, suggest, trades, updater as updmod
 from .scan.session import MAX_SIDE, MAX_SIDE_PAGE, Scanner, decode
 
 UI_DIST = Path(__file__).resolve().parent.parent / "ui" / "dist"
@@ -799,6 +799,57 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
     @app.post("/api/collection/{row_id}/move")
     def coll_move(row_id: int, release: bool = False, body: dict = Body(...)):
         return {"id": _wrap(collection.move, db, row_id, body.get("location", ""), body.get("quantity"), release)}
+
+    # --- trades ---
+    @app.get("/api/trades")
+    def trades_list():
+        return trades.listing(db)
+
+    @app.post("/api/trades")
+    def trades_create(body: dict = Body(default={})):
+        return {"id": _wrap(trades.create, db, body.get("who"), body.get("note"), body.get("cash"))}
+
+    @app.get("/api/trades/{trade_id}")
+    def trades_get(trade_id: int):
+        return _wrap(trades.get, db, trade_id)
+
+    @app.patch("/api/trades/{trade_id}")
+    def trades_edit(trade_id: int, body: dict = Body(...)):
+        _wrap(trades.update, db, trade_id, **body)
+        return {"ok": True}
+
+    @app.delete("/api/trades/{trade_id}")
+    def trades_delete(trade_id: int):
+        _wrap(trades.delete, db, trade_id)
+        return {"ok": True}
+
+    @app.post("/api/trades/{trade_id}/out")
+    def trades_add_out(trade_id: int, body: dict = Body(...)):
+        return {"id": _wrap(trades.add_out, db, trade_id, body.get("collection_id"), body.get("quantity", 1))}
+
+    @app.post("/api/trades/{trade_id}/in")
+    def trades_add_in(trade_id: int, body: dict = Body(...)):
+        return {"id": _wrap(trades.add_in, db, trade_id, str(body.get("scryfall_id") or ""), body.get("quantity", 1), body.get("price"),
+                            **{k: body.get(k) for k in ("finish", "condition", "language", "location")})}
+
+    @app.patch("/api/trades/{trade_id}/{side}/{line_id}")
+    def trades_edit_line(trade_id: int, side: str, line_id: int, body: dict = Body(...)):
+        if side not in ("out", "in"):
+            raise HTTPException(404)
+        _wrap(trades.edit_line, db, trade_id, side, line_id, **body)
+        return {"ok": True}
+
+    @app.delete("/api/trades/{trade_id}/{side}/{line_id}")
+    def trades_delete_line(trade_id: int, side: str, line_id: int):
+        if side not in ("out", "in"):
+            raise HTTPException(404)
+        _wrap(trades.delete_line, db, trade_id, side, line_id)
+        return {"ok": True}
+
+    @app.post("/api/trades/{trade_id}/confirm")
+    def trades_confirm(trade_id: int):
+        _wrap(trades.confirm, db, trade_id)
+        return {"ok": True}
 
     # --- import / export ---
     @app.post("/api/import/{fmt}")
