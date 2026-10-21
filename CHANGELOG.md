@@ -5,6 +5,7 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 ## [Unreleased]
 
 ### Added
+- Share links: a Share button on decks, trades and the Cards page (the cards shown, or the ones you select) makes a link anyone can open in a web page, with the cards, quantities and, if you tick it, Cardmarket prices (never locations, notes, purchase prices or a trade's person and cash unless stated). The link works for 30 days and you can delete it earlier (Import / Export > Shared links). The viewer can copy the list as text or download a file that Scrybinder imports (a deck becomes a new deck, a collection is added to a location you choose). Needs the share service from `share/` deployed; it is not on by default.
 - Trades tab: keep a record of in-person trades and sales. A trade is a pending draft (cards going out, cards coming in, who, a note and cash received or paid, with the net value at market prices) that changes nothing until you confirm it; then the cards going out leave your collection (never copies held by a deck) and the ones coming in are added. Confirmed trades stay in a history. A card going out can be one you own but never added to the collection (it is valued in the trade and nothing is taken out), the trade has a date you can set, an "Even out with cash" button, "Copy as text" for sending the offer, and the history can be filtered by person, note or date. In the picker, cards held by decks are marked and cannot be added.
 
 ## [0.8.2] — 2026-10-21

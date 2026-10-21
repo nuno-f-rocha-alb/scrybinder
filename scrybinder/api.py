@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 
 import time
 
-from . import __version__, carddetails, collection, db as dbmod, decks, decktext, deckurl, formats, gpu as gpumod, oracle, scryfall, suggest, trades, updater as updmod
+from . import __version__, carddetails, collection, db as dbmod, decks, decktext, deckurl, formats, gpu as gpumod, oracle, scryfall, share, suggest, trades, updater as updmod
 from .scan.session import MAX_SIDE, MAX_SIDE_PAGE, Scanner, decode
 
 UI_DIST = Path(__file__).resolve().parent.parent / "ui" / "dist"
@@ -352,11 +352,15 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
             raise HTTPException(404)
         return FileResponse(p, headers={"Cache-Control": "max-age=31536000, immutable"})
 
+    def _viewer_hosts():  # the share viewer, so a link just made can be opened
+        h = urlparse(share._viewer()).hostname
+        return (h,) if h else ()
+
     @app.post("/api/open-url")
     def open_url(body: dict = Body(...)):
         """Open a link in the system browser (the app window must not navigate away). Scryfall, Cardmarket and EDHREC (its credit link) only."""
         u = urlparse(str(body.get("url", "")))
-        if u.scheme != "https" or u.hostname not in ("scryfall.com", "www.cardmarket.com", "edhrec.com"):
+        if u.scheme != "https" or u.hostname not in ("scryfall.com", "www.cardmarket.com", "edhrec.com") + _viewer_hosts():
             raise HTTPException(422, "link not allowed")
         webbrowser.open(u.geturl())
         return {"ok": True}
@@ -855,6 +859,35 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
     def trades_confirm(trade_id: int):
         _wrap(trades.confirm, db, trade_id)
         return {"ok": True}
+
+    # --- share links ---
+    def _share_wrap(fn, *a, **k):
+        try:
+            return _wrap(fn, *a, **k)
+        except share.Unreachable as e:
+            raise HTTPException(502, str(e))
+
+    @app.post("/api/share/preview")
+    def share_preview(body: dict = Body(...)):
+        return _wrap(lambda: share.summary(share.build(db, body)))
+
+    @app.post("/api/share")
+    def share_create(body: dict = Body(...)):
+        return _share_wrap(lambda: share.create_link(db, share.build(db, body)))
+
+    @app.get("/api/shares")
+    def shares_list():
+        return share.listing(db)
+
+    @app.delete("/api/shares/{share_id}")
+    def shares_delete(share_id: str):
+        _share_wrap(share.delete_link, db, share_id)
+        return {"ok": True}
+
+    @app.post("/api/import-share")
+    async def import_share(request: Request, location: str = ""):
+        text = (await request.body()).decode("utf-8-sig", errors="replace")
+        return _wrap(share.import_text, db, text, location)
 
     # --- import / export ---
     @app.post("/api/import/{fmt}")

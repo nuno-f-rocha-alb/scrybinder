@@ -1,10 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Combo, Select } from "../components/select";
-import { IconCards, IconChecklist, IconCheck, IconFolderPlus, IconLayoutGrid, IconList, IconSearch, IconStack2 } from "@tabler/icons-react";
+import { IconCards, IconChecklist, IconCheck, IconFolderPlus, IconLayoutGrid, IconList, IconSearch, IconShare, IconStack2 } from "@tabler/icons-react";
 import { api, ApiError, CONDITIONS, Collection as Coll, eur, FINISH, GROUPS, GroupBy, LANGS, Loc, qsl, Row, useGroup } from "../api";
 import { Badge, Blocked, CardImg, Drawer, ExtLinks, Field, Hit, Modal, useToast } from "../components/ui";
 import { GridControls, sourceFor, useCardGrid } from "../components/cardgrid";
 import { BulkBar, BulkDelete, BulkEdit } from "./Bulk";
+import ShareDialog from "../components/sharedialog";
 import { MenuItem, nameAndLinks, useContextMenu } from "../components/contextmenu";
 import DeckPicker from "../components/deckpicker";
 import ValueHistory from "../components/valuehistory";
@@ -42,6 +43,7 @@ export default function Collection({ initialSet, initialLocation, onOpenDeck }: 
   const [selecting, setSelecting] = useState(false);
   const [sel, setSel] = useState<Set<number>>(new Set());
   const [bulk, setBulk] = useState<"edit" | "delete" | null>(null);
+  const [sharing, setSharing] = useState(false);
   const [delIds, setDelIds] = useState<{ ids: number[]; preview: string[] } | null>(null);  // rows to delete, from the right-click menu
   const [delLoc, setDelLoc] = useState<Loc | null>(null);
   const [merging, setMerging] = useState<string[] | null>(null);  // the locations being merged, in the order they were picked
@@ -184,6 +186,7 @@ export default function Collection({ initialSet, initialLocation, onOpenDeck }: 
           {view === "grid" && <GridControls g={grid} />}
           <button className={selecting ? "btn-primary" : "btn-ghost"} aria-pressed={selecting}
             onClick={() => { setSelecting(!selecting); setSel(new Set()); }}><IconChecklist className="size-4" />Select</button>
+          <button className="btn-ghost" title="Share a link to the cards shown (or the selected ones)" onClick={() => setSharing(true)} disabled={!rows.length}><IconShare className="size-4" />Share</button>
           <div className="flex rounded-lg border border-line bg-surface p-0.5">
             {([["grid", IconLayoutGrid, "Grid"], ["table", IconList, "Table"]] as const).map(([v, I, l]) => (
               <button key={v} onClick={() => setV(v)} aria-label={l} aria-pressed={view === v}
@@ -293,7 +296,9 @@ export default function Collection({ initialSet, initialLocation, onOpenDeck }: 
       })()}
 
       {selecting && <BulkBar count={sel.size} total={data?.total_rows ?? 0} onSelectAll={selectAll} onClear={() => setSel(new Set())}
-        onEdit={() => setBulk("edit")} onDelete={() => setBulk("delete")} onExit={() => { setSelecting(false); setSel(new Set()); }} />}
+        onShare={() => setSharing(true)} onEdit={() => setBulk("edit")} onDelete={() => setBulk("delete")} onExit={() => { setSelecting(false); setSel(new Set()); }} />}
+      {sharing && <ShareDialog collection title={locations.length === 1 && locations[0] ? locations[0] : "Collection"} onClose={() => setSharing(false)}
+        spec={sel.size ? { kind: "collection", ids: [...sel] } : { kind: "collection", filters: { q, set: setCode, location: locations, finish } }} />}
       {bulk === "edit" && <BulkEdit ids={[...sel]} locations={locs.map((l) => l.location).filter(Boolean)} onClose={() => setBulk(null)} onDone={bulkDone} />}
       {bulk === "delete" && <BulkDelete ids={[...sel]} preview={rows.filter(isSel).slice(0, 6).map((r) => `${r.quantity}× ${r.name} (${r.set_code.toUpperCase()})`)} onClose={() => setBulk(null)} onDone={bulkDone} />}
       {delIds && <BulkDelete ids={delIds.ids} preview={delIds.preview} onClose={() => setDelIds(null)} onDone={bulkDone} />}

@@ -3,6 +3,7 @@ import { Combo, Select } from "../components/select";
 import { IconDownload, IconUpload } from "@tabler/icons-react";
 import { api, qs } from "../api";
 import { useToast } from "../components/ui";
+import { SharedLinks } from "../components/sharedialog";
 
 type Result = { imported: number; cards: number; skipped: [number, string][] };
 const FORMATS = [
@@ -19,7 +20,15 @@ export default function ImportExport() {
   const [res, setRes] = useState<Result | null>(null);
   const [exportLoc, setExportLoc] = useState<string | undefined>(undefined);
   const [locs, setLocs] = useState<string[]>([]);
+  const [shareLoc, setShareLoc] = useState("");
+  const [shareRes, setShareRes] = useState<{ kind: string; title: string; cards: number; skipped: string[]; deck_id?: number } | null>(null);
   const { toast, node } = useToast();
+  const importShare = async (f: File | null) => {
+    if (!f) return;
+    setShareRes(null);
+    try { setShareRes(await api(`/import-share?` + qs({ location: shareLoc }), { method: "POST", headers: { "Content-Type": "application/json" }, body: await f.text() })); }
+    catch (e) { toast((e as Error).message, true); }
+  };
   useEffect(() => { api<{ location: string }[]>("/locations").then((l) => setLocs(l.map((x) => x.location))); }, []);
 
   const pick = (f: File | null) => {
@@ -70,6 +79,29 @@ export default function ImportExport() {
             )}
           </div>
         )}
+      </section>
+
+      <section>
+        <h2 className="mb-1 text-2xl font-semibold tracking-tight">Import a shared file</h2>
+        <p className="mb-4 max-w-2xl text-sm text-mute">A <code>.scrybinder.json</code> file downloaded from a share link. A deck becomes a new deck; a collection is added to the location below.</p>
+        <div className="flex max-w-2xl flex-wrap items-end gap-3 rounded-2xl border border-line bg-surface p-4">
+          <label className="btn-ghost cursor-pointer"><IconUpload className="size-4" />Choose share file
+            <input type="file" accept=".json,application/json" className="sr-only" onChange={(e) => { importShare(e.target.files?.[0] ?? null); e.target.value = ""; }} /></label>
+          <div className="min-w-48 flex-1"><span className="mb-1 block text-xs font-medium text-mute">Location (for a collection)</span>
+            <Combo className="field" suggestions={locs.filter(Boolean)} value={shareLoc} onChange={setShareLoc} placeholder="e.g. From Rui" /></div>
+        </div>
+        {shareRes && (
+          <div className="mt-4 max-w-2xl rounded-2xl border border-line bg-surface p-4 text-sm" role="status">
+            <p className="text-ok">Imported <b>{shareRes.cards}</b> cards from "{shareRes.title}"{shareRes.kind === "deck" ? " as a new deck" : ""}.</p>
+            {shareRes.skipped.length > 0 && <details className="mt-2"><summary className="cursor-pointer text-gold">{shareRes.skipped.length} cards skipped (not in this card database)</summary>
+              <ul className="mt-2 max-h-48 space-y-1 overflow-y-auto text-xs text-mute">{shareRes.skipped.map((n, i) => <li key={i}>{n}</li>)}</ul></details>}
+          </div>
+        )}
+      </section>
+
+      <section>
+        <h2 className="mb-3 text-2xl font-semibold tracking-tight">Shared links</h2>
+        <div className="max-w-3xl"><SharedLinks /></div>
       </section>
 
       <section>
