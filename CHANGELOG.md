@@ -4,6 +4,9 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Added
+- Sharing a trade: a new "Include the cash" option (off by default) puts what was paid or received in the link, shown in the viewer next to the card prices. The other person and the note are still never sent.
+
 ### Fixed
 - Card search (Trades, Lists, Add): a card whose newest printing has no picture (for example an art series card) now shows the picture of a printing that has one, and an image that fails to load no longer flashes the browser's broken-image icon.
 

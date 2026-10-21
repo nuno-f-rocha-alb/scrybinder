@@ -51,6 +51,8 @@ function render(doc) {
   const chips = [[`${t.cards}`, t.cards === 1 ? "card" : "cards"], [`${t.lines}`, "lines"]];
   if (doc.meta?.format) chips.push(["", doc.meta.format]);
   if (doc.prices) chips.push([eur(t.value), "at Cardmarket prices"]);
+  const cash = doc.meta?.cash;
+  if (typeof cash === "number") chips.push(cash === 0 ? ["", "no cash"] : [eur(Math.abs(cash)), cash > 0 ? "cash paid to the sender" : "cash paid by the sender"]);
   if (doc.created) chips.push(["", doc.created]);
   $("chips").replaceChildren(...chips.map(([strong, text]) => el("li", {}, ...(strong ? [el("b", { text: strong }), ` ${text}`] : [text]))));
   $("note").textContent = doc.note || "";
