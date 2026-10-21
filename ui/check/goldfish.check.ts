@@ -17,7 +17,7 @@ h = bottomOne(h, h.hand[0].uid); assert.equal(h.phase, "playing"); assert.equal(
 let p = keep(mulligan(newGame(cards, false))); assert.equal(p.phase, "bottom"); p = bottomOne(p, p.hand[0].uid); assert.equal(p.hand.length, 6);
 // turns: no draw on turn 1 on the play, draw on the draw, draw each later turn
 const play = keep(newGame(cards, false)); assert.equal(play.hand.length, 7);
-assert.equal(keep(newGame(cards, false, false)).hand.length, 8);
+assert.equal(keep(newGame(cards, false, false)).hand.length, 7);   // the opening hand is not a draw: nobody draws before turn 1's draw step
 const t2 = nextTurn(play); assert.equal(t2.turn, 2); assert.equal(t2.hand.length, 8);
 // moves conserve cards; tapping; untap on turn
 let m = move(t2, t2.hand[0].uid, "battlefield"); assert.equal(m.battlefield.length, 1); assert.equal(total(m), 60);

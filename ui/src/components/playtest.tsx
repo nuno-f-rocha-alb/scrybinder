@@ -1,44 +1,72 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { CardImg, Modal } from "./ui";
 import { MenuItem, useContextMenu } from "./contextmenu";
+import { usePointerDrag } from "./pointerdrag";
+import CardDetails from "./carddetails";
 import type { DeckCard } from "../decks";
-import { GCard, Game, SimResult, Zone, addCounter, addNamed, bottomOne, draw, isLand, keep, move, mulligan, newGame, nextTurn, peek, pushHistory, reorderTop, seeded, shuffleLibrary, simulate, toggleTap, token } from "../goldfish";
+import { GCard, Game, STEPS, SimResult, Step, Zone, addCounter, addNamed, bottomMany, draw, isLand, keep, move, mulligan, newGame, nextPhase, nextTurn, peek, pushHistory, reorderTop, seeded, shuffleLibrary, simulate, toggleTap, token, untapAll } from "../goldfish";
 
 const btn = "cursor-pointer rounded-lg border border-line px-3 py-1.5 text-sm outline-none hover:bg-raised focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-40";
+const act = "cursor-pointer rounded-lg border border-accent/50 bg-accent/20 px-3 py-1.5 text-sm font-medium outline-none hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-40";  // the game actions, next to the hand
 const ZONE_LABEL: Record<Zone, string> = { hand: "Hand", battlefield: "Battlefield", graveyard: "Graveyard", exile: "Exile", library: "Library", command: "Command zone" };
+/** The whole turn as the bar shows it: untap and draw are steps too, but the game does them by itself instead of stopping there. */
+const TURN: { key: string; label: string; step?: Step; auto?: string }[] = [
+  { key: "untap", label: "Untap", auto: "Automatic: everything untaps when a turn begins" }, { key: "upkeep", label: "Upkeep", step: "upkeep" },
+  { key: "draw", label: "Draw", auto: "Automatic: you draw on leaving upkeep" }, { key: "main1", label: "Main 1", step: "main1" },
+  { key: "combat", label: "Combat", step: "combat" }, { key: "main2", label: "Main 2", step: "main2" }, { key: "end", label: "End", step: "end" },
+];
+const ZONES: Zone[] = ["library", "hand", "battlefield", "graveyard", "exile", "command"];
+/** The card width of the table follows the window height, so the phase bar, the table and the hand fit on one screen. */
+const CARD_W = { "--cw": "clamp(4.25rem, 12vh, 6rem)", "--hw": "clamp(5.5rem, 16vh, 9.5rem)" } as React.CSSProperties;
 
 /** A land that is not also a creature goes in the land area; everything else in the nonland area (the tournament game layout). */
 const landArea = (c: GCard) => isLand(c) && !/creature/i.test(c.type_line ?? "");
 
-function Face({ c, w = "w-24" }: { c: GCard; w?: string }) {
-  return c.image_id ? <div className={w}><CardImg id={c.image_id} size="small" /></div>
+function Face({ c, w = "w-(--cw)" }: { c: GCard; w?: string }) {
+  return c.image_id ? <div className={w}><CardImg id={c.image_id} size="normal" /></div>
     : <div className={`${w} flex aspect-[63/88] items-center justify-center rounded bg-raised p-1 text-center text-xs`}>{c.name}</div>;
 }
 
-/** A card on the table: click acts, right-click lists the moves. A tapped card turns sideways in a square cell so its neighbours do not overlap. */
-function Card({ c, onClick, onMenu, square, onHover, onDrag }: { c: GCard; onClick?: () => void; onMenu: (e: React.MouseEvent) => void; square?: boolean; onHover?: (c: GCard | null) => void; onDrag?: (on: boolean) => void }) {
+/** A card on the table: click acts, press and drag moves it, right-click lists the moves. A tapped card turns sideways in a square cell so its neighbours do not overlap. */
+function Card({ c, onClick, onMenu, square, onHover, onPress, fan }: { c: GCard; onClick?: () => void; onMenu: (e: React.MouseEvent) => void; square?: boolean; onHover?: (c: GCard | null, at?: DOMRect) => void; onPress?: (e: React.PointerEvent) => void; fan?: { i: number; n: number } }) {
   const counters = [c.plus ? `${c.plus > 0 ? "+" : "−"}${Math.abs(c.plus)}/${c.plus > 0 ? "+" : "−"}${Math.abs(c.plus)}` : "", ...Object.entries(c.named ?? {}).map(([k, n]) => `${k} ${n}`)].filter(Boolean);
+  const d = fan ? fan.i - (fan.n - 1) / 2 : 0;  // the fan: each card turns and sinks a little more the further it is from the middle
   return (
-    <button onClick={onClick} onContextMenu={onMenu} aria-label={`${c.name}${c.tapped ? " (tapped)" : ""}${counters.length ? `, ${counters.join(", ")}` : ""}`} title={`${c.name} — right-click for more`}
-      onMouseEnter={() => onHover?.(c)} onMouseLeave={() => onHover?.(null)} onFocus={() => onHover?.(c)} onBlur={() => onHover?.(null)}
-      draggable={!!onDrag} onDragStart={(e) => { e.dataTransfer.effectAllowed = "move"; e.dataTransfer.setData("text/plain", c.name); onHover?.(null); onDrag?.(true); }} onDragEnd={() => onDrag?.(false)}
-      className={`relative flex shrink-0 cursor-pointer items-center justify-center rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-accent ${square ? "size-[8.6rem]" : ""}`}>
-      <span className={`block transition-transform ${c.tapped ? "rotate-90" : ""}`}><Face c={c} /></span>
+    <button onClick={onClick} onContextMenu={onMenu} aria-label={`${c.name}${c.tapped ? " (tapped)" : ""}${counters.length ? `, ${counters.join(", ")}` : ""}`} title={`${c.name} — drag to move, right-click for more`}
+      onMouseEnter={(e) => onHover?.(c, e.currentTarget.getBoundingClientRect())} onMouseLeave={() => onHover?.(null)} onFocus={(e) => onHover?.(c, e.currentTarget.getBoundingClientRect())} onBlur={() => onHover?.(null)} onPointerDown={onPress}
+      style={fan ? { "--r": `${d * 4}deg`, "--y": `${d * d * 2}px`, marginLeft: fan.i ? `calc(var(--hw) * ${fan.n > 7 ? -0.45 : -0.2})` : 0, zIndex: fan.i } as React.CSSProperties : undefined}
+      className={`relative flex shrink-0 cursor-pointer touch-none select-none items-center justify-center rounded-lg outline-none transition-transform focus-visible:ring-2 focus-visible:ring-accent ${fan ? "[transform:translateY(var(--y))_rotate(var(--r))] hover:!z-20 hover:[transform:translateY(-3rem)_scale(1.6)] focus-visible:!z-20" : ""} ${square ? "size-[calc(var(--cw)*1.43)]" : ""}`}>
+      <span className={`pointer-events-none block transition-transform ${c.tapped ? "rotate-90" : ""}`}><Face c={c} w={fan ? "w-(--hw)" : undefined} /></span>
       {counters.length > 0 && <span className="absolute bottom-1 left-1/2 flex -translate-x-1/2 flex-col items-center gap-0.5 text-[11px] font-semibold">
         {counters.map((t) => <span key={t} className="rounded bg-black/80 px-1.5 text-white">{t}</span>)}</span>}
     </button>
   );
 }
 
+/** The back of a card, drawn here (nothing is downloaded): a dark border, a brown field and the oval with its rings. */
+const CardBack = ({ className = "" }: { className?: string }) => (
+  <svg viewBox="0 0 63 88" className={className} role="img" aria-label="Card back">
+    <defs><radialGradient id="cb-f" cx="50%" cy="50%" r="70%"><stop offset="0" stopColor="#b5623a" /><stop offset="1" stopColor="#5a2a16" /></radialGradient>
+      <radialGradient id="cb-o" cx="50%" cy="45%" r="60%"><stop offset="0" stopColor="#f3c27a" /><stop offset="0.55" stopColor="#c2562f" /><stop offset="1" stopColor="#3b4f8c" /></radialGradient></defs>
+    <rect width="63" height="88" rx="3.2" fill="#14110f" />
+    <rect x="3.5" y="3.5" width="56" height="81" rx="2" fill="url(#cb-f)" stroke="#2a1a10" strokeWidth="0.6" />
+    <ellipse cx="31.5" cy="44" rx="19" ry="26" fill="url(#cb-o)" stroke="#1a1410" strokeWidth="1.2" />
+    <ellipse cx="31.5" cy="44" rx="14" ry="20" fill="none" stroke="#f3dcae" strokeOpacity="0.7" strokeWidth="0.7" />
+    <ellipse cx="31.5" cy="44" rx="8.5" ry="12.5" fill="none" stroke="#f3dcae" strokeOpacity="0.6" strokeWidth="0.7" />
+    <ellipse cx="31.5" cy="44" rx="3.2" ry="4.8" fill="#14110f" fillOpacity="0.55" />
+  </svg>
+);
+
 /** A pile to the side of the battlefield: the top card (or an empty slot), a name and a count. */
-function Pile({ label, cards, onClick, back, drop }: { label: string; cards: GCard[]; onClick?: () => void; back?: boolean; drop?: React.HTMLAttributes<HTMLElement> }) {
+function Pile({ label, cards, onClick, back, zone, cls = "" }: { label: string; cards: GCard[]; onClick?: () => void; back?: boolean; zone: React.HTMLAttributes<HTMLElement>; cls?: string }) {
   const top = cards[0];
+  const slot = "aspect-[63/88] w-[calc(var(--cw)*0.85)] rounded-[4.5%]";
   return (
-    <button onClick={onClick} disabled={!onClick} aria-label={`${label}: ${cards.length} cards`} {...(drop as object)}
-      className={`flex w-28 cursor-pointer flex-col items-center gap-1 rounded-lg outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default ${drop?.className ?? ""}`}>
-      {back && cards.length ? <div className="aspect-[63/88] w-24 rounded-[4.5%] border border-line bg-gradient-to-br from-raised to-surface" />
-        : !back && top ? <Face c={top} />
-        : <div className="aspect-[63/88] w-24 rounded-[4.5%] border border-dashed border-line" />}
+    <button onClick={onClick} disabled={!onClick} aria-label={`${label}: ${cards.length} cards`} {...(zone as object)}
+      className={`flex cursor-pointer flex-col items-center gap-1 rounded-lg p-1 outline-none focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default ${zone.className ?? ""} ${cls}`}>
+      {back && cards.length ? <CardBack className={slot} />
+        : !back && top ? <Face c={top} w="w-[calc(var(--cw)*0.85)]" />
+        : <div className={`${slot} border border-dashed border-line`} />}
       <span className="text-xs text-mute">{label} ({cards.length})</span>
     </button>
   );
@@ -74,6 +102,40 @@ function Simulate({ cards, commander }: { cards: DeckCard[]; commander: boolean 
   );
 }
 
+/** The opening hand in a window of its own: Keep or Mulligan; after a Keep that owes cards (London mulligan), pick which go to the bottom. */
+function OpeningHand({ g, set }: { g: Game; set: (f: (x: Game) => Game) => void }) {
+  const [pick, setPick] = useState<number[]>([]);  // the cards for the bottom, in the order chosen (this component is remounted for each phase)
+  const bottom = g.phase === "bottom";
+  const toggle = (uid: number) => setPick((p) => (p.includes(uid) ? p.filter((u) => u !== uid) : p.length < g.toBottom ? [...p, uid] : p));
+  return (
+    <div role="dialog" aria-modal aria-label="Opening hand" className="fixed inset-0 z-50 flex flex-col items-center justify-center gap-2 overflow-hidden bg-black/80 px-4 backdrop-blur-sm">
+      <h2 className="text-center text-3xl font-semibold">{bottom ? `Put ${g.toBottom} card${g.toBottom > 1 ? "s" : ""} on the bottom of the library` : "Opening hand"}</h2>
+      <p className="max-w-2xl text-center text-sm text-mute">{g.freeMulligan && g.mulligans === 1 && !bottom ? "Free mulligan: this is your new seven, and no card goes to the bottom. Keep it, or mulligan again (then one card goes to the bottom)." : bottom ? `Click the cards to put under the library (${pick.length} of ${g.toBottom} chosen).`
+        : `Keep this hand, or take a mulligan: shuffle it back and draw seven, then put one card per mulligan on the bottom${g.freeMulligan ? " (the first one is free in Commander)" : ""}.`}</p>
+      {/* one line, fanned in an arc with the cards over each other; the card under the pointer rises and grows */}
+      <div className="flex w-full justify-center pb-16 pt-24" style={{ "--ow": "min(15rem, 13vw)" } as React.CSSProperties}>
+        {g.hand.map((c, i) => {
+          const out = pick.includes(c.uid), mid = (g.hand.length - 1) / 2, d = i - mid;
+          return (
+            <button key={c.uid} disabled={!bottom} onClick={() => toggle(c.uid)} aria-pressed={bottom ? out : undefined} aria-label={c.name}
+              style={{ "--r": `${d * 5}deg`, "--y": `${d * d * 7}px`, marginLeft: i ? "calc(var(--ow) * -0.2)" : 0, zIndex: i } as React.CSSProperties}
+              className={`relative w-(--ow) shrink-0 rounded-xl outline-none transition-transform duration-150 [transform:translateY(var(--y))_rotate(var(--r))] hover:z-20 hover:[transform:translateY(-2rem)_scale(1.3)] focus-visible:z-20 focus-visible:ring-2 focus-visible:ring-accent ${bottom ? "cursor-pointer" : "cursor-default"} ${out ? "opacity-40 ring-2 ring-accent" : ""}`}>
+              {c.image_id ? <CardImg id={c.image_id} size="normal" /> : <div className="flex aspect-[63/88] items-center justify-center rounded-xl bg-raised p-2 text-center text-sm">{c.name}</div>}
+              {out && <span className="absolute inset-x-0 top-1/2 -translate-y-1/2 bg-black/80 py-1 text-center text-xs font-semibold">Bottom #{pick.indexOf(c.uid) + 1}</span>}
+            </button>
+          );
+        })}
+      </div>
+      <div className="flex justify-center gap-3">
+        {bottom ? <button className={`${act} !px-8 !py-2.5 !text-base`} disabled={pick.length !== g.toBottom} onClick={() => set((x) => bottomMany(x, pick))}>Confirm</button> : <>
+          <button className={`${act} !px-8 !py-2.5 !text-base`} onClick={() => set(keep)}>Keep {g.hand.length}</button>
+          <button className={`${btn} !px-8 !py-2.5 !text-base`} onClick={() => set((x) => mulligan(x))}>Mulligan{g.mulligans ? ` (${g.mulligans})` : ""}</button>
+        </>}
+      </div>
+    </div>
+  );
+}
+
 /** Solo playtest of a deck: draw, mulligan and play turns against nobody. */
 export default function Playtest({ cards, commander }: { cards: DeckCard[]; commander: boolean }) {
   const [onPlay, setOnPlay] = useState(true);
@@ -82,63 +144,71 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
   const [pile, setPile] = useState<"graveyard" | "exile" | null>(null);  // the pile whose cards are listed
   const menu = useContextMenu();
   const [hist, setHist] = useState<Game[]>([]);  // the states before each action, for Undo (the newest last, at most 50)
-  const [zoom, setZoom] = useState<GCard | null>(null);
+  const [zoom, setZoom] = useState<GCard | null>(null);  // the card under the pointer: shown larger, and the target of the card shortcuts
+  const [zoomAt, setZoomAt] = useState<DOMRect | null>(null);  // where that card is, for the preview beside it
+  const hover = (c: GCard | null, at?: DOMRect) => { setZoom(c); setZoomAt(at ?? null); };
   const [tokenForm, setTokenForm] = useState<{ name: string; pt: string } | null>(null);
-  const [scry, setScry] = useState<{ n: number; bottom: Set<number> } | null>(null);
+  const [scry, setScry] = useState<{ n: number; fate: Record<number, "top" | "bottom" | "graveyard"> } | null>(null);  // what each looked-at card becomes (absent: stays on top)
   const gRef = useRef<Game | null>(null);
-  const dragUid = useRef<number | null>(null);  // the card being dragged
-  const [over, setOver] = useState<Zone | null>(null);  // the zone it is over
   const [counterForm, setCounterForm] = useState<{ uid: number; name: string; n: number } | null>(null);
   const [ending, setEnding] = useState(false);
+  const [details, setDetails] = useState<string | null>(null);  // the printing whose details (rules, rulings, legality...) are open
+  const keyRef = useRef<(e: KeyboardEvent) => void>(() => undefined);
   gRef.current = g;
-  const start = () => { setHist([]); setG(newGame(cards, commander, onPlay)); };
+  const start = () => { setHist([]); setZoom(null); setG(newGame(cards, commander, onPlay)); };
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => keyRef.current(e);
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, []);
+
+  const set = (f: (x: Game) => Game) => {  // every change remembers the state it replaced, for Undo
+    const cur = gRef.current;
+    if (!cur) return;
+    const next = f(cur);
+    if (next !== cur) {
+      setHist((h) => pushHistory(h, cur)); setG(next);
+      const at = (x: Game, uid: number) => ZONES.find((k) => x[k].some((c) => c.uid === uid));
+      setZoom((z) => { const k = z && at(next, z.uid); return z && k && at(cur, z.uid) === k ? next[k].find((c) => c.uid === z.uid) ?? null : null; });  // a card that left its zone is no longer under the pointer
+    }
+  };
+  const { drag, start: press } = usePointerDrag((uid, z) => set((x) => {
+    const from = ZONES.find((k) => x[k].some((c) => c.uid === uid));
+    const card = from && x[from].find((c) => c.uid === uid);
+    return !card || from === z || (z === "command" && !card.commander) ? x : move(x, uid, z);
+  }));
+  const dragged = drag && g ? ZONES.flatMap((k) => g[k]).find((c) => c.uid === drag.uid) : undefined;
+  useEffect(() => { if (drag) setZoom(null); }, [drag !== null]);  // eslint-disable-line react-hooks/exhaustive-deps
 
   const library = cards.filter((c) => c.board === "main").reduce((n, c) => n + c.quantity, 0);
   if (!g) return (
     <div className="flex flex-col items-start gap-3">
       <p className="text-mute">Play alone against nobody: shuffle, draw a hand, mulligan and take turns to see how the deck behaves.</p>
       {library === 0 ? <p className="text-mute">Add cards to the main deck first.</p> : <>
-        <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={onPlay} onChange={(e) => setOnPlay(e.target.checked)} />On the play (no draw on turn 1)</label>
+        {commander ? <p className="text-sm text-mute">Commander: the first player draws on turn 1 too, so the game starts from your kept hand and you draw at the draw step.</p>
+          : <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={onPlay} onChange={(e) => setOnPlay(e.target.checked)} />On the play (no draw on turn 1)</label>}
         <button className={btn} onClick={start}>Start playtest</button>
       </>}
       <Simulate cards={cards} commander={commander} />
     </div>
   );
 
-  const set = (f: (x: Game) => Game) => {  // every change remembers the state it replaced, for Undo
-    const cur = gRef.current;
-    if (!cur) return;
-    const next = f(cur);
-    if (next !== cur) { setHist((h) => pushHistory(h, cur)); setG(next); setZoom(null); }  // the card under the pointer may be gone
-  };
   const endGame = () => {
     if (!ending) { setEnding(true); setTimeout(() => setEnding(false), 4000); return; }
     setG(null); setHist([]); setZoom(null); setScry(null); setTokenForm(null); setSearch(null); setPile(null); setEnding(false);
   };
-  /** Drag a card with the mouse (press, hold, move) onto a zone: the table, the hand, a pile or the command zone. */
-  const drop = (z: Zone): React.HTMLAttributes<HTMLElement> => ({
-    onDragOver: (e) => { if (dragUid.current !== null) { e.preventDefault(); setOver(z); } },
-    onDragLeave: () => setOver((o) => (o === z ? null : o)),
-    onDrop: (e) => {
-      e.preventDefault();
-      const uid = dragUid.current;
-      dragUid.current = null; setOver(null);
-      if (uid === null) return;
-      set((x) => {
-        const from = (["library", "hand", "battlefield", "graveyard", "exile", "command"] as Zone[]).find((k) => x[k].some((c) => c.uid === uid));
-        const card = from && x[from].find((c) => c.uid === uid);
-        return !card || from === z || (z === "command" && !card.commander) ? x : move(x, uid, z);
-      });
-    },
-    className: over === z ? "ring-2 ring-accent" : "",
+  /** An element a card can be dropped on: outlined while a card is in flight, with a ring under the pointer. */
+  const zone = (z: Zone): React.HTMLAttributes<HTMLElement> => ({
+    ...{ "data-zone": z } as object,
+    className: drag ? (drag.over === z ? "ring-2 ring-accent bg-accent/10" : "outline-dashed outline-1 outline-accent/50") : "",
   });
-  const dragging = (on: boolean, uid: number) => { dragUid.current = on ? uid : null; if (!on) setOver(null); };
   const undo = () => { const last = hist[hist.length - 1]; if (last) { setG(last); setHist(hist.slice(0, -1)); setZoom(null); } };
   const playing = g.phase === "playing";
   const cardMenu = (c: GCard, zone: Zone) => (e: React.MouseEvent) => {
     if (!playing) return;  // the opening hand is only kept or sent back
     const to = (z: Zone, bottom = false): MenuItem => ({ label: z === "library" ? (bottom ? "Bottom of library" : "Top of library") : ZONE_LABEL[z], onSelect: () => set((x) => move(x, c.uid, z, bottom)) });
     menu.open(e, [
+      ...(c.image_id ? [{ label: "View details & rulings", onSelect: () => setDetails(c.image_id) }, "sep" as const] : []),  // a token has no card to look up
       ...(zone === "battlefield" ? [
         { label: c.tapped ? "Untap" : "Tap", onSelect: () => set((x) => toggleTap(x, c.uid)) }, "sep" as const,
         { label: "+1/+1 counter", onSelect: () => set((x) => addCounter(x, c.uid, "plus", 1)) },
@@ -153,73 +223,98 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
       "sep", to("library"), to("library", true),
     ]);
   };
-  const handClick = (c: GCard) => set((x) => (x.phase === "bottom" ? bottomOne(x, c.uid) : x.phase === "playing" ? move(x, c.uid, "battlefield") : x));
+  keyRef.current = (e) => {
+    const cur = gRef.current;
+    const t = e.target as HTMLElement;
+    if (!cur || cur.phase !== "playing" || e.altKey || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable || document.querySelector("[aria-modal]")) return;
+    const k = e.key.toLowerCase();
+    if ((e.ctrlKey || e.metaKey) && k === "z") { e.preventDefault(); undo(); return; }
+    if (e.ctrlKey || e.metaKey) return;
+    const where = zoom && ZONES.find((z) => cur[z].some((c) => c.uid === zoom.uid));
+    const sendTo: Record<string, Zone> = { g: "graveyard", e: "exile", h: "hand", b: "battlefield" };
+    if (k === "d") set((x) => draw(x));
+    else if (k === "n") set(e.shiftKey ? nextTurn : nextPhase);
+    else if (k === "u") set(untapAll);
+    else if (k === "t" && zoom && where === "battlefield") set((x) => toggleTap(x, zoom.uid));
+    else if (sendTo[k] && zoom && where && where !== sendTo[k]) set((x) => move(x, zoom.uid, sendTo[k]));
+    else return;
+    e.preventDefault();
+  };
+  const handClick = (c: GCard) => set((x) => (x.phase === "playing" ? move(x, c.uid, "battlefield") : x));
   const lands = g.battlefield.filter(isLand).length;
-  const area = (title: string, list: GCard[]) => (
-    <div className="min-h-[9.5rem] p-2" role="group" aria-label={title}>
+  const area = (title: string, list: GCard[], grow: string) => (
+    <div className={`min-h-[calc(var(--cw)*1.43+1.75rem)] p-2 ${grow}`} role="group" aria-label={title}>
       <h3 className="mb-1 text-xs uppercase tracking-wide text-mute">{title} ({list.length})</h3>
-      <div className="flex flex-wrap">{list.map((c) => <Card key={c.uid} c={c} square onHover={setZoom} onDrag={playing ? (on) => dragging(on, c.uid) : undefined} onClick={() => set((x) => toggleTap(x, c.uid))} onMenu={cardMenu(c, "battlefield")} />)}</div>
+      <div className="flex flex-wrap">{list.map((c) => <Card key={c.uid} c={c} square onHover={hover} onPress={playing ? press(c.uid) : undefined} onClick={() => set((x) => toggleTap(x, c.uid))} onMenu={cardMenu(c, "battlefield")} />)}</div>
     </div>
   );
 
   return (
-    <div>
-      <div className="mb-4 flex flex-wrap items-center gap-2" role="toolbar" aria-label="Playtest controls">
+    <div className="flex min-h-[calc(100vh-13rem)] flex-col" style={CARD_W}>
+      <div className="mb-2 flex flex-wrap items-center gap-2" role="toolbar" aria-label="Playtest controls">
         <span className="mr-2 text-sm">Turn <b>{g.turn}</b> · Library <b>{g.library.length}</b> · Lands <b>{lands}</b></span>
         <span className="mr-2 flex items-center gap-1 text-sm">Life
           <button className={btn} aria-label="Lose 1 life" onClick={() => set((x) => ({ ...x, life: x.life - 1 }))}>−</button>
           <b className="w-8 text-center">{g.life}</b>
           <button className={btn} aria-label="Gain 1 life" onClick={() => set((x) => ({ ...x, life: x.life + 1 }))}>+</button>
         </span>
-        {g.phase === "mulligan" && <>
-          <button className={btn} onClick={() => set(keep)}>Keep</button>
-          <button className={btn} onClick={() => set((x) => mulligan(x))}>Mulligan{g.mulligans ? ` (${g.mulligans})` : ""}</button>
-        </>}
-        {playing && <>
-          <button className={btn} onClick={() => set(nextTurn)}>Next turn</button>
-          <button className={btn} disabled={!g.library.length} onClick={() => set((x) => draw(x))}>Draw</button>
-          <button className={btn} onClick={() => setSearch("")}>Search library</button>
-          <button className={btn} onClick={() => set((x) => shuffleLibrary(x))}>Shuffle</button>
-          <button className={btn} disabled={!g.library.length} onClick={() => setScry({ n: 1, bottom: new Set() })}>Scry / peek</button>
-          <button className={btn} onClick={() => setTokenForm({ name: "", pt: "" })}>Token</button>
-        </>}
         <button className={btn} disabled={!hist.length} onClick={undo}>Undo</button>
-        <label className="flex items-center gap-1 text-sm"><input type="checkbox" checked={onPlay} onChange={(e) => setOnPlay(e.target.checked)} />On the play</label>
+        {!commander && <label className="flex items-center gap-1 text-sm"><input type="checkbox" checked={onPlay} onChange={(e) => setOnPlay(e.target.checked)} />On the play</label>}
         <button className={btn} onClick={start}>New game</button>
         <button className={btn} onClick={endGame}>{ending ? "Click again to end" : "End playtest"}</button>
       </div>
-      {g.phase === "bottom" && <p className="mb-3 text-sm text-accent" role="status">Click {g.toBottom} card{g.toBottom > 1 ? "s" : ""} in your hand to put on the bottom of the library.</p>}
-      {playing && <p className="mb-2 text-xs text-mute">Click a battlefield card to tap it, a hand card to play it, or press and drag a card onto a zone. Right-click any card for more.</p>}
+      {playing && <ol aria-label="Phases of the turn" className="mb-2 flex flex-wrap gap-1 text-xs">
+        {TURN.map((t) => <li key={t.key} aria-current={t.step === g.step ? "step" : undefined} title={t.auto}
+          className={`rounded-full border px-2.5 py-0.5 ${t.step === g.step ? "border-accent bg-accent/20 font-semibold" : t.auto ? "border-dashed border-mute/70 text-mute" : "border-line text-mute"}`}>{t.label}</li>)}
+      </ol>}
+      {playing && <p className="mb-2 text-xs text-mute">Click a battlefield card to tap it, a hand card to play it, or press and drag a card onto a zone. Right-click any card for more.
+        Keys: <kbd>D</kbd> draw · <kbd>N</kbd> next phase · <kbd>Shift+N</kbd> next turn · <kbd>U</kbd> untap all · <kbd>Ctrl+Z</kbd> undo · over a card: <kbd>T</kbd> tap · <kbd>G</kbd> graveyard · <kbd>E</kbd> exile · <kbd>H</kbd> hand · <kbd>B</kbd> battlefield.</p>}
 
-      <div className="flex items-start gap-4">
+      <div className="flex flex-1 items-stretch gap-4">
         {/* the table: nonlands nearest the opponent (top), lands nearest the player (bottom) */}
-        <section aria-label="Battlefield" {...(playing ? drop("battlefield") : {})} className={`min-w-0 flex-1 rounded-xl border border-line ${playing && over === "battlefield" ? "ring-2 ring-accent" : ""}`}>
-          {area("Nonland permanents", g.battlefield.filter((c) => !landArea(c)))}
-          <div className="border-t border-dashed border-line" />
-          {area("Lands", g.battlefield.filter(landArea))}
-        </section>
-        {/* library, graveyard and exile together on one side, with the command zone */}
-        <aside aria-label="Zones" className="flex shrink-0 flex-col gap-3">
-          <Pile label="Library" cards={g.library} back drop={playing ? drop("library") : undefined} onClick={playing && g.library.length ? () => set((x) => draw(x)) : undefined} />
-          <Pile label="Graveyard" cards={g.graveyard} drop={playing ? drop("graveyard") : undefined} onClick={g.graveyard.length ? () => setPile("graveyard") : undefined} />
-          <Pile label="Exile" cards={g.exile} drop={playing ? drop("exile") : undefined} onClick={g.exile.length ? () => setPile("exile") : undefined} />
+        <div className="flex min-w-0 flex-1 flex-col">
+        <section aria-label="Battlefield" {...(playing ? zone("battlefield") : {})} className={`flex min-h-0 flex-1 flex-col rounded-xl border border-line ${playing ? zone("battlefield").className : ""}`}>
+              {area("Nonland permanents", g.battlefield.filter((c) => !landArea(c)), "flex-[2]")}
+              <div className="border-t border-dashed border-line" />
+              {area("Lands", g.battlefield.filter(landArea), "flex-1")}
+            </section>
+          {playing && <div role="toolbar" aria-label="Actions" className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-accent/40 bg-accent/15 p-2">
+            <span className="mr-1 text-xs font-medium uppercase tracking-wide text-mute">Actions</span>
+            <button className={act} onClick={() => set(nextPhase)}>Next phase</button>
+            <button className={act} onClick={() => set(nextTurn)}>Next turn</button>
+            <button className={act} disabled={!g.library.length} onClick={() => set((x) => draw(x))}>Draw</button>
+            <button className={act} onClick={() => set(untapAll)}>Untap all</button>
+            <button className={act} onClick={() => setSearch("")}>Search library</button>
+            <button className={act} onClick={() => set((x) => shuffleLibrary(x))}>Shuffle</button>
+            <button className={act} disabled={!g.library.length} onClick={() => setScry({ n: 1, fate: {} })}>Scry / surveil</button>
+            <button className={act} onClick={() => setTokenForm({ name: "", pt: "" })}>Token</button>
+          </div>}
+          <section aria-label="Hand" {...(playing ? zone("hand") : {})} className={`mt-2 rounded-xl p-1 ${playing ? zone("hand").className : ""}`}>
+            <h3 className="mb-1 text-sm font-medium text-mute">Hand ({g.hand.length})</h3>
+            <div className="flex min-h-12 justify-center pb-3 pt-14">
+              {g.hand.map((c, i) => <Card key={c.uid} c={c} fan={{ i, n: g.hand.length }} onHover={hover} onPress={playing ? press(c.uid) : undefined} onClick={() => handClick(c)} onMenu={cardMenu(c, "hand")} />)}
+            </div>
+          </section>
+        </div>
+        {/* library, graveyard, exile and the command zone: beside the table: the command zone on the left, library, graveyard and exile in a column on the right (one column without a commander) */}
+        <aside aria-label="Zones" className={`grid shrink-0 content-start gap-2 ${commander ? "grid-cols-2" : "grid-cols-1"}`}>
           {commander && (
-            <div {...(playing ? drop("command") : {})} className={`flex flex-col items-center gap-1 rounded-lg ${playing && over === "command" ? "ring-2 ring-accent" : ""}`} role="group" aria-label="Command zone">
-              {g.command.map((c) => <Card key={c.uid} c={c} onDrag={playing ? (on) => dragging(on, c.uid) : undefined} onClick={playing ? () => set((x) => move(x, c.uid, "battlefield")) : undefined} onMenu={cardMenu(c, "command")} />)}
-              {!g.command.length && <div className="aspect-[63/88] w-24 rounded-[4.5%] border border-dashed border-line" />}
+            <div {...(playing ? zone("command") : {})} className={`col-start-1 row-span-3 row-start-1 flex flex-col items-center gap-1 rounded-lg p-1 ${playing ? zone("command").className : ""}`} role="group" aria-label="Command zone">
+              {g.command.map((c) => <div key={c.uid} className="w-[calc(var(--cw)*0.85)]"><Card c={c} onPress={playing ? press(c.uid) : undefined} onClick={playing ? () => set((x) => move(x, c.uid, "battlefield")) : undefined} onMenu={cardMenu(c, "command")} /></div>)}
+              {!g.command.length && <div className="aspect-[63/88] w-[calc(var(--cw)*0.85)] rounded-[4.5%] border border-dashed border-line" />}
               <span className="text-xs text-mute">Command zone ({g.command.length})</span>
             </div>
           )}
+          <Pile cls={commander ? "col-start-2" : ""} label="Library" cards={g.library} back zone={playing ? zone("library") : {}} onClick={playing && g.library.length ? () => set((x) => draw(x)) : undefined} />
+          <Pile cls={commander ? "col-start-2" : ""} label="Graveyard" cards={g.graveyard} zone={playing ? zone("graveyard") : {}} onClick={g.graveyard.length ? () => setPile("graveyard") : undefined} />
+          <Pile cls={commander ? "col-start-2" : ""} label="Exile" cards={g.exile} zone={playing ? zone("exile") : {}} onClick={g.exile.length ? () => setPile("exile") : undefined} />
         </aside>
       </div>
 
-      <section aria-label="Hand" {...(playing ? drop("hand") : {})} className={`mt-4 rounded-xl ${playing && over === "hand" ? "ring-2 ring-accent" : ""}`}>
-        <h3 className="mb-1 text-sm font-medium text-mute">{g.phase === "mulligan" ? "Opening hand" : "Hand"} ({g.hand.length})</h3>
-        <div className="flex min-h-12 flex-wrap gap-1">
-          {g.hand.map((c) => <Card key={c.uid} c={c} onHover={setZoom} onDrag={playing ? (on) => dragging(on, c.uid) : undefined} onClick={() => handClick(c)} onMenu={cardMenu(c, "hand")} />)}
-        </div>
-      </section>
 
+      {!playing && <OpeningHand key={g.phase} g={g} set={set} />}
+      {drag && dragged && <div className="pointer-events-none fixed z-[60] w-24 -translate-x-1/2 -translate-y-1/3 rotate-3 opacity-90 drop-shadow-2xl" style={{ left: drag.x, top: drag.y }} aria-hidden>
+        <Face c={dragged} w="w-24" /></div>}
       {pile && (
         <Modal title={ZONE_LABEL[pile]} onClose={() => setPile(null)} wide>
           <h2 className="mb-1 text-lg font-semibold">{ZONE_LABEL[pile]} ({g[pile].length})</h2>
@@ -229,8 +324,13 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
           </div>
         </Modal>
       )}
-      {zoom && <div className="pointer-events-none fixed bottom-4 right-4 z-40 w-64 drop-shadow-2xl" aria-hidden>
-        {zoom.image_id ? <CardImg id={zoom.image_id} size="normal" /> : <div className="rounded-xl bg-raised p-4 text-center text-sm">{zoom.name}</div>}</div>}
+      {zoom && zoomAt && !drag && !g.hand.some((c) => c.uid === zoom.uid) && (() => {  // beside the card: to its right, or to its left when there is no room; kept inside the window
+        const w = 288, h = w * 88 / 63, gap = 12;
+        const left = zoomAt.right + gap + w <= window.innerWidth - 8 ? zoomAt.right + gap : Math.max(8, zoomAt.left - gap - w);
+        const top = Math.min(Math.max(8, zoomAt.top + zoomAt.height / 2 - h / 2), window.innerHeight - h - 8);
+        return <div className="pointer-events-none fixed z-40 overflow-hidden rounded-[4.5%] shadow-2xl shadow-black/70 ring-1 ring-white/10" style={{ left, top, width: w }} aria-hidden>
+          {zoom.image_id ? <CardImg id={zoom.image_id} size="large" /> : <div className="flex aspect-[63/88] items-center justify-center bg-raised p-4 text-center text-sm">{zoom.name}</div>}</div>;
+      })()}
       {counterForm && (
         <Modal title="Add a counter" onClose={() => setCounterForm(null)}>
           <h2 className="mb-3 text-lg font-semibold">Add a counter</h2>
@@ -259,20 +359,32 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
       )}
       {scry && (() => {
         const top = peek(g, scry.n);
-        const apply = () => { set((x) => reorderTop(x, top.filter((c) => !scry.bottom.has(c.uid)).map((c) => c.uid), top.filter((c) => scry.bottom.has(c.uid)).map((c) => c.uid))); setScry(null); };
+        const ids = (f: string) => top.filter((c) => (scry.fate[c.uid] ?? "top") === f).map((c) => c.uid);
+        // the cards kept on top stay in this order, the ones for the bottom go under the library, the surveilled ones go to the graveyard
+        const apply = () => { set((x) => ids("graveyard").reduce((y, u) => move(y, u, "graveyard"), reorderTop(x, ids("top"), ids("bottom")))); setScry(null); };
+        const fates = [["top", "Top"], ["bottom", "Bottom"], ["graveyard", "Graveyard"]] as const;
         return (
-          <Modal title="Scry" onClose={() => setScry(null)} wide>
-            <h2 className="mb-3 text-lg font-semibold">Top of the library</h2>
+          <Modal title="Scry or surveil" onClose={() => setScry(null)} wide>
+            <h2 className="mb-1 text-lg font-semibold">Top of the library</h2>
+            <p className="mb-3 text-xs text-mute">Scry: choose Top or Bottom for each card. Surveil: send cards to the Graveyard instead of the bottom.</p>
             <label className="mb-3 flex items-center gap-2 text-sm">Look at
-              <input type="number" min={1} max={10} className="field w-20" value={scry.n} onChange={(e) => setScry({ n: Math.min(10, Math.max(1, Math.floor(Number(e.target.value)) || 1)), bottom: new Set() })} aria-label="Cards to look at" /> cards</label>
-            <div className="flex flex-wrap gap-3">
-              {top.map((c, i) => (
-                <div key={c.uid} className="flex w-28 flex-col items-center gap-1">
-                  <Face c={c} />
-                  <span className="text-xs text-mute">{i + 1}. {scry.bottom.has(c.uid) ? "to the bottom" : "stays on top"}</span>
-                  <button className={btn} onClick={() => { const b = new Set(scry.bottom); b.has(c.uid) ? b.delete(c.uid) : b.add(c.uid); setScry({ ...scry, bottom: b }); }}>{scry.bottom.has(c.uid) ? "Keep on top" : "Send to bottom"}</button>
-                </div>
-              ))}
+              <input type="number" min={1} max={10} className="field w-20" value={scry.n} onChange={(e) => setScry({ n: Math.min(10, Math.max(1, Math.floor(Number(e.target.value)) || 1)), fate: {} })} aria-label="Cards to look at" /> cards</label>
+            <div className="flex flex-wrap gap-4">
+              {top.map((c, i) => {
+                const fate = scry.fate[c.uid] ?? "top";
+                return (
+                  <div key={c.uid} className="flex w-40 flex-col items-center gap-1">
+                    <Face c={c} w="w-36" />
+                    <span className="text-xs text-mute">{i + 1}. {fate === "top" ? "stays on top" : fate === "bottom" ? "to the bottom" : "to the graveyard"}</span>
+                    <div role="group" aria-label={`What happens to ${c.name}`} className="flex w-full overflow-hidden rounded-lg border border-line text-xs">
+                      {fates.map(([f, label]) => (
+                        <button key={f} aria-pressed={fate === f} onClick={() => setScry({ ...scry, fate: { ...scry.fate, [c.uid]: f } })}
+                          className={`flex-1 cursor-pointer px-1 py-1.5 outline-none focus-visible:ring-2 focus-visible:ring-accent ${fate === f ? "bg-accent/30 font-semibold" : "hover:bg-raised"}`}>{label}</button>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
             </div>
             <button className={`${btn} mt-4`} onClick={apply}>Done</button>
           </Modal>
@@ -301,6 +413,7 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
         </Modal>
       )}
       <Simulate cards={cards} commander={commander} />
+      {details && <CardDetails printId={details} onClose={() => setDetails(null)} />}
       {menu.node}
     </div>
   );
