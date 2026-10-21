@@ -8,7 +8,8 @@ const cards = [mk("Forest", 20, "Basic Land — Forest"), mk("Bear", 20, "Creatu
 const box = { w: 0.1, h: 0.3 };
 
 let g = keep(newGame(cards, false));
-const byName = (n: string) => g.hand.find((c) => c.name === n)!.uid;
+const all0 = [...g.hand, ...g.library];  // from anywhere in the deck, so the shuffle cannot matter
+const byName = (n: string) => all0.find((c) => c.name === n)!.uid;
 const [land, bear, rock] = [byName("Forest"), byName("Bear"), byName("Rock")];
 for (const u of [land, bear, rock]) g = move(g, u, "battlefield");
 assert.ok(g.battlefield.every((c) => c.x === undefined));            // moving gives no position by itself
@@ -19,7 +20,7 @@ assert.equal(at(bear).y, 0); assert.equal(at(rock).y, 0.35); assert.ok(Math.abs(
 assert.equal(settle(g, box), g);                                      // nothing left to place: same object
 
 // a second creature takes the next free slot of the row, never the same spot
-const bear2 = g.hand.find((c) => c.name === "Bear")!.uid;
+const bear2 = all0.filter((c) => c.name === "Bear" && c.uid !== bear)[0].uid;
 g = settle(move(g, bear2, "battlefield"), box);
 assert.ok(Math.abs(at(bear2).x! - at(bear).x!) >= box.w / 2 && at(bear2).y === 0);
 

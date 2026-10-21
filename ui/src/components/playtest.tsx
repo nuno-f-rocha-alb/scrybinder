@@ -5,7 +5,7 @@ import { usePointerDrag } from "./pointerdrag";
 import type { DropAt } from "./pointerdrag";
 import CardDetails from "./carddetails";
 import type { DeckCard } from "../decks";
-import { Box, GCard, Game, STEPS, SimResult, Step, Zone, addCounter, addNamed, bottomMany, draw, isLand, keep, move, mulligan, newGame, nextPhase, nextTurn, peek, placeCard, pushHistory, reorderTop, seeded, settle, shuffleLibrary, simulate, toggleTap, token, untapAll } from "../goldfish";
+import { Box, GCard, Game, STEPS, SimResult, Step, Zone, addCounter, addNamed, attach, bottomMany, detach, draw, isLand, keep, move, mulligan, newGame, nextPhase, nextTurn, peek, placeCard, placeOf, pushHistory, reorderTop, seeded, settle, shuffleLibrary, simulate, toggleTap, token, untapAll } from "../goldfish";
 
 const btn = "cursor-pointer rounded-lg border border-line px-3 py-1.5 text-sm outline-none hover:bg-raised focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-40";
 const act = "cursor-pointer rounded-lg border border-accent/50 bg-accent/20 px-3 py-1.5 text-sm font-medium outline-none hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-40";  // the game actions, next to the hand
@@ -26,16 +26,17 @@ function Face({ c, w = "w-(--cw)" }: { c: GCard; w?: string }) {
 }
 
 /** A card on the table: click acts, press and drag moves it, right-click lists the moves. A tapped card turns sideways in a square cell so its neighbours do not overlap. */
-function Card({ c, onClick, onMenu, at, lifted,onHover, onPress, fan }: { c: GCard; onClick?: () => void; onMenu: (e: React.MouseEvent) => void; at?: { x: number; y: number; box: Box }; lifted?: boolean; onHover?: (c: GCard | null, at?: DOMRect) => void; onPress?: (e: React.PointerEvent) => void; fan?: { i: number; n: number } }) {
+function Card({ c, onClick, onMenu, at, lifted, ring, badge, onHover, onPress, fan }: { c: GCard; onClick?: () => void; onMenu: (e: React.MouseEvent) => void; at?: { x: number; y: number; z: number; box: Box }; lifted?: boolean; ring?: boolean; badge?: number; onHover?: (c: GCard | null, at?: DOMRect) => void; onPress?: (e: React.PointerEvent) => void; fan?: { i: number; n: number } }) {
   const counters = [c.plus ? `${c.plus > 0 ? "+" : "−"}${Math.abs(c.plus)}/${c.plus > 0 ? "+" : "−"}${Math.abs(c.plus)}` : "", ...Object.entries(c.named ?? {}).map(([k, n]) => `${k} ${n}`)].filter(Boolean);
   const d = fan ? fan.i - (fan.n - 1) / 2 : 0;  // the fan: each card turns and sinks a little more the further it is from the middle
   return (
-    <button onClick={onClick} onContextMenu={onMenu} aria-label={`${c.name}${c.tapped ? " (tapped)" : ""}${counters.length ? `, ${counters.join(", ")}` : ""}`} title={`${c.name} — drag to move, right-click for more`}
+    <button onClick={onClick} onContextMenu={onMenu} data-uid={at ? c.uid : undefined} aria-label={`${c.name}${c.tapped ? " (tapped)" : ""}${counters.length ? `, ${counters.join(", ")}` : ""}`} title={`${c.name} — drag to move, right-click for more`}
       onMouseEnter={(e) => onHover?.(c, e.currentTarget.getBoundingClientRect())} onMouseLeave={() => onHover?.(null)} onFocus={(e) => onHover?.(c, e.currentTarget.getBoundingClientRect())} onBlur={() => onHover?.(null)} onPointerDown={onPress}
       style={fan ? { "--r": `${d * 4}deg`, "--y": `${d * d * 2}px`, marginLeft: fan.i ? `calc(var(--hw) * ${fan.n > 7 ? -0.45 : -0.2})` : 0, zIndex: fan.i } as React.CSSProperties
-        : at ? { position: "absolute", left: `${Math.min(at.x, 1 - at.box.w) * 100}%`, top: `${Math.min(at.y, 1 - at.box.h) * 100}%`, zIndex: c.z ?? 0, width: "var(--cw)", opacity: lifted ? 0 : undefined } : undefined}  // on the free table, kept inside it
-      className={`relative flex shrink-0 cursor-pointer touch-none select-none items-center justify-center rounded-lg outline-none transition-transform focus-visible:ring-2 focus-visible:ring-accent ${fan ? "[transform:translateY(var(--y))_rotate(var(--r))] hover:!z-20 hover:[transform:translateY(-3rem)_scale(1.6)] focus-visible:!z-20" : ""}`}>
+        : at ? { position: "absolute", left: `${Math.min(at.x, 1 - at.box.w) * 100}%`, top: `${Math.min(at.y, 1 - at.box.h) * 100}%`, zIndex: at.z, width: "var(--cw)", opacity: lifted ? 0 : undefined, pointerEvents: lifted ? "none" : undefined } : undefined}  // on the free table, kept inside it
+      className={`relative flex shrink-0 cursor-pointer touch-none select-none items-center justify-center rounded-lg outline-none transition-transform focus-visible:ring-2 focus-visible:ring-accent ${fan ? "[transform:translateY(var(--y))_rotate(var(--r))] hover:!z-20 hover:[transform:translateY(-3rem)_scale(1.6)] focus-visible:!z-20" : ""} ${ring ? "ring-2 ring-accent" : ""}`}>
       <span className={`pointer-events-none block transition-transform ${c.tapped ? "rotate-90" : ""}`}><Face c={c} w={fan ? "w-(--hw)" : undefined} /></span>
+      {!!badge && <span className="absolute right-0 top-0 rounded bg-accent px-1 text-[11px] font-semibold text-white" title="Cards attached to this one">+{badge}</span>}
       {counters.length > 0 && <span className="absolute bottom-1 left-1/2 flex -translate-x-1/2 flex-col items-center gap-0.5 text-[11px] font-semibold">
         {counters.map((t) => <span key={t} className="rounded bg-black/80 px-1.5 text-white">{t}</span>)}</span>}
     </button>
@@ -151,6 +152,7 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
   const gRef = useRef<Game | null>(null);
   const [counterForm, setCounterForm] = useState<{ uid: number; name: string; n: number } | null>(null);
   const [ending, setEnding] = useState(false);
+  const [attaching, setAttaching] = useState<number | null>(null);  // the card waiting for the one to attach to
   const [details, setDetails] = useState<string | null>(null);  // the printing whose details (rules, rulings, legality...) are open
   const keyRef = useRef<(e: KeyboardEvent) => void>(() => undefined);
   gRef.current = g;
@@ -194,6 +196,7 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
     const card = from && x[from].find((c) => c.uid === uid);
     if (!card || (z === "command" && !card.commander) || (from === z && z !== "battlefield")) return x;
     const moved = from === z ? x : move(x, uid, z);
+    if (z === "battlefield" && at.target !== null) { const on = attach(moved, uid, at.target); if (on !== moved) return on; }  // let go over a card: attached to it
     const r = surface.current?.getBoundingClientRect();
     // on the table the card lands where it was let go, holding the same point of it as when picked up
     return z === "battlefield" && r?.width && r.height ? placeCard(moved, uid, (at.x - r.left) / r.width - at.fx * boxRef.current.w, (at.y - r.top) / r.height - at.fy * boxRef.current.h, boxRef.current) : moved;
@@ -231,7 +234,9 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
     menu.open(e, [
       ...(c.image_id ? [{ label: "View details & rulings", onSelect: () => setDetails(c.image_id) }, "sep" as const] : []),  // a token has no card to look up
       ...(zone === "battlefield" ? [
-        { label: c.tapped ? "Untap" : "Tap", onSelect: () => set((x) => toggleTap(x, c.uid)) }, "sep" as const,
+        { label: c.tapped ? "Untap" : "Tap", onSelect: () => set((x) => toggleTap(x, c.uid)) },
+        { label: "Attach to…", onSelect: () => setAttaching(c.uid) },
+        ...(c.attachedTo !== undefined ? [{ label: "Detach", onSelect: () => set((x) => detach(x, c.uid)) }] : []), "sep" as const,
         { label: "+1/+1 counter", onSelect: () => set((x) => addCounter(x, c.uid, "plus", 1)) },
         { label: "−1/−1 counter", onSelect: () => set((x) => addCounter(x, c.uid, "plus", -1)) },
         { label: "Add a counter…", onSelect: () => setCounterForm({ uid: c.uid, name: "", n: 1 }) },
@@ -249,6 +254,7 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
     const t = e.target as HTMLElement;
     if (!cur || cur.phase !== "playing" || e.altKey || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable || document.querySelector("[aria-modal]")) return;
     const k = e.key.toLowerCase();
+    if (k === "escape" && attaching !== null) { setAttaching(null); return; }
     if ((e.ctrlKey || e.metaKey) && k === "z") { e.preventDefault(); undo(); return; }
     if (e.ctrlKey || e.metaKey) return;
     const where = zoom && ZONES.find((z) => cur[z].some((c) => c.uid === zoom.uid));
@@ -289,13 +295,14 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
         {/* the table: nonlands nearest the opponent (top), lands nearest the player (bottom) */}
         <div className="flex min-w-0 flex-1 flex-col">
         <section aria-label="Battlefield" {...(playing ? zone("battlefield") : {})} className={`flex min-h-0 flex-1 flex-col rounded-xl border border-line ${playing ? zone("battlefield").className : ""}`}>
-          <h3 className="px-2 pt-2 text-xs uppercase tracking-wide text-mute">Battlefield ({g.battlefield.length}) · place cards anywhere; the last one you move stays on top</h3>
+          <h3 className="px-2 pt-2 text-xs uppercase tracking-wide text-mute">Battlefield ({g.battlefield.length}) · place cards anywhere; the last one you move stays on top; drop one on another to attach it</h3>
+          {attaching !== null && <p role="status" className="px-2 text-xs text-accent">Click the card to attach it to (Esc cancels).</p>}
           {/* a free table: each card sits at its own x, y; the dashed line is only a guide between the permanents and the lands */}
           <div ref={surface} role="group" aria-label="Table" className="relative isolate min-h-[calc(var(--cw)*3.6)] flex-1">
             <span ref={probe} aria-hidden className="invisible absolute w-(--cw)" />
             <div className="pointer-events-none absolute inset-x-0 top-2/3 border-t border-dashed border-line" />
-            {g.battlefield.map((c) => c.x === undefined || c.y === undefined ? null
-              : <Card key={c.uid} c={c} at={{ x: c.x, y: c.y, box }} lifted={drag?.uid === c.uid} onHover={hover} onPress={playing ? press(c.uid) : undefined} onClick={() => set((x) => toggleTap(x, c.uid))} onMenu={cardMenu(c, "battlefield")} />)}
+            {g.battlefield.map((c) => (c.x === undefined || c.y === undefined) && c.attachedTo === undefined ? null
+              : <Card key={c.uid} c={c} at={{ ...placeOf(g, c, box), box }} lifted={drag?.uid === c.uid} ring={drag ? drag.target === c.uid && drag.uid !== c.uid : attaching !== null && attaching !== c.uid} badge={g.battlefield.filter((k) => k.attachedTo === c.uid).length} onHover={hover} onPress={playing ? press(c.uid) : undefined} onClick={() => (attaching !== null ? (set((x) => attach(x, attaching, c.uid)), setAttaching(null)) : set((x) => toggleTap(x, c.uid)))} onMenu={cardMenu(c, "battlefield")} />)}
           </div>
         </section>
           {playing && <div role="toolbar" aria-label="Actions" className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-accent/40 bg-accent/15 p-2">
