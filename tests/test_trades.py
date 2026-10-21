@@ -145,3 +145,29 @@ def test_trades_api_round_trip(db):
     assert (_qty(db, a), _qty(db, b)) == (1, 3)
     assert c.get("/api/trades").json()[0]["status"] == "done"
     assert c.delete(f"/api/trades/{tid}").status_code == 200 and c.get(f"/api/trades/{tid}").status_code == 404
+
+
+def test_a_card_in_two_locations_goes_out_from_both(db):
+    a, _ = _cards(db)
+    red = collection.add(db, scryfall_id=a, quantity=1, location="Red boxes")
+    green = collection.add(db, scryfall_id=a, quantity=1, location="Green boxes")
+    t = trades.create(db)
+    trades.add_out(db, t, red, 2)
+    g = trades.get(db, t)
+    assert g["out"][0]["available"] == 2 and [p["location"] for p in g["out"][0]["places"]] == ["Red boxes", "Green boxes"]
+    assert trades.add_out(db, t, green, 1) == g["out"][0]["id"]  # picking the other row sums into the same line
+    assert [(l["quantity"]) for l in trades.get(db, t)["out"]] == [3]
+    trades.edit_line(db, t, "out", g["out"][0]["id"], quantity=2)
+    trades.confirm(db, t)
+    assert _qty(db, a) == 0
+
+
+def test_an_over_ask_across_locations_names_the_free_copies(db):
+    a, _ = _cards(db)
+    red = collection.add(db, scryfall_id=a, quantity=1, location="Red boxes")
+    collection.add(db, scryfall_id=a, quantity=1, location="Green boxes")
+    t = trades.create(db)
+    trades.add_out(db, t, red, 3)
+    with pytest.raises(ValueError, match="only 2 free"):
+        trades.confirm(db, t)
+    assert _qty(db, a) == 2
