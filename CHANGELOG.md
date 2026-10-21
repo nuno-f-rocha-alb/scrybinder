@@ -5,6 +5,7 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 ## [Unreleased]
 
 ### Fixed
+- Trades: a new trade starts with today's date, and the calendar button of date fields is visible on the dark theme.
 - Card search (Trades, Lists, Add): a card whose newest printing has no picture (for example an art series card) now shows the picture of a printing that has one, and an image that fails to load no longer flashes the browser's broken-image icon.
 
 ### Added

@@ -171,3 +171,9 @@ def test_an_over_ask_across_locations_names_the_free_copies(db):
     with pytest.raises(ValueError, match="only 2 free"):
         trades.confirm(db, t)
     assert _qty(db, a) == 2
+def test_a_new_trade_has_todays_date(db):
+    import datetime
+    t = trades.create(db)
+    assert trades.get(db, t)["traded_on"] == datetime.date.today().isoformat()
+    trades.update(db, t, date="")  # the date can still be cleared
+    assert trades.get(db, t)["traded_on"] is None

@@ -47,7 +47,7 @@ def _text(v, what: str) -> str:
 
 def create(db, who="", note="", cash=0) -> int:
     with db:
-        return db.execute("INSERT INTO trades (who, note, cash) VALUES (?,?,?)",
+        return db.execute("INSERT INTO trades (who, note, cash, traded_on) VALUES (?,?,?,date('now','localtime'))",
                           (str(who or "").strip()[:200], str(note or "").strip()[:2000], _num(cash or 0, "cash"))).lastrowid
 
 
