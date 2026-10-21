@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { Zone } from "../goldfish";
 
-export type Dragging = { uid: number; x: number; y: number; over: Zone | null };
+export type Dragging = { uid: number; x: number; y: number; fx: number; fy: number; over: Zone | null };
 
 const zoneAt = (x: number, y: number): Zone | null => (document.elementFromPoint(x, y)?.closest("[data-zone]") as HTMLElement | null)?.dataset.zone as Zone | undefined ?? null;
 
@@ -29,7 +29,7 @@ export function usePointerDrag(onDrop: (uid: number, zone: Zone, at: DropAt) => 
     const move = (ev: PointerEvent) => {
       if (!on && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 5) return;
       on = true;
-      setDrag({ uid, x: ev.clientX, y: ev.clientY, over: zoneAt(ev.clientX, ev.clientY) });
+      setDrag({ uid, x: ev.clientX, y: ev.clientY, fx, fy, over: zoneAt(ev.clientX, ev.clientY) });
     };
     const finish = (ev: PointerEvent | KeyboardEvent, release: boolean) => {
       if (ev instanceof KeyboardEvent && ev.key !== "Escape") return;

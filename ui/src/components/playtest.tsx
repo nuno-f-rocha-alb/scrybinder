@@ -26,14 +26,14 @@ function Face({ c, w = "w-(--cw)" }: { c: GCard; w?: string }) {
 }
 
 /** A card on the table: click acts, press and drag moves it, right-click lists the moves. A tapped card turns sideways in a square cell so its neighbours do not overlap. */
-function Card({ c, onClick, onMenu, at, onHover, onPress, fan }: { c: GCard; onClick?: () => void; onMenu: (e: React.MouseEvent) => void; at?: { x: number; y: number; box: Box }; onHover?: (c: GCard | null, at?: DOMRect) => void; onPress?: (e: React.PointerEvent) => void; fan?: { i: number; n: number } }) {
+function Card({ c, onClick, onMenu, at, lifted,onHover, onPress, fan }: { c: GCard; onClick?: () => void; onMenu: (e: React.MouseEvent) => void; at?: { x: number; y: number; box: Box }; lifted?: boolean; onHover?: (c: GCard | null, at?: DOMRect) => void; onPress?: (e: React.PointerEvent) => void; fan?: { i: number; n: number } }) {
   const counters = [c.plus ? `${c.plus > 0 ? "+" : "−"}${Math.abs(c.plus)}/${c.plus > 0 ? "+" : "−"}${Math.abs(c.plus)}` : "", ...Object.entries(c.named ?? {}).map(([k, n]) => `${k} ${n}`)].filter(Boolean);
   const d = fan ? fan.i - (fan.n - 1) / 2 : 0;  // the fan: each card turns and sinks a little more the further it is from the middle
   return (
     <button onClick={onClick} onContextMenu={onMenu} aria-label={`${c.name}${c.tapped ? " (tapped)" : ""}${counters.length ? `, ${counters.join(", ")}` : ""}`} title={`${c.name} — drag to move, right-click for more`}
       onMouseEnter={(e) => onHover?.(c, e.currentTarget.getBoundingClientRect())} onMouseLeave={() => onHover?.(null)} onFocus={(e) => onHover?.(c, e.currentTarget.getBoundingClientRect())} onBlur={() => onHover?.(null)} onPointerDown={onPress}
       style={fan ? { "--r": `${d * 4}deg`, "--y": `${d * d * 2}px`, marginLeft: fan.i ? `calc(var(--hw) * ${fan.n > 7 ? -0.45 : -0.2})` : 0, zIndex: fan.i } as React.CSSProperties
-        : at ? { position: "absolute", left: `${Math.min(at.x, 1 - at.box.w) * 100}%`, top: `${Math.min(at.y, 1 - at.box.h) * 100}%`, zIndex: c.z ?? 0, width: "var(--cw)" } : undefined}  // on the free table, kept inside it
+        : at ? { position: "absolute", left: `${Math.min(at.x, 1 - at.box.w) * 100}%`, top: `${Math.min(at.y, 1 - at.box.h) * 100}%`, zIndex: c.z ?? 0, width: "var(--cw)", opacity: lifted ? 0 : undefined } : undefined}  // on the free table, kept inside it
       className={`relative flex shrink-0 cursor-pointer touch-none select-none items-center justify-center rounded-lg outline-none transition-transform focus-visible:ring-2 focus-visible:ring-accent ${fan ? "[transform:translateY(var(--y))_rotate(var(--r))] hover:!z-20 hover:[transform:translateY(-3rem)_scale(1.6)] focus-visible:!z-20" : ""}`}>
       <span className={`pointer-events-none block transition-transform ${c.tapped ? "rotate-90" : ""}`}><Face c={c} w={fan ? "w-(--hw)" : undefined} /></span>
       {counters.length > 0 && <span className="absolute bottom-1 left-1/2 flex -translate-x-1/2 flex-col items-center gap-0.5 text-[11px] font-semibold">
@@ -295,7 +295,7 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
             <span ref={probe} aria-hidden className="invisible absolute w-(--cw)" />
             <div className="pointer-events-none absolute inset-x-0 top-2/3 border-t border-dashed border-line" />
             {g.battlefield.map((c) => c.x === undefined || c.y === undefined ? null
-              : <Card key={c.uid} c={c} at={{ x: c.x, y: c.y, box }} onHover={hover} onPress={playing ? press(c.uid) : undefined} onClick={() => set((x) => toggleTap(x, c.uid))} onMenu={cardMenu(c, "battlefield")} />)}
+              : <Card key={c.uid} c={c} at={{ x: c.x, y: c.y, box }} lifted={drag?.uid === c.uid} onHover={hover} onPress={playing ? press(c.uid) : undefined} onClick={() => set((x) => toggleTap(x, c.uid))} onMenu={cardMenu(c, "battlefield")} />)}
           </div>
         </section>
           {playing && <div role="toolbar" aria-label="Actions" className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-accent/40 bg-accent/15 p-2">
@@ -333,8 +333,9 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
 
 
       {!playing && <OpeningHand key={g.phase} g={g} set={set} />}
-      {drag && dragged && <div className="pointer-events-none fixed z-[60] w-24 -translate-x-1/2 -translate-y-1/3 rotate-3 opacity-90 drop-shadow-2xl" style={{ left: drag.x, top: drag.y }} aria-hidden>
-        <Face c={dragged} w="w-24" /></div>}
+      {drag && dragged && <div className="pointer-events-none fixed z-[60] w-(--cw) opacity-90 drop-shadow-2xl" aria-hidden
+        style={{ left: `calc(${drag.x}px - ${drag.fx} * var(--cw))`, top: `calc(${drag.y}px - ${drag.fy} * var(--cw) * 88 / 63)` }}>  {/* the size of a card on the table, held by the point you grabbed: where it shows is where it lands */}
+        <Face c={dragged} w="w-(--cw)" /></div>}
       {pile && (
         <Modal title={ZONE_LABEL[pile]} onClose={() => setPile(null)} wide>
           <h2 className="mb-1 text-lg font-semibold">{ZONE_LABEL[pile]} ({g[pile].length})</h2>
