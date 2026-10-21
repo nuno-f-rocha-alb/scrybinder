@@ -105,11 +105,12 @@ def deck_doc(db, deck_id: int, prices: bool = False, note: str = "", title: str 
     return _doc("deck", title or deck["name"], sections, prices, note, {"format": deck["format"]})
 
 
-def trade_doc(db, trade_id: int, prices: bool = False, note: str = "", title: str = "") -> dict:
+def trade_doc(db, trade_id: int, prices: bool = False, note: str = "", title: str = "", cash: bool = False) -> dict:
     t = trades.get(db, trade_id)
     info = _info(db, [l["scryfall_id"] for l in t["out"] + t["in"]])
     side = lambda lines: [l for x in lines for l in [_line(info, x["scryfall_id"], x["quantity"], x["finish"], prices, x["price_each"])] if l]
-    return _doc("trade", title or "Trade", [{"name": "Giving", "cards": side(t["out"])}, {"name": "Getting", "cards": side(t["in"])}], prices, note)
+    return _doc("trade", title or "Trade", [{"name": "Giving", "cards": side(t["out"])}, {"name": "Getting", "cards": side(t["in"])}], prices, note,
+                {"cash": round(t["cash"], 2)} if cash else None)  # the cash (negative: the sender paid) goes only when asked
 
 
 def collection_doc(db, ids=None, filters=None, prices: bool = False, locations: bool = False, note: str = "", title: str = "") -> dict:
@@ -143,7 +144,7 @@ def build(db, spec: dict) -> dict:
     if kind == "deck":
         return deck_doc(db, spec.get("deck_id"), prices, note, title)
     if kind == "trade":
-        return trade_doc(db, spec.get("trade_id"), prices, note, title)
+        return trade_doc(db, spec.get("trade_id"), prices, note, title, bool(spec.get("cash")))
     if kind == "collection":
         ids = spec.get("ids")
         if ids is not None and (not isinstance(ids, list) or not all(isinstance(i, int) and not isinstance(i, bool) for i in ids)):
@@ -219,6 +220,8 @@ def parse(doc) -> dict:
         clean["note"] = _text(doc["note"], "note", 1000)
     if isinstance(meta.get("format"), str):
         clean["meta"] = {"format": meta["format"][:20]}
+    if doc["kind"] == "trade" and isinstance(meta.get("cash"), (int, float)) and not isinstance(meta["cash"], bool):
+        clean.setdefault("meta", {})["cash"] = round(meta["cash"], 2)
     return clean
 
 

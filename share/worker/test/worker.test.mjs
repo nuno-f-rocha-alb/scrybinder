@@ -81,3 +81,12 @@ test("too many lines are refused", async () => {
   const cards = Array.from({ length: 20001 }, (_, i) => ({ id: "a" + i, qty: 1 }));
   assert.equal((await post(env(), doc({ sections: [{ cards }] }))).status, 422);
 });
+
+test("the cash of a trade is kept, for a trade only", async () => {
+  const e = env();
+  const tradeDoc = doc({ kind: "trade", meta: { cash: -5.557, other: "x" } });
+  const { id } = await (await post(e, tradeDoc)).json();
+  assert.deepEqual(JSON.parse(e.SHARES.m.get(id)).doc.meta, { cash: -5.56 });
+  const other = await (await post(e, doc({ kind: "deck", meta: { cash: 3 } }))).json();
+  assert.equal(JSON.parse(e.SHARES.m.get(other.id)).doc.meta, undefined);
+});

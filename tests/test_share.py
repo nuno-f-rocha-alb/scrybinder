@@ -209,3 +209,17 @@ def test_card_search_sample_is_a_printing_with_an_image(db):
     c.get("/api/status?t=t")
     hits = c.get("/api/cards/search", params={"q": name.split()[0]}).json()
     assert next(h for h in hits if h["oracle_id"] == oid)["sample_id"] == a  # not the newest printing, which has no picture
+
+
+def test_trade_cash_goes_only_when_asked(db):
+    from scrybinder import trades as tr
+    a, b, _ = _cards(db)
+    t = tr.create(db, "Secret Rui", "note", -5.5)  # the sender paid 5.50
+    tr.add_in(db, t, b, 1)
+    assert "meta" not in share.trade_doc(db, t)
+    doc = share.trade_doc(db, t, prices=True, cash=True)
+    assert doc["meta"] == {"cash": -5.5} and "Secret Rui" not in json.dumps(doc)
+    assert share.parse(doc)["meta"] == {"cash": -5.5}
+    deck_like = {**doc, "kind": "list"}
+    assert "meta" not in share.parse(deck_like)  # only a trade carries cash
+    assert share.build(db, {"kind": "trade", "trade_id": t, "cash": True})["meta"]["cash"] == -5.5

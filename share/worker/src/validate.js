@@ -45,5 +45,6 @@ export function validate(doc) {
   const out = { format: FORMAT, v: VERSION, kind: doc.kind, title: text(doc.title, "title") || doc.kind, created: text(doc.created, "created", 10), prices: !!doc.prices, sections };
   if (doc.note) out.note = text(doc.note, "note", 1000);
   if (doc.meta && typeof doc.meta === "object" && typeof doc.meta.format === "string") out.meta = { format: doc.meta.format.slice(0, 20) };
+  if (doc.kind === "trade" && doc.meta && typeof doc.meta.cash === "number" && Number.isFinite(doc.meta.cash)) out.meta = { ...out.meta, cash: Math.round(doc.meta.cash * 100) / 100 };
   return out;
 }

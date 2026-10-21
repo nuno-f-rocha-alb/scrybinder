@@ -16,20 +16,21 @@ export default function ShareDialog({ spec, title, collection, onClose }: { spec
   const [note, setNote] = useState("");
   const [prices, setPrices] = useState(false);
   const [locations, setLocations] = useState(false);
+  const [cash, setCash] = useState(false);
   const [pre, setPre] = useState<Summary | null>(null);
   const [err, setErr] = useState("");
   const [busy, setBusy] = useState(false);
   const [made, setMade] = useState<Made | null>(null);
   const [links, setLinks] = useState(false);
   const { toast, node } = useToast();
-  const body = { ...spec, title: name, note, prices, locations };
+  const body = { ...spec, title: name, note, prices, locations, cash };
 
   useEffect(() => {
     let live = true;  // an older answer must not replace a newer one
-    api<Summary>("/share/preview", { method: "POST", body: JSON.stringify({ ...spec, prices, locations }) }).then((r) => { if (live) { setPre(r); setErr(""); } })
+    api<Summary>("/share/preview", { method: "POST", body: JSON.stringify({ ...spec, prices, locations, cash }) }).then((r) => { if (live) { setPre(r); setErr(""); } })
       .catch((e) => { if (live) { setPre(null); setErr(e.message); } });
     return () => { live = false; };
-  }, [JSON.stringify(spec), prices, locations]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(spec), prices, locations, cash]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const create = async () => {
     setBusy(true);
@@ -41,11 +42,12 @@ export default function ShareDialog({ spec, title, collection, onClose }: { spec
   return (
     <Modal title="Share" onClose={onClose}>
       <h2 className="mb-1 text-lg font-semibold">Share a link</h2>
-      <p className="mb-4 text-sm text-mute">A copy of the list is kept on the Scrybinder share service for 30 days. Anyone with the link can see it. Notes, locations, purchase prices{spec.kind === "trade" ? ", the other person and the cash" : ""} are never sent{collection ? " (locations only if you tick the box)" : ""}.</p>
+      <p className="mb-4 text-sm text-mute">A copy of the list is kept on the Scrybinder share service for 30 days. Anyone with the link can see it. Notes, locations, purchase prices{spec.kind === "trade" ? " and the other person" : ""} are never sent{collection ? " (locations only if you tick the box)" : ""}.</p>
       {!made && <div className="space-y-3">
         <Field label="Title"><input className="field" value={name} maxLength={200} onChange={(e) => setName(e.target.value)} /></Field>
         <Field label="Message for the viewer (optional)"><textarea className="field" rows={2} maxLength={1000} value={note} onChange={(e) => setNote(e.target.value)} /></Field>
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={prices} onChange={(e) => setPrices(e.target.checked)} />Include Cardmarket prices</label>
+        {spec.kind === "trade" && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={cash} onChange={(e) => setCash(e.target.checked)} />Include the cash (what was paid or received)</label>}
         {collection && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={locations} onChange={(e) => setLocations(e.target.checked)} />Include where each card is (its location)</label>}
         <p className="text-sm text-mute" aria-live="polite">{pre ? `${pre.cards} cards in ${pre.lines} lines (${Math.max(1, Math.round(pre.bytes / 1024))} KB) will be sent.` : err ? "" : "Checking…"}</p>
         {pre && !pre.configured && <p role="alert" className="text-sm text-gold">Sharing is not set up in this build: the share service has not been deployed yet (see share/README.md).</p>}
