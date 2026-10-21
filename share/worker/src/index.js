@@ -1,6 +1,7 @@
 // Scrybinder share service: keeps a share document for 30 days under a random id.
 //   POST   /api/share            body = share document  -> {id, delete_token, expires}
 //   GET    /api/share/:id        -> the document (CORS: the viewer only)
+//   PUT    /api/share/:id        header X-Delete-Token, body = share document -> {id, expires}: same link, new cards, 30 more days
 //   DELETE /api/share/:id        header X-Delete-Token   -> {ok}
 // No accounts, no cookies, no logging of bodies. Bindings: SHARES (KV), RATE (optional rate limiter), VIEWER_ORIGIN, TTL_DAYS.
 import { MAX_BYTES, validate } from "./validate.js";
@@ -66,6 +67,26 @@ export async function handle(request, env) {
   if (request.method === "GET" && id) {
     const rec = await env.SHARES.get(id, "json");
     return rec ? json(rec.doc, 200, cors) : err(404, "this link has expired or never existed", cors);
+  }
+
+  if (request.method === "PUT" && id) {  // the same link with the current cards: needs the delete token and gives the link a new 30 days
+    const rec = await env.SHARES.get(id, "json");
+    if (!rec) return err(404, "this link has expired or never existed");
+    if (!same(await sha256(request.headers.get("X-Delete-Token") || ""), rec.h)) return err(403, "wrong delete token");
+    if (!(request.headers.get("Content-Type") || "").toLowerCase().startsWith("application/json")) return err(415, "send application/json");
+    if (Number(request.headers.get("Content-Length") || 0) > MAX_BYTES) return err(413, "too big");
+    const raw = await request.text();
+    if (new TextEncoder().encode(raw).length > MAX_BYTES) return err(413, "too big");
+    let doc;
+    try {
+      doc = validate(JSON.parse(raw));
+    } catch (e) {
+      return err(422, e instanceof SyntaxError ? "the body is not JSON" : e.message);
+    }
+    const ttl = Math.max(1, Number(env.TTL_DAYS) || 30) * 86400;
+    const expires = new Date(Date.now() + ttl * 1000).toISOString();
+    await env.SHARES.put(id, JSON.stringify({ doc, h: rec.h, expires }), { expirationTtl: ttl });
+    return json({ id, expires });
   }
 
   if (request.method === "DELETE" && id) {

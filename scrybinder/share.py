@@ -272,7 +272,32 @@ def _client() -> httpx.Client:
     return httpx.Client(headers={"User-Agent": HEADERS["User-Agent"]}, timeout=30, transport=TRANSPORT)
 
 
-def create_link(db, doc: dict) -> dict:
+_SPEC_KEYS = ("kind", "deck_id", "trade_id", "list_id", "ids", "filters", "title", "note", "prices", "locations", "cash")
+
+
+def _ref(spec: dict) -> str | None:
+    """What a link is a link to, when that is one thing that can change (a deck, a trade or a list), so it can be found and updated."""
+    for k in ("deck_id", "trade_id", "list_id"):
+        if isinstance(spec.get(k), int) and not isinstance(spec.get(k), bool):
+            return f"{spec.get('kind')}:{spec[k]}"
+    return None
+
+
+def _failure(r):
+    msg = ""
+    try:
+        msg = r.json().get("error", "")
+    except ValueError:
+        pass
+    if r.status_code in (400, 413, 415, 422):
+        return ValueError(msg or "the share service refused this document")
+    if r.status_code in (403, 404):
+        return ValueError(msg or "that link no longer exists on the share service")
+    return Unreachable(msg or f"the share service answered {r.status_code}")
+
+
+def create_link(db, doc: dict, spec: dict | None = None) -> dict:
+    """Send the document to the share service and keep what it answers. `spec` (what to share and how) is kept too, so the link can be updated."""
     base = _api()
     try:
         with _client() as c:
@@ -280,14 +305,7 @@ def create_link(db, doc: dict) -> dict:
     except httpx.HTTPError as e:
         raise Unreachable(f"the share service could not be reached ({type(e).__name__})")
     if r.status_code != 200:
-        msg = ""
-        try:
-            msg = r.json().get("error", "")
-        except ValueError:
-            pass
-        if r.status_code in (400, 413, 415, 422):
-            raise ValueError(msg or "the share service refused this document")
-        raise Unreachable(msg or f"the share service answered {r.status_code}")
+        raise _failure(r)
     got = r.json()
     if not isinstance(got, dict) or not re.fullmatch(r"[0-9A-Za-z]{12}", str(got.get("id", ""))) or not isinstance(got.get("delete_token"), str):
         raise Unreachable("the share service sent an unexpected answer")
@@ -295,13 +313,55 @@ def create_link(db, doc: dict) -> dict:
     url = f"{viewer}/?id={got['id']}" if viewer else f"{base}/api/share/{got['id']}"
     s = summary(doc)
     with db:
-        db.execute("INSERT INTO shares (id, kind, title, url, delete_token, expires_at) VALUES (?,?,?,?,?,?)",
-                   (got["id"], doc["kind"], doc["title"], url, got["delete_token"], got.get("expires")))
+        saved = {k: spec[k] for k in _SPEC_KEYS if k in spec} if spec else None
+        db.execute("INSERT INTO shares (id, kind, title, url, delete_token, expires_at, spec, ref) VALUES (?,?,?,?,?,?,?,?)",
+                   (got["id"], doc["kind"], doc["title"], url, got["delete_token"], got.get("expires"), json.dumps(saved) if saved else None,
+                    _ref(saved) if saved else None))
     return {"id": got["id"], "url": url, "expires": got.get("expires"), **{k: s[k] for k in ("lines", "cards")}}
 
 
 def listing(db) -> list[dict]:
-    return [dict(r) for r in db.execute("SELECT id, kind, title, url, created_at, expires_at FROM shares ORDER BY created_at DESC, rowid DESC")]
+    out = []
+    for r in db.execute("SELECT id, kind, title, url, created_at, expires_at, spec FROM shares ORDER BY created_at DESC, rowid DESC"):
+        d = dict(r)
+        d["can_update"] = bool(d.pop("spec"))
+        out.append(d)
+    return out
+
+
+def existing(db, spec: dict) -> dict | None:
+    """The newest link that has not expired for the same deck, trade or list, if there is one."""
+    ref = _ref(spec)
+    now = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+    row = ref and db.execute("SELECT id, url, expires_at FROM shares WHERE ref=? AND spec IS NOT NULL AND (expires_at IS NULL OR expires_at > ?)"
+                             " ORDER BY created_at DESC, rowid DESC LIMIT 1", (ref, now)).fetchone()
+    return dict(row) if row else None
+
+
+def update_link(db, share_id: str, spec: dict | None = None) -> dict:
+    """Put the current cards under the same link and give it 30 more days. Without a new `spec` the link is rebuilt the way it was made;
+    the title, message and options of a new one are used, never a different deck, trade or list."""
+    row = db.execute("SELECT * FROM shares WHERE id=?", (share_id,)).fetchone()
+    if not row:
+        raise KeyError(share_id)
+    if not row["spec"]:
+        raise ValueError("this link was made by an older version and cannot be updated: make a new one")
+    keep = ("kind", "deck_id", "trade_id", "list_id")
+    new = {**json.loads(row["spec"]), **{k: spec[k] for k in _SPEC_KEYS if spec and k in spec and k not in keep}}
+    doc = build(db, new)
+    base = _api()
+    try:
+        with _client() as c:
+            r = c.put(f"{base}/api/share/{share_id}", json=doc, headers={"X-Delete-Token": row["delete_token"]})
+    except httpx.HTTPError as e:
+        raise Unreachable(f"the share service could not be reached ({type(e).__name__}): the link was not updated")
+    if r.status_code != 200:
+        raise _failure(r)
+    got = r.json()
+    with db:
+        db.execute("UPDATE shares SET title=?, expires_at=?, spec=? WHERE id=?", (doc["title"], got.get("expires"), json.dumps(new), share_id))
+    s = summary(doc)
+    return {"id": share_id, "url": row["url"], "expires": got.get("expires"), **{k: s[k] for k in ("lines", "cards")}}
 
 
 def delete_link(db, share_id: str) -> None:
