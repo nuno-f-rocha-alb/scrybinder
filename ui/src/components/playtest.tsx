@@ -7,6 +7,7 @@ import CardDetails from "./carddetails";
 import type { DeckCard } from "../decks";
 import { Box, GCard, Game, STEPS, SimResult, Step, Zone, addCounter, addNamed, attach, bottomMany, detach, draw, isLand, keep, move, mulligan, newGame, nextPhase, nextTurn, peek, placeCard, placeOf, pushHistory, reorderTop, seeded, settle, shuffleLibrary, simulate, toggleTap, token, untapAll } from "../goldfish";
 import { warnings } from "../rules";
+import { MatLayer, usePlaymat } from "./playmat";
 
 const btn = "cursor-pointer rounded-lg border border-line px-3 py-1.5 text-sm outline-none hover:bg-raised focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-40";
 const act = "cursor-pointer rounded-lg border border-accent/50 bg-accent/20 px-3 py-1.5 text-sm font-medium outline-none hover:bg-accent/40 focus-visible:ring-2 focus-visible:ring-accent disabled:cursor-default disabled:opacity-40";  // the game actions, next to the hand
@@ -139,6 +140,7 @@ function OpeningHand({ g, set }: { g: Game; set: (f: (x: Game) => Game) => void 
 
 /** Solo playtest of a deck: draw, mulligan and play turns against nobody. */
 export default function Playtest({ cards, commander }: { cards: DeckCard[]; commander: boolean }) {
+  const mat = usePlaymat();
   const [onPlay, setOnPlay] = useState(true);
   const [g, setG] = useState<Game | null>(null);
   const [search, setSearch] = useState<string | null>(null);  // the library search box (null: closed)
@@ -302,7 +304,8 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
       <div className="flex flex-1 items-stretch gap-4">
         {/* the table: nonlands nearest the opponent (top), lands nearest the player (bottom) */}
         <div className="flex min-w-0 flex-1 flex-col">
-        <section aria-label="Battlefield" {...(playing ? zone("battlefield") : {})} className={`flex min-h-0 flex-1 flex-col rounded-xl border border-line ${playing ? zone("battlefield").className : ""}`}>
+        <section aria-label="Battlefield" {...(playing ? zone("battlefield") : {})} className={`relative isolate flex min-h-0 flex-1 flex-col rounded-xl border border-line ${playing ? zone("battlefield").className : ""}`}>
+          <MatLayer mat={mat} />
           <h3 className="px-2 pt-2 text-xs uppercase tracking-wide text-mute">Battlefield ({g.battlefield.length}) · place cards anywhere; the last one you move stays on top; drop one on another to attach it</h3>
           {attaching !== null && <p role="status" className="px-2 text-xs text-accent">Click the card to attach it to (Esc cancels).</p>}
           {/* a free table: each card sits at its own x, y; the dashed line is only a guide between the permanents and the lands */}
