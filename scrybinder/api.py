@@ -775,6 +775,10 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
         _wrap(decks.assign, db, deck_id, card_id, body.get("items"))
         return {"ok": True}
 
+    @app.post("/api/decks/{deck_id}/cards/{card_id}/take")
+    def decks_take(deck_id: int, card_id: int, body: dict = Body(...)):
+        return {"moved": _wrap(decks.move_copy, db, deck_id, card_id, body.get("from_deck_id"), body.get("collection_id"), body.get("quantity", 1))}
+
     @app.post("/api/decks/{deck_id}/assign-free")
     def decks_assign_free(deck_id: int, body: dict = Body(default={})):
         ids = body.get("card_ids")

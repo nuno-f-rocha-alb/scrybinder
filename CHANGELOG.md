@@ -4,10 +4,16 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Added
+- Sharing a trade: a new "Include the cash" option (off by default) puts what was paid or received in the link, shown in the viewer next to the card prices. The other person and the note are still never sent.
+
 ### Fixed
+- Trades: a new trade starts with today's date, and the calendar button of date fields is visible on the dark theme.
 - Card search (Trades, Lists, Add): a card whose newest printing has no picture (for example an art series card) now shows the picture of a printing that has one, and an image that fails to load no longer flashes the browser's broken-image icon.
 
 ### Added
+- Trades: a card you own in several locations (for example one copy in two boxes) can go out as one line with the quantity you want: the copies are taken from every location where they are free, starting with the one you picked, and the line says where.
+- Decks: when a copy you need is held by another deck, the "Copies and tags" dialog has a "Take from <deck>" button that moves the copy from that deck to this one (the other deck shows the card as missing again and the copy moves to this deck's location).
 - Playtest: zoom the battlefield. The - / + buttons next to its title (and Ctrl + wheel over the table) make the whole table bigger, cards and playmat together, from 100% up to 300%; scroll to move around it. The window keeps its size and the zoom is remembered.
 - Playtest playmats: Settings > Playmat sets the background of the Playtest table. Put your own images (png, jpg, webp) in the `playmats` folder of the data folder (an Open folder button is there), or use the art of any card (dimmed and slightly blurred, because Scryfall's art is small). A Dim slider keeps the cards readable; None brings back the plain table.
 - Lists tab: make named lists of cards you pick (a trade binder, cards for sale, a wants list) and share them. Right-click a card in Cards, a deck or the deck search and choose "Add to a list…", or select several cards and press "Add to list"; a list can also hold cards you do not own, can be started from a location (a binder, a box or a deck), shows how many copies of each you own, and can be shared as a link, copied as text or saved as CSV. A shared list can be imported as a new list. A list is not a location: nothing moves in your collection.

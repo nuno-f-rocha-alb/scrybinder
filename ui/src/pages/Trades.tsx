@@ -7,7 +7,7 @@ import ShareDialog from "../components/sharedialog";
 
 type Line = {
   id: number; scryfall_id: string; name: string; set_code: string; collector_number: string; finish: string; condition: string; language: string;
-  location: string; quantity: number; untracked?: number; price: number | null; price_each: number | null; line_value: number; available?: number;
+  location: string; quantity: number; untracked?: number; places?: { location: string; free: number }[]; price: number | null; price_each: number | null; line_value: number; available?: number;
 };
 type Trade = {
   id: number; who: string; note: string; cash: number; traded_on: string | null; status: "draft" | "done"; created_at: string; done_at: string | null;
@@ -115,7 +115,7 @@ function LineRow({ side, line, editable, locs, onPatch, onRemove }: { side: Side
         <div className="flex items-start justify-between gap-2">
           <div className="min-w-0"><div className="truncate font-medium">{line.name}</div>
             <div className="text-xs text-mute">{line.set_code.toUpperCase()} #{line.collector_number} · {line.condition} · {LANGS[line.language] ?? line.language}
-              {side === "out" && line.location ? ` · ${line.location}` : ""}</div></div>
+              {side === "out" && !line.untracked ? ` · ${(line.places?.length ? line.places.map((p) => `${p.location || "no location"} ×${p.free}`).join(", ") : line.location) || "no location"}` : ""}</div></div>
           <div className="flex shrink-0 items-center gap-2">{line.untracked ? <Badge>Not in collection</Badge> : null}<Badge foil={line.finish !== "nonfoil"}>{FINISH[line.finish]}</Badge>
             {editable && <button className="cursor-pointer text-mute hover:text-danger" aria-label={`Remove ${line.name}`} onClick={onRemove}><IconX className="size-4" /></button>}</div>
         </div>

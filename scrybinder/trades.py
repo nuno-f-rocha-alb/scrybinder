@@ -10,6 +10,9 @@ _OUT_KEY = tuple(k for k in collection.KEY if k != "proxy")  # proxies never go 
 _IN_KEY = ("scryfall_id", "finish", "condition", "language", "location")
 _PRICE = "CASE {t}.finish WHEN 'foil' THEN k.eur_foil WHEN 'etched' THEN k.eur_etched ELSE k.eur END"
 _SIDES = {"out": ("trade_out", _OUT_KEY + ("untracked",)), "in": ("trade_in", _IN_KEY)}
+# What makes two outgoing lines the same card: the location is not part of it, the copies come from wherever they are free
+_SAME = {"out": tuple(c for c in _SIDES["out"][1] if c != "location"), "in": _IN_KEY}
+_ANYWHERE = tuple(k for k in _OUT_KEY if k != "location")
 TRADE_EDIT = ("who", "note", "cash", "date")
 LINE_FIELDS = ("quantity", "price", "finish", "condition", "language", "location")  # what a line edit may carry
 _LINE_EDIT = {"out": ("quantity", "price"), "extra": ("quantity", "price", "finish", "condition", "language"), "in": ("quantity", "price", "finish", "condition", "language", "location")}
@@ -44,7 +47,7 @@ def _text(v, what: str) -> str:
 
 def create(db, who="", note="", cash=0) -> int:
     with db:
-        return db.execute("INSERT INTO trades (who, note, cash) VALUES (?,?,?)",
+        return db.execute("INSERT INTO trades (who, note, cash, traded_on) VALUES (?,?,?,date('now','localtime'))",
                           (str(who or "").strip()[:200], str(note or "").strip()[:2000], _num(cash or 0, "cash"))).lastrowid
 
 
@@ -119,9 +122,10 @@ def _finishes(text) -> list[str]:
 
 def _add(db, trade_id: int, side: str, key: dict, quantity: int, price=None) -> int:
     table, cols = _SIDES[side]
-    where = " AND ".join(f"{c}=?" for c in cols)
+    same = _SAME[side]
+    where = " AND ".join(f"{c}=?" for c in same)
     with db:
-        have = db.execute(f"SELECT id FROM {table} WHERE trade_id=? AND {where}", [trade_id] + [key[c] for c in cols]).fetchone()
+        have = db.execute(f"SELECT id FROM {table} WHERE trade_id=? AND {where}", [trade_id] + [key[c] for c in same]).fetchone()
         if have:
             db.execute(f"UPDATE {table} SET quantity=quantity+? WHERE id=?", (quantity, have["id"]))
             return have["id"]
@@ -165,10 +169,11 @@ def delete_line(db, trade_id: int, side: str, line_id: int) -> None:
 
 
 def _free_rows(db, line) -> list[dict]:
-    """The collection rows an outgoing line takes copies from, with how many of each are not held by a deck."""
-    where = " AND ".join(f"c.{k}=?" for k in _OUT_KEY)
-    rows = [dict(r) for r in db.execute(f"SELECT c.id, c.quantity FROM collection c WHERE c.proxy=0 AND {where} ORDER BY c.id",
-                                        [line[k] for k in _OUT_KEY])]
+    """The collection rows an outgoing line takes copies from (the same card in any location; the line's own location first), with how many
+    of each are not held by a deck."""
+    where = " AND ".join(f"c.{k}=?" for k in _ANYWHERE)
+    rows = [dict(r) for r in db.execute(f"SELECT c.id, c.quantity, c.location FROM collection c WHERE c.proxy=0 AND {where} ORDER BY (c.location=?) DESC, c.id",
+                                        [line[k] for k in _ANYWHERE] + [line["location"]])]
     held = {}
     for u in decks.users(db, [r["id"] for r in rows]):
         held[u["collection_id"]] = held.get(u["collection_id"], 0) + u["quantity"]
@@ -185,7 +190,9 @@ def get(db, trade_id: int, availability: bool = True) -> dict:
     for line in t["out"] if availability and t["status"] == "draft" else []:
         if line["untracked"]:
             continue
-        line["available"] = sum(r["free"] for r in _free_rows(db, line))
+        rows = _free_rows(db, line)
+        line["available"] = sum(r["free"] for r in rows)
+        line["places"] = [{"location": r["location"], "free": r["free"]} for r in rows if r["free"]]  # where the copies are
     for line in t["out"] + t["in"]:
         line["price_each"] = line["price"] if line["price"] is not None else line["market"]
         line["line_value"] = round(line["quantity"] * (line["price_each"] or 0), 2)
