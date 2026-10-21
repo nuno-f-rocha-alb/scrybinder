@@ -1,2 +1,2 @@
 """Scrybinder: scan, identify and catalogue your Magic: The Gathering collection locally."""
-__version__ = "0.8.1"
+__version__ = "0.8.2"
