@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Select } from "../components/select";
 import { createPortal } from "react-dom";
-import { IconAlertTriangle, IconArrowLeft, IconBox, IconCheck, IconChecklist, IconCopy, IconDownload, IconPlus, IconStack2, IconTrash, IconUpload, IconX } from "@tabler/icons-react";
+import { IconAlertTriangle, IconArrowLeft, IconBox, IconCheck, IconChecklist, IconCopy, IconDownload, IconPlus, IconShare, IconStack2, IconTrash, IconUpload, IconX } from "@tabler/icons-react";
 import { api, eur, qs } from "../api";
 import { BOARDS, BOARD_LABEL, Board, exportDeckList, CardFilter, Deck as DeckT, DeckCard as DeckCardT, DeckStats, editionOf, FORMATS, Format, GROUPS, GroupBy, Legality, OracleRow, Preview, SORTS, SortBy, VIEWS, View, groupCards, matchesFilter, resultPreview, toPreview } from "../decks";
 import { CardImg, FinishTag, Modal, cardmarketUrl, openExternal, scryfallUrl, useToast } from "../components/ui";
@@ -19,6 +19,7 @@ import Snapshots from "../components/snapshots";
 import Suggestions from "../components/suggestions";
 import AddMissingDialog from "../components/addmissing";
 import AddCards from "../components/addcards";
+import ShareDialog from "../components/sharedialog";
 import ImportDialog, { Skipped } from "../components/decklist";
 import type { ImportReport } from "../components/decklist";
 
@@ -80,6 +81,7 @@ export default function Deck({ id, onBack, focusOracle }: { id: number; onBack: 
   const [showProblems, setShowProblems] = useState(false);
   const [assignId, setAssignId] = useState<number | null>(null);
   const [importing, setImporting] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const [adding, setAdding] = useState(false);
   const [folded, setFolded] = useState<Set<string>>(() => { try { return new Set<string>(JSON.parse(localStorage.getItem("scrybinder.folded") ?? "[]")); } catch { return new Set<string>(); } });
   const setFoldedKeys = (next: Set<string>) => { setFolded(next); try { const kept = (JSON.parse(localStorage.getItem("scrybinder.folded") ?? "[]") as string[]).filter((k) => k.startsWith("sug:")); localStorage.setItem("scrybinder.folded", JSON.stringify([...[...next].filter((k) => !k.startsWith("sug:")), ...kept])); }  /* the Suggestions tab shares this key: keep its entries */ catch { /* no storage */ } };
@@ -211,6 +213,7 @@ export default function Deck({ id, onBack, focusOracle }: { id: number; onBack: 
           <button className="btn-ghost" title="Add the cards of a list (Moxfield, Archidekt, MTGO style) to this deck" onClick={() => setImporting(true)}>
             <IconUpload className="size-4" />Import list
           </button>
+          <button className="btn-ghost" title="Make a link to this deck that anyone can open" onClick={() => setSharing(true)}><IconShare className="size-4" />Share</button>
           <button className="btn-ghost" title="Save the deck as a text list" onClick={exportList}>
             <IconDownload className="size-4" />Export list
           </button>
@@ -339,6 +342,7 @@ export default function Deck({ id, onBack, focusOracle }: { id: number; onBack: 
         return <DeckPicker oracleId={c.oracle_id} scryfallId={c.scryfall_id} finish={c.finish} name={c.name} excludeId={id} onClose={() => setPickId(null)}
           onDone={(n) => { setPickId(null); toast(`${c.name} added to ${n}`); }} />; })()}
       {menu.node}
+      {sharing && deck && <ShareDialog title={deck.name} spec={{ kind: "deck", deck_id: id }} onClose={() => setSharing(false)} />}
       {importing && <ImportDialog deckId={id} onClose={() => setImporting(false)} onDone={(r) => { setImporting(false); setImported(r); reload(); }} />}
       {imported && (
         <Modal title="Deck list imported" onClose={() => setImported(null)}>

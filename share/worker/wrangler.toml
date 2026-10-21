@@ -1,0 +1,20 @@
+name = "scrybinder-share"
+main = "src/index.js"
+compatibility_date = "2025-01-01"
+
+[vars]
+# the origin (scheme + host, no path) of the viewer on GitHub Pages: the only site allowed to read shares from a browser
+VIEWER_ORIGIN = "https://nuno-f-rocha-alb.github.io"
+TTL_DAYS = "30"
+
+# Create it once with `npx wrangler kv namespace create SHARES` and paste the id it prints here.
+[[kv_namespaces]]
+binding = "SHARES"
+id = "REPLACE_WITH_THE_KV_NAMESPACE_ID"
+
+# At most 20 shares a minute per IP address.
+[[unsafe.bindings]]
+name = "RATE"
+type = "ratelimit"
+namespace_id = "1001"
+simple = { limit = 20, period = 60 }

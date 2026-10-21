@@ -30,3 +30,10 @@ jobs:
       - run: uv run pytest
       - run: npm ci && npm run build
         working-directory: ui
+      - name: Share service and viewer tests
+        shell: bash
+        run: |
+          set -e
+          node --test
+          cd ../test && node --test
+        working-directory: share/worker

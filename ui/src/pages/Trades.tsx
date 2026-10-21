@@ -1,8 +1,9 @@
 import { useEffect, useState } from "react";
-import { IconArrowLeft, IconCopy, IconPlus, IconSearch, IconTrash, IconX } from "@tabler/icons-react";
+import { IconArrowLeft, IconCopy, IconPlus, IconShare, IconSearch, IconTrash, IconX } from "@tabler/icons-react";
 import { api, CONDITIONS, eur, FINISH, LANGS, Print, qs, Collection } from "../api";
 import { Combo, Select } from "../components/select";
 import { Badge, CardImg, Field, HoverZoom, Modal, useToast } from "../components/ui";
+import ShareDialog from "../components/sharedialog";
 
 type Line = {
   id: number; scryfall_id: string; name: string; set_code: string; collector_number: string; finish: string; condition: string; language: string;
@@ -145,6 +146,7 @@ function Detail({ id, onBack }: { id: number; onBack: () => void }) {
   const [t, setT] = useState<Trade | null>(null);
   const [adding, setAdding] = useState<Side | null>(null);
   const [confirming, setConfirming] = useState(false);
+  const [sharing, setSharing] = useState(false);
   const [locs, setLocs] = useState<string[]>([]);
   const [meta, setMeta] = useState({ who: "", note: "", cash: "", date: "" });
   const { toast, node } = useToast();
@@ -211,12 +213,14 @@ function Detail({ id, onBack }: { id: number; onBack: () => void }) {
           <span className="ml-1 text-mute">(market prices unless you set one)</span>
         </div>
         <div className="flex flex-wrap gap-2">
+          <button className="btn-ghost" onClick={() => setSharing(true)} disabled={!t.out.length && !t.in.length} title="Make a link to this trade (without the person, the note or the cash)"><IconShare className="size-4" />Share</button>
           <button className="btn-ghost" onClick={summary} disabled={!t.out.length && !t.in.length}><IconCopy className="size-4" />Copy as text</button>
           {draft && <button className="btn-ghost" onClick={evenOut} disabled={!t.out.length && !t.in.length} title="Set the cash so that the net is zero">Even out with cash</button>}
           <button className="btn-danger" onClick={remove}><IconTrash className="size-4" />{draft ? "Delete draft" : "Delete from history"}</button>
           {draft && <button className="btn-primary" disabled={!t.out.length && !t.in.length} onClick={() => setConfirming(true)}>Confirm trade</button>}
         </div>
       </div>
+      {sharing && <ShareDialog title="Trade" spec={{ kind: "trade", trade_id: id }} onClose={() => setSharing(false)} />}
       {adding && <Picker side={adding} onClose={() => setAdding(null)}
         onPick={async (b, extra) => { await send(extra ? "/extra" : `/${adding}`, "POST", b, "Added"); }} />}
       {confirming && (

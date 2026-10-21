@@ -1,0 +1,38 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; img-src https://api.scryfall.com https://cards.scryfall.io data: blob:; connect-src https://*.workers.dev http://127.0.0.1:* http://localhost:*; base-uri 'none'; form-action 'none'">
+  <meta name="referrer" content="no-referrer">
+  <title>Scrybinder share</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <div class="brand">Scrybinder <span>share</span></div>
+  </header>
+  <main>
+    <div class="head">
+      <div>
+        <h1 id="title">Shared cards</h1>
+        <p id="sub" class="sub"></p>
+        <p id="note" class="note" hidden></p>
+      </div>
+      <div id="actions" class="actions" hidden>
+        <button id="copy" type="button">Copy as text</button>
+        <button id="download" type="button">Download JSON</button>
+      </div>
+    </div>
+    <p id="message" class="message" role="status" hidden></p>
+    <div id="open" class="open">
+      <p>Open a link someone sent you, or a Scrybinder share file (<code>.scrybinder.json</code>).</p>
+      <label class="filebtn">Open a file<input id="file" type="file" accept=".json,application/json"></label>
+      <p class="hint">You can also drop a file anywhere on this page.</p>
+    </div>
+    <div id="sections"></div>
+  </main>
+  <footer>Card data and images © Scryfall. Scrybinder is not affiliated with Wizards of the Coast. This page has no accounts, cookies or tracking.</footer>
+  <script type="module" src="viewer.js"></script>
+</body>
+</html>
