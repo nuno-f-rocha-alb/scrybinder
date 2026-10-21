@@ -35,8 +35,8 @@ function Card({ c, onClick, onMenu, at, lifted, ring, warn, badge, onHover, onPr
       onMouseEnter={(e) => onHover?.(c, e.currentTarget.getBoundingClientRect())} onMouseLeave={() => onHover?.(null)} onFocus={(e) => onHover?.(c, e.currentTarget.getBoundingClientRect())} onBlur={() => onHover?.(null)} onPointerDown={onPress}
       style={fan ? { "--r": `${d * 4}deg`, "--y": `${d * d * 2}px`, marginLeft: fan.i ? `calc(var(--hw) * ${-(1 - Math.min(0.8, 5.8 / Math.max(fan.n - 1, 1)))})` : 0, zIndex: fan.i } as React.CSSProperties
         : at ? { position: "absolute", left: `${Math.min(at.x, 1 - at.box.w) * 100}%`, top: `${Math.min(at.y, 1 - at.box.h) * 100}%`, zIndex: at.z, width: "var(--cw)", opacity: lifted ? 0 : undefined, pointerEvents: lifted ? "none" : undefined } : undefined}  // on the free table, kept inside it
-      className={`relative flex shrink-0 cursor-pointer touch-none select-none items-center justify-center rounded-lg outline-none transition-transform focus-visible:ring-2 focus-visible:ring-accent ${fan ? "[transform:translateY(var(--y))_rotate(var(--r))] hover:!z-40 hover:[transform:translateY(-3rem)_scale(1.6)] focus-visible:!z-40" : ""} ${ring ? "ring-2 ring-accent" : warn ? "ring-2 ring-amber-400" : ""}`}>
-      <span className={`pointer-events-none block transition-transform ${c.tapped ? "rotate-90" : ""}`}><Face c={c} w={fan ? "w-(--hw)" : undefined} /></span>
+      className={`group relative flex shrink-0 cursor-pointer touch-none select-none items-center justify-center rounded-lg outline-none transition-transform focus-visible:ring-2 focus-visible:ring-accent ${fan ? "[transform:translateY(var(--y))_rotate(var(--r))] " : ""} ${ring ? "ring-2 ring-accent" : warn ? "ring-2 ring-amber-400" : ""}`}>
+      <span className={`pointer-events-none block transition-transform ${c.tapped ? "rotate-90" : ""} ${fan ? "group-hover:-translate-y-4 group-focus-visible:-translate-y-4" : ""}`}>  {/* a hand card only lifts: the big picture is the preview, which never catches the pointer, so the cards beside it stay reachable */}<Face c={c} w={fan ? "w-(--hw)" : undefined} /></span>
       {!!badge && <span className="absolute right-0 top-0 rounded bg-accent px-1 text-[11px] font-semibold text-white" title="Cards attached to this one">+{badge}</span>}
       {counters.length > 0 && <span className="absolute bottom-1 left-1/2 flex -translate-x-1/2 flex-col items-center gap-0.5 text-[11px] font-semibold">
         {counters.map((t) => <span key={t} className="rounded bg-black/80 px-1.5 text-white">{t}</span>)}</span>}
@@ -361,10 +361,11 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
           </div>
         </Modal>
       )}
-      {zoom && zoomAt && !drag && !g.hand.some((c) => c.uid === zoom.uid) && (() => {  // beside the card: to its right, or to its left when there is no room; kept inside the window
+      {zoom && zoomAt && !drag && (() => {  // beside a table card: to its right, or to its left when there is no room; above a hand card; kept inside the window
         const w = 288, h = w * 88 / 63, gap = 12;
-        const left = zoomAt.right + gap + w <= window.innerWidth - 8 ? zoomAt.right + gap : Math.max(8, zoomAt.left - gap - w);
-        const top = Math.min(Math.max(8, zoomAt.top + zoomAt.height / 2 - h / 2), window.innerHeight - h - 8);
+        const inHand = g.hand.some((c) => c.uid === zoom.uid);
+        const left = inHand ? Math.min(Math.max(8, zoomAt.left + zoomAt.width / 2 - w / 2), window.innerWidth - w - 8) : zoomAt.right + gap + w <= window.innerWidth - 8 ? zoomAt.right + gap : Math.max(8, zoomAt.left - gap - w);
+        const top = inHand ? Math.max(8, zoomAt.top - h - gap) : Math.min(Math.max(8, zoomAt.top + zoomAt.height / 2 - h / 2), window.innerHeight - h - 8);
         return <div className="pointer-events-none fixed z-40 overflow-hidden rounded-[4.5%] shadow-2xl shadow-black/70 ring-1 ring-white/10" style={{ left, top, width: w }} aria-hidden>
           {zoom.image_id ? <CardImg id={zoom.image_id} size="large" /> : <div className="flex aspect-[63/88] items-center justify-center bg-raised p-4 text-center text-sm">{zoom.name}</div>}</div>;
       })()}
