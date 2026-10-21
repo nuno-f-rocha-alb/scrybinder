@@ -102,3 +102,26 @@ def test_done_trade_keeps_its_prices_and_rejects_non_text(db):
     trades.confirm(db, t)
     db.execute("UPDATE cards SET eur=9.0 WHERE id=?", (a,))  # the market moves afterwards
     assert trades.get(db, t)["out_value"] == 1.5
+
+
+def test_untracked_card_goes_out_without_touching_the_collection(db):
+    a, b = _cards(db)
+    own = collection.add(db, scryfall_id=b)
+    t = trades.create(db)
+    x = trades.add_extra(db, t, a, 2, finish="foil")
+    trades.add_out(db, t, own)
+    g = trades.get(db, t)
+    assert [l["untracked"] for l in g["out"]] == [1, 0] or [l["untracked"] for l in g["out"]] == [0, 1]
+    assert g["out_value"] == 7.5  # 2 foil at 3.00 + 1 at 1.50
+    trades.edit_line(db, t, "out", x, quantity=1, finish="nonfoil")
+    trades.confirm(db, t)
+    assert _qty(db, a) == 0 and _qty(db, b) == 0  # the untracked card was never in the collection
+    assert trades.get(db, t)["traded_on"]
+
+
+def test_trade_date(db):
+    t = trades.create(db)
+    trades.update(db, t, date="2026-09-30")
+    assert trades.get(db, t)["traded_on"] == "2026-09-30"
+    with pytest.raises(ValueError, match="date"):
+        trades.update(db, t, date="yesterday")

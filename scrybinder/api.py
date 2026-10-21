@@ -827,6 +827,11 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
     def trades_add_out(trade_id: int, body: dict = Body(...)):
         return {"id": _wrap(trades.add_out, db, trade_id, body.get("collection_id"), body.get("quantity", 1))}
 
+    @app.post("/api/trades/{trade_id}/extra")
+    def trades_add_extra(trade_id: int, body: dict = Body(...)):
+        return {"id": _wrap(trades.add_extra, db, trade_id, str(body.get("scryfall_id") or ""), body.get("quantity", 1), body.get("price"),
+                            **{k: body.get(k) for k in ("finish", "condition", "language")})}
+
     @app.post("/api/trades/{trade_id}/in")
     def trades_add_in(trade_id: int, body: dict = Body(...)):
         return {"id": _wrap(trades.add_in, db, trade_id, str(body.get("scryfall_id") or ""), body.get("quantity", 1), body.get("price"),

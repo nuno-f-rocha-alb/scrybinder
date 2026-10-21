@@ -1,6 +1,7 @@
 """Trades: an in-person trade or sale, kept as a draft until confirmed. Confirming takes the outgoing copies out of the collection
 and adds the incoming ones; a draft never touches the collection. Outgoing lines name a collection row by its key (row ids change
 when rows split or merge) and are looked up again at confirm."""
+import datetime
 import json
 
 from . import collection, decks
@@ -8,8 +9,8 @@ from . import collection, decks
 _OUT_KEY = tuple(k for k in collection.KEY if k != "proxy")  # proxies never go out
 _IN_KEY = ("scryfall_id", "finish", "condition", "language", "location")
 _PRICE = "CASE {t}.finish WHEN 'foil' THEN k.eur_foil WHEN 'etched' THEN k.eur_etched ELSE k.eur END"
-_SIDES = {"out": ("trade_out", _OUT_KEY), "in": ("trade_in", _IN_KEY)}
-_LINE_EDIT = {"out": ("quantity", "price"), "in": ("quantity", "price", "finish", "condition", "language", "location")}
+_SIDES = {"out": ("trade_out", _OUT_KEY + ("untracked",)), "in": ("trade_in", _IN_KEY)}
+_LINE_EDIT = {"out": ("quantity", "price"), "extra": ("quantity", "price", "finish", "condition", "language"), "in": ("quantity", "price", "finish", "condition", "language", "location")}
 
 
 def _trade(db, trade_id: int, draft: bool = False):
@@ -51,6 +52,12 @@ def update(db, trade_id: int, **fields) -> None:
     for k, v in fields.items():
         if k in ("who", "note"):
             sets.append(f"{k}=?"); args.append(str(v or "").strip()[: 200 if k == "who" else 2000])
+        elif k == "date":
+            try:
+                args.append(datetime.date.fromisoformat(v).isoformat() if v else None)
+            except (TypeError, ValueError):
+                raise ValueError("date: YYYY-MM-DD")
+            sets.append("traded_on=?")
         elif k == "cash":
             sets.append("cash=?"); args.append(_num(v or 0, "cash"))
     if sets:
@@ -72,7 +79,16 @@ def add_out(db, trade_id: int, collection_id: int, quantity: int = 1) -> int:
         raise KeyError(collection_id)
     if row["proxy"]:
         raise ValueError("a proxy is not a real copy: it cannot be traded")
-    return _add(db, trade_id, "out", {k: row[k] for k in _OUT_KEY}, quantity)
+    return _add(db, trade_id, "out", {**{k: row[k] for k in _OUT_KEY}, "untracked": 0}, quantity)
+
+
+def add_extra(db, trade_id: int, scryfall_id: str, quantity: int = 1, price=None, **fields) -> int:
+    """A card going out that you own but never put in the collection: it is recorded and valued, nothing is taken out at confirm."""
+    _trade(db, trade_id, draft=True)
+    key = {"scryfall_id": scryfall_id, **{k: _text(fields.get(k), k) or collection.DEFAULTS[k] for k in ("finish", "condition", "language")}}
+    _check_in(db, key)
+    key.update(location="", altered=0, signed=0, misprint=0, untracked=1)
+    return _add(db, trade_id, "out", key, _qty(quantity), None if price is None else _num(price, "price", 0))
 
 
 def add_in(db, trade_id: int, scryfall_id: str, quantity: int = 1, price=None, **fields) -> int:
@@ -117,12 +133,12 @@ def edit_line(db, trade_id: int, side: str, line_id: int, **fields) -> None:
     line = db.execute(f"SELECT * FROM {table} WHERE id=? AND trade_id=?", (line_id, trade_id)).fetchone()
     if not line:
         raise KeyError(line_id)
-    new = {k: fields[k] for k in _LINE_EDIT[side] if k in fields}
+    new = {k: fields[k] for k in _LINE_EDIT["extra" if side == "out" and line["untracked"] else side] if k in fields}
     if "quantity" in new:
         _qty(new["quantity"])
     if "price" in new and new["price"] is not None:
         _num(new["price"], "price", 0)
-    if side == "in" and len(new.keys() & set(_IN_KEY)):
+    if len(new.keys() & {"finish", "condition", "language", "location"}):
         merged = {**dict(line), **new}
         for k in _IN_KEY[1:]:
             merged[k] = _text(merged[k], k) if k == "location" else (_text(merged[k], k) or collection.DEFAULTS[k])
@@ -165,6 +181,8 @@ def get(db, trade_id: int, availability: bool = True) -> dict:
     for side, (table, _) in _SIDES.items():
         t[side] = [dict(r) for r in db.execute(base.format(p=_PRICE.format(t="l"), t=table), (trade_id,))]
     for line in t["out"] if availability and t["status"] == "draft" else []:
+        if line["untracked"]:
+            continue
         line["available"] = sum(r["free"] for r in _free_rows(db, line))
     for line in t["out"] + t["in"]:
         line["price_each"] = line["price"] if line["price"] is not None else line["market"]
@@ -180,7 +198,7 @@ def _totals(t: dict) -> None:
 
 
 def listing(db) -> list[dict]:
-    ids = [r[0] for r in db.execute("SELECT id FROM trades ORDER BY (status='draft') DESC, COALESCE(done_at, created_at) DESC, id DESC")]
+    ids = [r[0] for r in db.execute("SELECT id FROM trades ORDER BY (status='draft') DESC, COALESCE(traded_on, done_at, created_at) DESC, id DESC")]
     out = []
     for i in ids:
         t = get(db, i, availability=False)
@@ -196,7 +214,7 @@ def confirm(db, trade_id: int) -> None:
     if not t["out"] and not t["in"]:
         raise ValueError("the trade has no cards")
     plan = []
-    for line in t["out"]:  # check every line before changing anything
+    for line in (x for x in t["out"] if not x["untracked"]):  # check every line before changing anything
         rows = _free_rows(db, line)
         free = sum(r["free"] for r in rows)
         if free < line["quantity"]:
@@ -219,4 +237,5 @@ def confirm(db, trade_id: int) -> None:
         for side, (table, _) in _SIDES.items():  # a finished trade keeps the prices it was valued at
             for line in t[side]:
                 db.execute(f"UPDATE {table} SET price=? WHERE id=? AND price IS NULL", (line["market"], line["id"]))
-        db.execute("UPDATE trades SET status='done', done_at=strftime('%Y-%m-%dT%H:%M:%SZ','now') WHERE id=?", (trade_id,))
+        db.execute("UPDATE trades SET status='done', done_at=strftime('%Y-%m-%dT%H:%M:%SZ','now'),"
+                   " traded_on=COALESCE(traded_on, date('now','localtime')) WHERE id=?", (trade_id,))
