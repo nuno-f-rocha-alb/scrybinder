@@ -29,6 +29,11 @@ class Worker:
         if request.method == "POST":
             self.store[ID] = json.loads(request.content)
             return httpx.Response(200, json={"id": ID, "delete_token": "secret", "expires": "2026-11-20T00:00:00Z"})
+        if request.method == "PUT":
+            if request.headers.get("x-delete-token") != "secret":
+                return httpx.Response(403, json={"error": "wrong delete token"})
+            self.store[request.url.path.rsplit("/", 1)[1]] = json.loads(request.content)
+            return httpx.Response(200, json={"id": ID, "expires": "2026-12-20T00:00:00Z"})
         if request.method == "DELETE":
             if request.headers.get("x-delete-token") != "secret":
                 return httpx.Response(403)
@@ -223,3 +228,44 @@ def test_trade_cash_goes_only_when_asked(db):
     deck_like = {**doc, "kind": "list"}
     assert "meta" not in share.parse(deck_like)  # only a trade carries cash
     assert share.build(db, {"kind": "trade", "trade_id": t, "cash": True})["meta"]["cash"] == -5.5
+
+
+def test_update_a_link_keeps_the_address_and_sends_the_new_cards(db, worker):
+    a, b, c = _cards(db)
+    d, _ = _deck(db)
+    spec = {"kind": "deck", "deck_id": d, "title": "Mine", "prices": False}
+    first = share.create_link(db, share.build(db, spec), spec)
+    assert share.existing(db, {"kind": "deck", "deck_id": d})["id"] == ID
+    assert share.listing(db)[0]["can_update"] is True and "spec" not in share.listing(db)[0]
+    decks.add_card(db, d, _oracle(db, c), 2, "side", c)  # the deck changes after the link was made
+    got = share.update_link(db, ID, {"prices": True, "kind": "trade", "deck_id": 999})  # a new option is used, another source is not
+    assert got["url"] == first["url"] and got["cards"] == 7
+    assert worker.store[ID]["prices"] is True and any(s["name"] == "Sideboard" for s in worker.store[ID]["sections"])
+    assert share.listing(db)[0]["expires_at"] == "2026-12-20T00:00:00Z"
+    assert [r.method for r in worker.requests][-1] == "PUT"
+
+
+def test_a_link_without_its_spec_or_that_was_deleted_cannot_be_updated(db, worker):
+    d, _ = _deck(db)
+    share.create_link(db, share.deck_doc(db, d))  # made without a spec (an older version)
+    assert share.listing(db)[0]["can_update"] is False
+    with pytest.raises(ValueError, match="older version"):
+        share.update_link(db, ID)
+    db.execute("UPDATE shares SET spec=?, ref=? WHERE id=?", (json.dumps({"kind": "deck", "deck_id": d}), f"deck:{d}", ID))
+    db.execute("UPDATE shares SET delete_token='wrong' WHERE id=?", (ID,))
+    with pytest.raises(ValueError, match="wrong delete token"):
+        share.update_link(db, ID)
+    with pytest.raises(KeyError):
+        share.update_link(db, "nope")
+
+
+def test_update_route_and_existing_in_the_preview(db, worker):
+    c = TestClient(create_app(db, token="t", allowed_hosts={"testserver"}))
+    c.get("/api/status?t=t")
+    d, _ = _deck(db)
+    assert c.post("/api/share/preview", json={"kind": "deck", "deck_id": d}).json()["existing"] is None
+    c.post("/api/share", json={"kind": "deck", "deck_id": d})
+    assert c.post("/api/share/preview", json={"kind": "deck", "deck_id": d}).json()["existing"]["id"] == ID
+    assert c.put(f"/api/shares/{ID}", json={"note": "now with a note"}).status_code == 200
+    assert worker.store[ID]["note"] == "now with a note"
+    assert c.put("/api/shares/nope", json={}).status_code == 404

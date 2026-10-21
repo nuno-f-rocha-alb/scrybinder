@@ -157,7 +157,7 @@ CREATE TABLE IF NOT EXISTS list_items (  -- copies of what was picked, not links
     UNIQUE (list_id, scryfall_id, finish, condition, language)
 );
 CREATE TABLE IF NOT EXISTS shares (  -- links made with the share service; delete_token is the secret that lets this app remove one
-    id TEXT PRIMARY KEY, kind TEXT NOT NULL, title TEXT NOT NULL, url TEXT NOT NULL, delete_token TEXT NOT NULL, expires_at TEXT,
+    id TEXT PRIMARY KEY, kind TEXT NOT NULL, title TEXT NOT NULL, url TEXT NOT NULL, delete_token TEXT NOT NULL, expires_at TEXT, spec TEXT, ref TEXT,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
 CREATE TABLE IF NOT EXISTS trade_in (
@@ -171,7 +171,7 @@ CREATE TABLE IF NOT EXISTS trade_in (
 # additive migrations (never delete or rewrite data): (table, column, definition)
 _ADD = [("decks", "folder_id", "INTEGER REFERENCES deck_folders(id) ON DELETE SET NULL"),
         ("decks", "cover_card_id", "INTEGER REFERENCES deck_cards(id) ON DELETE SET NULL"), ("deck_cards", "finish", "TEXT"), ("cards", "illustration_id", "TEXT"), ("cards", "image_status", "TEXT"), ("scan_log", "topk_json", "TEXT"),
-        ("oracle_cards", "power", "TEXT"), ("oracle_cards", "toughness", "TEXT"), ("trades", "traded_on", "TEXT")]
+        ("oracle_cards", "power", "TEXT"), ("oracle_cards", "toughness", "TEXT"), ("trades", "traded_on", "TEXT"), ("shares", "spec", "TEXT"), ("shares", "ref", "TEXT")]
 
 
 def _migrate(db):

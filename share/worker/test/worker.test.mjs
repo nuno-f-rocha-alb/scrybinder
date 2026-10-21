@@ -90,3 +90,22 @@ test("the cash of a trade is kept, for a trade only", async () => {
   const other = await (await post(e, doc({ kind: "deck", meta: { cash: 3 } }))).json();
   assert.equal(JSON.parse(e.SHARES.m.get(other.id)).doc.meta, undefined);
 });
+
+test("PUT replaces the document under the same id, needs the token and renews the time", async () => {
+  const e = env();
+  const { id, delete_token } = await (await post(e, doc())).json();
+  const put = (token, body = doc({ title: "New" }), headers = { "Content-Type": "application/json" }) =>
+    handle(new Request(`https://w.example/api/share/${id}`, { method: "PUT", headers: { ...headers, ...(token ? { "X-Delete-Token": token } : {}) }, body: JSON.stringify(body) }), e);
+  assert.equal((await put()).status, 403);
+  assert.equal((await put("0".repeat(48))).status, 403);
+  assert.equal((await put(delete_token, doc(), { "Content-Type": "text/plain" })).status, 415);
+  assert.equal((await put(delete_token, doc({ kind: "x" }))).status, 422);
+  const r = await put(delete_token);
+  assert.equal(r.status, 200);
+  assert.equal((await r.json()).id, id);
+  assert.equal(JSON.parse(e.SHARES.m.get(id)).doc.title, "New");
+  assert.equal(e.SHARES.puts.at(-1).expirationTtl, 30 * 86400);
+  const del = await handle(new Request(`https://w.example/api/share/${id}`, { method: "DELETE", headers: { "X-Delete-Token": delete_token } }), e);
+  assert.equal(del.status, 200);  // the token still works after an update
+  assert.equal((await handle(new Request(`https://w.example/api/share/${id}`, { method: "PUT", headers: { "Content-Type": "application/json", "X-Delete-Token": delete_token }, body: JSON.stringify(doc()) }), e)).status, 404);
+});

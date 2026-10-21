@@ -950,11 +950,15 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
 
     @app.post("/api/share/preview")
     def share_preview(body: dict = Body(...)):
-        return _wrap(lambda: share.summary(share.build(db, body)))
+        return _wrap(lambda: {**share.summary(share.build(db, body)), "existing": share.existing(db, body)})
 
     @app.post("/api/share")
     def share_create(body: dict = Body(...)):
-        return _share_wrap(lambda: share.create_link(db, share.build(db, body)))
+        return _share_wrap(lambda: share.create_link(db, share.build(db, body), body))
+
+    @app.put("/api/shares/{share_id}")
+    def shares_update(share_id: str, body: dict = Body(default={})):
+        return _share_wrap(share.update_link, db, share_id, body)
 
     @app.get("/api/shares")
     def shares_list():
