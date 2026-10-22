@@ -974,6 +974,13 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
         text = (await request.body()).decode("utf-8-sig", errors="replace")
         return _wrap(share.import_text, db, text, location)
 
+    @app.post("/api/import-share-link")
+    def import_share_link(body: dict = Body(...)):
+        """Import what a share link points to, as if its file had been downloaded and chosen."""
+        def run():
+            return share.import_text(db, share.fetch_link(str(body.get("url") or "")), str(body.get("location") or ""))
+        return _share_wrap(run)
+
     # --- import / export ---
     @app.post("/api/import/{fmt}")
     async def imp(fmt: str, request: Request, location: str = ""):

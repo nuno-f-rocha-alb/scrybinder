@@ -29,6 +29,9 @@ class Worker:
         if request.method == "POST":
             self.store[ID] = json.loads(request.content)
             return httpx.Response(200, json={"id": ID, "delete_token": "secret", "expires": "2026-11-20T00:00:00Z"})
+        if request.method == "GET":
+            doc = self.store.get(request.url.path.rsplit("/", 1)[1])
+            return httpx.Response(200, json=doc) if doc else httpx.Response(404, json={"error": "gone"})
         if request.method == "PUT":
             if request.headers.get("x-delete-token") != "secret":
                 return httpx.Response(403, json={"error": "wrong delete token"})
@@ -283,3 +286,33 @@ def test_lines_carry_what_the_viewer_groups_and_sorts_by(db):
     assert "co" not in c and "ra" not in c and "mv" not in c and len(c["ty"]) == 80  # bad values are dropped, a long type is cut
     ok = share.parse({"format": "scrybinder-share", "v": 1, "kind": "collection", "sections": [{"cards": [line]}]})["sections"][0]["cards"][0]
     assert (ok["ty"], ok["mv"], ok["co"], ok["ra"]) == ("Legendary Creature — Human", 3, "WB", "rare")
+
+
+def test_import_from_a_link(db, worker):
+    d, _ = _deck(db)
+    share.create_link(db, share.deck_doc(db, d))
+    got = share.import_text(db, share.fetch_link(f"https://v.example/share/?id={ID}"))  # the whole link
+    assert got["kind"] == "deck" and got["cards"] == 5
+    assert share.import_text(db, share.fetch_link("  " + ID + " "))["kind"] == "deck"  # or just the id
+    assert worker.requests[-1].method == "GET" and str(worker.requests[-1].url) == "https://w.example/api/share/" + ID  # always the configured service
+    for bad in ("", "hello", "https://evil.example/?id=short", f"https://evil.example/x?id={ID}extra"):
+        with pytest.raises(ValueError, match="does not look like"):
+            share.fetch_link(bad)
+    with pytest.raises(ValueError, match="expired or was deleted"):
+        share.fetch_link("https://v.example/?id=ZzZzZzZzZzZz")
+
+
+def test_import_link_route_and_trades_are_only_for_looking(db, worker):
+    a, b, _ = _cards(db)
+    from scrybinder import trades as tr
+    t = tr.create(db)
+    tr.add_in(db, t, b, 1)
+    share.create_link(db, share.trade_doc(db, t))
+    c = TestClient(create_app(db, token="t", allowed_hosts={"testserver"}))
+    c.get("/api/status?t=t")
+    assert c.post("/api/import-share-link", json={"url": "?id=" + ID}).status_code == 422  # a trade cannot be imported
+    d, _ = _deck(db)
+    worker.store[ID] = share.deck_doc(db, d)
+    ok = c.post("/api/import-share-link", json={"url": f"http://x/?id={ID}"})
+    assert ok.status_code == 200 and ok.json()["cards"] == 5
+    assert c.post("/api/import-share-link", json={"url": "nope"}).status_code == 422

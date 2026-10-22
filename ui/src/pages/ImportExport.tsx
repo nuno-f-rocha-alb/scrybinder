@@ -21,8 +21,14 @@ export default function ImportExport() {
   const [exportLoc, setExportLoc] = useState<string | undefined>(undefined);
   const [locs, setLocs] = useState<string[]>([]);
   const [shareLoc, setShareLoc] = useState("");
+  const [link, setLink] = useState("");
   const [shareRes, setShareRes] = useState<{ kind: string; title: string; cards: number; skipped: string[]; deck_id?: number } | null>(null);
   const { toast, node } = useToast();
+  const importLink = async () => {
+    setShareRes(null);
+    try { setShareRes(await api(`/import-share-link`, { method: "POST", body: JSON.stringify({ url: link, location: shareLoc }) })); setLink(""); }
+    catch (e) { toast((e as Error).message, true); }
+  };
   const importShare = async (f: File | null) => {
     if (!f) return;
     setShareRes(null);
@@ -82,8 +88,13 @@ export default function ImportExport() {
       </section>
 
       <section>
-        <h2 className="mb-1 text-2xl font-semibold tracking-tight">Import a shared file</h2>
-        <p className="mb-4 max-w-2xl text-sm text-mute">A <code>.scrybinder.json</code> file downloaded from a share link. A deck becomes a new deck; a collection is added to the location below.</p>
+        <h2 className="mb-1 text-2xl font-semibold tracking-tight">Import a shared link or file</h2>
+        <p className="mb-4 max-w-2xl text-sm text-mute">Paste a Scrybinder share link (yours or someone else's), or choose a <code>.scrybinder.json</code> file downloaded from one. A deck becomes a new deck, a list becomes a list, and a collection is added to the location below. A trade is only for looking at.</p>
+        <form className="mb-3 flex max-w-2xl flex-wrap items-end gap-3 rounded-2xl border border-line bg-surface p-4" onSubmit={(e) => { e.preventDefault(); if (link.trim()) importLink(); }}>
+          <div className="min-w-48 flex-1"><span className="mb-1 block text-xs font-medium text-mute">Share link</span>
+            <input className="field" value={link} onChange={(e) => setLink(e.target.value)} placeholder="https://…/?id=…" aria-label="Share link" /></div>
+          <button type="submit" className="btn-primary" disabled={!link.trim()}>Import link</button>
+        </form>
         <div className="flex max-w-2xl flex-wrap items-end gap-3 rounded-2xl border border-line bg-surface p-4">
           <label className="btn-ghost cursor-pointer"><IconUpload className="size-4" />Choose share file
             <input type="file" accept=".json,application/json" className="sr-only" onChange={(e) => { importShare(e.target.files?.[0] ?? null); e.target.value = ""; }} /></label>

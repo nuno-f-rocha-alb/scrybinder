@@ -5,6 +5,7 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 ## [Unreleased]
 
 ### Added
+- Import > "Import a shared link or file": paste a Scrybinder share link (yours or someone else's) and it is imported like the downloaded file would be (a deck becomes a new deck, a list a list, a collection is added to a location; a trade is only for looking at). Only the id of the link is used: the app always asks the share service it is set up with.
 - Share links: the viewer page has View (Grid, Compact, List), Group (as shared, type, colour, mana value, rarity, set) and Sort (name, mana value, price, quantity, set) controls, remembered between visits. New links carry the type, mana value, colours and rarity of each card for that; older links still open but offer only what they have.
 
 ### Fixed

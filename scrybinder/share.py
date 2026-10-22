@@ -339,6 +339,30 @@ def create_link(db, doc: dict, spec: dict | None = None) -> dict:
     return {"id": got["id"], "url": url, "expires": got.get("expires"), **{k: s[k] for k in ("lines", "cards")}}
 
 
+def link_id(text: str) -> str:
+    """The id of a share link (the whole link, `?id=...`, or just the id). Only the id is used: the document is always fetched from the share service
+    this app is set up with, never from an address typed in."""
+    m = re.search(r"[?&]id=([0-9A-Za-z]{12})(?![0-9A-Za-z])", text or "") or re.fullmatch(r"\s*([0-9A-Za-z]{12})\s*", text or "")
+    if not m:
+        raise ValueError("this does not look like a Scrybinder share link")
+    return m.group(1)
+
+
+def fetch_link(text: str) -> str:
+    """The share document behind a link, as text (the same text `import_text` reads from a downloaded file)."""
+    sid, base = link_id(text), _api()
+    try:
+        with _client() as c:
+            r = c.get(f"{base}/api/share/{sid}")
+    except httpx.HTTPError as e:
+        raise Unreachable(f"the share service could not be reached ({type(e).__name__})")
+    if r.status_code in (404, 410):
+        raise ValueError("this link has expired or was deleted: ask the sender for a new one")
+    if r.status_code != 200 or len(r.content) > MAX_BYTES:
+        raise Unreachable(f"the share service answered {r.status_code}")
+    return r.text
+
+
 def listing(db) -> list[dict]:
     out = []
     for r in db.execute("SELECT id, kind, title, url, created_at, expires_at, spec FROM shares ORDER BY created_at DESC, rowid DESC"):
