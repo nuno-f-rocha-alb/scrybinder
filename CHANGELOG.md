@@ -4,6 +4,8 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+## [0.8.4] — 2026-10-22
+
 ### Added
 - Share links open with a preview in chat apps: the link the app gives out is now a small page of the share service (/s/<id>) with the title of the deck or list, the number of cards, and the art of its first card (the commander of a deck) as the picture, so WhatsApp, Telegram or Discord show them instead of a generic card; opening it sends you on to the viewer. The viewer address itself also has a general preview. Links made before this keep working but only get the general preview. The share service has to be redeployed (`cd share/worker; npx wrangler deploy`).
 - Import > "Import a shared link or file": paste a Scrybinder share link (yours or someone else's) and it is imported like the downloaded file would be (a deck becomes a new deck, a list a list, a collection is added to a location; a trade is only for looking at). Only the id of the link is used: the app always asks the share service it is set up with.
