@@ -141,7 +141,7 @@ The **Cards** page lists your collection as a grid or a table. Click a card to e
 | **Moxfield** collection CSV | yes — it carries no Scryfall id, so each row is matched by **edition and collector number** (rows that cannot be matched are listed, not dropped silently) | yes (the location goes into `Tags`) |
 | **Cardmarket** stock list | — | yes (condition and language mappings are approximate) |
 
-Importing the same file twice adds the cards twice. A file downloaded from a share link (`.scrybinder.json`) is imported from the same page. Deck lists are plain text and have their own import and export on the deck page (see [Decks](#decks)).
+Importing the same file twice adds the cards twice. A share link (yours or someone else's) can be pasted on the same page, or the file downloaded from it (`.scrybinder.json`) chosen: a deck becomes a new deck, a list a list, a collection goes into a location you choose. Deck lists are plain text and have their own import and export on the deck page (see [Decks](#decks)).
 
 ### Decks
 
