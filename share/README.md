@@ -5,6 +5,8 @@ Scrybinder can turn a deck, a trade, a list or part of the collection into a lin
 - `worker/`: a Cloudflare Worker that keeps one share document (a small JSON file: cards, quantities, finishes, optionally prices) for 30 days under a random 12-character id. No accounts, no cookies, no logs of what is sent. `POST /api/share` stores it, `GET /api/share/:id` returns it (CORS only for the viewer), `DELETE /api/share/:id` removes it (needs the secret token the app keeps).
 - `site/`: the viewer, a static page (no build, no scripts from other sites) published to GitHub Pages. It fetches the document by id and shows the cards with images from Scryfall, with **Copy as text** and **Download JSON** (the app imports that file). It can also open a share file dropped on the page.
 
+The link the app gives out is the Worker's own page, `/s/<id>`: it carries the preview tags (Open Graph and Twitter: the title of the list, how many cards, the art of its first card) that chat apps read, then sends people on to the viewer (`VIEWER_URL` in `wrangler.toml`). Everything from the document is HTML-escaped there. `site/og.png` is the general preview of the viewer's own address.
+
 What is never sent: notes, purchase prices, a trade's other person and cash, and locations (unless you tick the box).
 
 ## Try it without deploying anything

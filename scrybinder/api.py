@@ -380,8 +380,8 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
         return {"folder": _wrap(playmats.open_folder)}
 
     def _viewer_hosts():  # the share viewer, so a link just made can be opened
-        h = urlparse(share._viewer()).hostname
-        return (h,) if h else ()
+        hosts = [urlparse(u).hostname for u in (share._viewer(), os.environ.get("SCRYBINDER_SHARE_API") or share.SHARE_API)]
+        return tuple(h for h in hosts if h)
 
     @app.post("/api/open-url")
     def open_url(body: dict = Body(...)):

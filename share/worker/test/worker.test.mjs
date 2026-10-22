@@ -119,3 +119,33 @@ test("type, mana value, colours and rarity are kept when valid and dropped when 
   assert.deepEqual([g.ty, g.mv, g.co, g.ra], ["Instant", 2, "WU", "rare"]);
   assert.deepEqual([b.ty.length, b.mv, b.co, b.ra], [80, undefined, undefined, undefined]);
 });
+
+test("the /s/<id> page has the preview tags of that list, escaped, and sends people to the viewer", async () => {
+  const e = env({ VIEWER_URL: "https://v.example/app/" });
+  const tricky = doc({ title: `Tymna "the" <script>alert(1)</script> & co`, note: "bring <b>sleeves</b>", meta: { format: "commander" },
+    sections: [{ name: "Commander", cards: [{ id: "4f152dd9-2b35-45b2-90fe-8c71d0634226", qty: 1, price: 2.5 }, { id: "b", qty: 3, price: 1 }] }], prices: true });
+  const { id } = await (await post(e, tricky)).json();
+  const r = await handle(new Request(`https://w.example/s/${id}`), e);
+  const html = await r.text();
+  assert.equal(r.status, 200);
+  assert.match(r.headers.get("Content-Type"), /text\/html/);
+  assert.ok(!html.includes("<script>") && !html.includes("<b>"), "nothing from the document is left unescaped");
+  assert.ok(html.includes("&lt;script&gt;alert(1)&lt;/script&gt;"));
+  assert.ok(html.includes('og:image" content="https://cards.scryfall.io/art_crop/front/4/f/4f152dd9-2b35-45b2-90fe-8c71d0634226.jpg"'));
+  assert.ok(html.includes("Deck · 4 cards · commander · about 5.50 EUR"));
+  assert.ok(html.includes(`url=https://v.example/app/?id=${id}`));
+  assert.match(r.headers.get("Content-Security-Policy"), /default-src 'none'/);
+  const head = await handle(new Request(`https://w.example/s/${id}`, { method: "HEAD" }), e);
+  assert.equal(head.status, 200);
+  assert.equal(await head.text(), "");
+});
+
+test("an unknown or malformed /s/ page is a generic preview with a 404, never an error page of the document", async () => {
+  const e = env();
+  const r = await handle(new Request("https://w.example/s/AAAAAAAAAAAA"), e);
+  assert.equal(r.status, 404);
+  const html = await r.text();
+  assert.ok(html.includes("og:title") && html.includes("og.png"));
+  assert.equal((await handle(new Request("https://w.example/s/short"), e)).status, 404);
+  assert.equal((await handle(new Request("https://w.example/s/AAAAAAAAAAAA/x"), e)).status, 404);
+});

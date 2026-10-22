@@ -328,8 +328,7 @@ def create_link(db, doc: dict, spec: dict | None = None) -> dict:
     got = r.json()
     if not isinstance(got, dict) or not re.fullmatch(r"[0-9A-Za-z]{12}", str(got.get("id", ""))) or not isinstance(got.get("delete_token"), str):
         raise Unreachable("the share service sent an unexpected answer")
-    viewer = _viewer()
-    url = f"{viewer}/?id={got['id']}" if viewer else f"{base}/api/share/{got['id']}"
+    url = f"{base}/s/{got['id']}"  # a page with the preview tags (title, picture) that sends people on to the viewer
     s = summary(doc)
     with db:
         saved = {k: spec[k] for k in _SPEC_KEYS if k in spec} if spec else None
@@ -342,7 +341,8 @@ def create_link(db, doc: dict, spec: dict | None = None) -> dict:
 def link_id(text: str) -> str:
     """The id of a share link (the whole link, `?id=...`, or just the id). Only the id is used: the document is always fetched from the share service
     this app is set up with, never from an address typed in."""
-    m = re.search(r"[?&]id=([0-9A-Za-z]{12})(?![0-9A-Za-z])", text or "") or re.fullmatch(r"\s*([0-9A-Za-z]{12})\s*", text or "")
+    m = (re.search(r"[?&]id=([0-9A-Za-z]{12})(?![0-9A-Za-z])", text or "") or re.search(r"/s/([0-9A-Za-z]{12})(?![0-9A-Za-z])", text or "")
+         or re.fullmatch(r"\s*([0-9A-Za-z]{12})\s*", text or ""))
     if not m:
         raise ValueError("this does not look like a Scrybinder share link")
     return m.group(1)

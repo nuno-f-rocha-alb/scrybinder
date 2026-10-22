@@ -6,6 +6,8 @@ compatibility_date = "2025-01-01"
 # the origin (scheme + host, no path) of the viewer on GitHub Pages: the only site allowed to read shares from a browser
 VIEWER_ORIGIN = "https://nuno-f-rocha-alb.github.io"
 TTL_DAYS = "30"
+# where people are sent from a shared link (the viewer, with a trailing slash); chat apps read the preview of the Worker's own /s/<id> page
+VIEWER_URL = "https://nuno-f-rocha-alb.github.io/scrybinder/"
 
 # Create it once with `npx wrangler kv namespace create SHARES` and paste the id it prints here.
 [[kv_namespaces]]

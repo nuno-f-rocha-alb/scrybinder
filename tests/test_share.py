@@ -151,7 +151,7 @@ def test_collection_import_into_a_location_and_unknown_cards_skipped(db):
 def test_create_and_delete_a_link(db, worker):
     d, _ = _deck(db)
     got = share.create_link(db, share.deck_doc(db, d))
-    assert got["url"] == "https://v.example/share/?id=" + ID and got["cards"] == 5
+    assert got["url"] == "https://w.example/s/" + ID and got["cards"] == 5  # the Worker page: it carries the preview tags and sends people to the viewer
     assert worker.store[ID]["kind"] == "deck"
     assert "secret" not in json.dumps(share.listing(db))  # the delete token never leaves the app
     share.delete_link(db, ID)
@@ -188,7 +188,7 @@ def test_share_routes(db, worker):
     pre = c.post("/api/share/preview", json={"kind": "deck", "deck_id": d}).json()
     assert (pre["lines"], pre["cards"]) == (3, 5)
     made = c.post("/api/share", json={"kind": "deck", "deck_id": d, "title": "Mine", "prices": True}).json()
-    assert made["url"].endswith("?id=" + ID) and worker.store[ID]["title"] == "Mine"
+    assert made["url"].endswith("/s/" + ID) and worker.store[ID]["title"] == "Mine"
     assert [s["id"] for s in c.get("/api/shares").json()] == [ID]
     assert c.post("/api/share", json={"kind": "nope"}).status_code == 422
     assert c.delete("/api/shares/" + ID).status_code == 200 and c.delete("/api/shares/" + ID).status_code == 404
@@ -294,6 +294,7 @@ def test_import_from_a_link(db, worker):
     got = share.import_text(db, share.fetch_link(f"https://v.example/share/?id={ID}"))  # the whole link
     assert got["kind"] == "deck" and got["cards"] == 5
     assert share.import_text(db, share.fetch_link("  " + ID + " "))["kind"] == "deck"  # or just the id
+    assert share.import_text(db, share.fetch_link(f"https://w.example/s/{ID}"))["kind"] == "deck"  # or the address the app gives out
     assert worker.requests[-1].method == "GET" and str(worker.requests[-1].url) == "https://w.example/api/share/" + ID  # always the configured service
     for bad in ("", "hello", "https://evil.example/?id=short", f"https://evil.example/x?id={ID}extra"):
         with pytest.raises(ValueError, match="does not look like"):

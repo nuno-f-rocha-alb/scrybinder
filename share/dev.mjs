@@ -10,6 +10,7 @@ import { handle } from "./worker/src/index.js";
 const store = new Map();
 const env = {
   VIEWER_ORIGIN: "http://127.0.0.1:8788",
+  VIEWER_URL: "http://127.0.0.1:8788/",
   SHARES: {
     put: async (k, v) => store.set(k, v),
     get: async (k, t) => (store.has(k) ? (t === "json" ? JSON.parse(store.get(k)) : store.get(k)) : null),
