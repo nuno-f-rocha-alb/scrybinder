@@ -1,10 +1,13 @@
 // Scrybinder share viewer: shows a share document fetched from the share service (?id=) or opened from a file.
 // Everything from the document is written with textContent / attributes, never as HTML.
 import { SHARE_API } from "./config.js";
-import { eur, imageUrl, totals, toText } from "./lib.js";
+import { apiImageUrl, available, eur, groupLines, imageUrl, totals, toText } from "./lib.js";
 
 const $ = (id) => document.getElementById(id);
 let current = null;
+const KEY = "scrybinder.share.view";
+const prefs = (() => { try { return { view: "grid", group: "sections", sort: "name", ...JSON.parse(localStorage.getItem(KEY) || "{}") }; } catch { return { view: "grid", group: "sections", sort: "name" }; } })();
+const savePrefs = () => { try { localStorage.setItem(KEY, JSON.stringify(prefs)); } catch { /* no storage */ } };
 
 const el = (tag, props = {}, ...kids) => {
   const e = document.createElement(tag);
@@ -24,20 +27,69 @@ function message(text, isError = false) {
   m.className = isError ? "message error" : "message";
 }
 
-function tile(c, prices) {
+const finishTag = (c) => (c.finish ? el("span", { class: "tag foil", text: c.finish === "etched" ? "Etched" : "Foil" }) : null);
+
+function tile(c, prices, compact) {
   const img = el("img", { alt: c.name || "card", loading: "lazy", decoding: "async", src: imageUrl(c.id) });
-  img.addEventListener("error", () => { img.replaceWith(el("div", { class: "noimg", text: c.name || c.id })); }, { once: true });
+  let fallback = false;
+  img.addEventListener("error", () => {
+    if (!fallback && img.src !== apiImageUrl(c.id)) { fallback = true; img.src = apiImageUrl(c.id); return; }  // once through the API before giving up
+    img.replaceWith(el("div", { class: "noimg", text: c.name || c.id }));
+  });
   const tags = el("div", { class: "tags" }, el("span", { class: "qty", text: `×${c.qty}` }));
-  if (c.finish) tags.append(el("span", { class: "tag foil", text: c.finish === "etched" ? "Etched" : "Foil" }));
+  const ft = finishTag(c);
+  if (ft) tags.append(ft);
   if (c.cond) tags.append(el("span", { class: "tag", text: c.cond }));
-  const meta = [c.name, [c.set, c.cn].filter(Boolean).join(" #")].filter(Boolean).join(" · ");
+  const meta = [c.name, [c.set, c.cn].filter(Boolean).join(" #"), c.ty].filter(Boolean).join(" · ");
   const li = el("li", { class: "card", title: meta }, img, tags);
+  if (compact) return li;
   const cap = el("div", { class: "cap" }, el("span", { class: "nm", text: c.name || c.id }));
   if (c.set) cap.append(el("span", { class: "ed", text: `${c.set} ${c.cn || ""}` }));
   if (prices && c.price != null) cap.append(el("span", { class: "pr", text: eur(c.price * c.qty) }));
   if (c.loc) cap.append(el("span", { class: "ed", text: c.loc }));
   li.append(cap);
   return li;
+}
+
+function row(c, prices) {
+  const li = el("li", { class: "row" }, el("span", { class: "q", text: `${c.qty}×` }), el("span", { class: "n", text: c.name || c.id }));
+  const ft = finishTag(c);
+  if (ft) li.append(ft);
+  li.append(el("span", { class: "e", text: [c.set, c.cn].filter(Boolean).join(" ") }), el("span", { class: "t", text: c.ty || "" }));
+  if (prices) li.append(el("span", { class: "p", text: c.price != null ? eur(c.price * c.qty) : "" }));
+  return li;
+}
+
+function sections() {
+  const doc = current;
+  const root = $("sections");
+  root.replaceChildren();
+  for (const g of groupLines(doc, prefs.group, prefs.sort)) {
+    const n = g.cards.reduce((a, c) => a + c.qty, 0), v = g.cards.reduce((a, c) => a + (c.price || 0) * c.qty, 0);
+    const list = prefs.view === "list" ? el("ul", { class: "rows" }, ...g.cards.map((c) => row(c, doc.prices)))
+      : el("ul", { class: prefs.view === "compact" ? "grid small" : "grid" }, ...g.cards.map((c) => tile(c, doc.prices, prefs.view === "compact")));
+    root.append(el("section", {}, el("h2", {}, el("span", { text: g.name }), el("small", { text: `${n}${doc.prices ? ` · ${eur(v)}` : ""}` })), list));
+  }
+}
+
+const OPTIONS = {
+  group: [["sections", "As shared"], ["type", "Type"], ["colour", "Colour"], ["mv", "Mana value"], ["rarity", "Rarity"], ["set", "Set"], ["none", "None"]],
+  sort: [["name", "Name"], ["mv", "Mana value"], ["price", "Price"], ["qty", "Quantity"], ["set", "Set"]],
+};
+
+function controls() {
+  const doc = current, a = available(doc);
+  const ok = { type: a.type, colour: a.colour, mv: a.mv, rarity: a.rarity, price: a.price };
+  const fill = (id, list, kind) => {
+    const s = $(id);
+    s.replaceChildren(...list.map(([v, l]) => { const o = el("option", { value: v, text: l }); if ((v in ok && !ok[v]) || (kind === "sort" && v === "price" && !ok.price)) o.disabled = true; return o; }));
+    if (s.querySelector(`option[value="${prefs[kind]}"]:not(:disabled)`) === null) prefs[kind] = list[0][0];
+    s.value = prefs[kind];
+  };
+  fill("group", OPTIONS.group, "group");
+  fill("sort", OPTIONS.sort, "sort");
+  for (const b of document.querySelectorAll("#view button")) b.setAttribute("aria-pressed", String(b.dataset.v === prefs.view));
+  $("controls").hidden = false;
 }
 
 function render(doc) {
@@ -57,14 +109,8 @@ function render(doc) {
   $("chips").replaceChildren(...chips.map(([strong, text]) => el("li", {}, ...(strong ? [el("b", { text: strong }), ` ${text}`] : [text]))));
   $("note").textContent = doc.note || "";
   $("note").hidden = !doc.note;
-  const root = $("sections");
-  root.replaceChildren();
-  doc.sections.forEach((s, i) => {
-    if (!s.cards.length) return;
-    const st = t.sections[i];
-    root.append(el("section", {}, el("h2", {}, el("span", { text: s.name }), el("small", { text: `${st.cards}${doc.prices ? ` · ${eur(st.value)}` : ""}` })),
-      el("ul", { class: "grid" }, ...s.cards.map((c) => tile(c, doc.prices)))));
-  });
+  controls();
+  sections();
   $("actions").hidden = false;
   $("open").hidden = true;
   message("");
@@ -95,6 +141,8 @@ function openFile(file) {
   }).catch(() => message("This is not a Scrybinder share file.", true));
 }
 
+for (const [id, kind] of [["group", "group"], ["sort", "sort"]]) $(id).addEventListener("change", (e) => { prefs[kind] = e.target.value; savePrefs(); sections(); });
+for (const b of document.querySelectorAll("#view button")) b.addEventListener("click", () => { prefs.view = b.dataset.v; savePrefs(); controls(); sections(); });
 $("file").addEventListener("change", (e) => openFile(e.target.files[0]));
 for (const ev of ["dragover", "drop"]) document.addEventListener(ev, (e) => { e.preventDefault(); if (ev === "drop") openFile(e.dataTransfer.files[0]); });
 $("copy").addEventListener("click", async () => {

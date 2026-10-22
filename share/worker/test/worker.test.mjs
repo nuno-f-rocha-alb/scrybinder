@@ -109,3 +109,13 @@ test("PUT replaces the document under the same id, needs the token and renews th
   assert.equal(del.status, 200);  // the token still works after an update
   assert.equal((await handle(new Request(`https://w.example/api/share/${id}`, { method: "PUT", headers: { "Content-Type": "application/json", "X-Delete-Token": delete_token }, body: JSON.stringify(doc()) }), e)).status, 404);
 });
+
+test("type, mana value, colours and rarity are kept when valid and dropped when not", async () => {
+  const e = env();
+  const good = { id: "a", qty: 1, ty: "Instant", mv: 2, co: "WU", ra: "rare" };
+  const bad = { id: "b", qty: 1, ty: "x".repeat(200), mv: -1, co: "Q!", ra: "godly" };
+  const { id } = await (await post(e, doc({ sections: [{ cards: [good, bad] }] }))).json();
+  const [g, b] = JSON.parse(e.SHARES.m.get(id)).doc.sections[0].cards;
+  assert.deepEqual([g.ty, g.mv, g.co, g.ra], ["Instant", 2, "WU", "rare"]);
+  assert.deepEqual([b.ty.length, b.mv, b.co, b.ra], [80, undefined, undefined, undefined]);
+});
