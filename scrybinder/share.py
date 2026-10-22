@@ -56,7 +56,9 @@ def _info(db, ids) -> dict:
     out, ids = {}, list(dict.fromkeys(ids))
     for k in range(0, len(ids), 500):
         chunk = ids[k:k + 500]
-        for r in db.execute(f"SELECT id, name, set_code, collector_number, eur, eur_foil, eur_etched FROM cards WHERE id IN ({','.join('?' * len(chunk))})", chunk):
+        for r in db.execute("SELECT k.id, k.name, k.set_code, k.collector_number, k.eur, k.eur_foil, k.eur_etched, k.rarity,"
+                            " COALESCE(o.type_line, k.type_line) AS type_line, o.cmc, o.colors FROM cards k LEFT JOIN oracle_cards o ON o.oracle_id = k.oracle_id"
+                            f" WHERE k.id IN ({','.join('?' * len(chunk))})", chunk):
             out[r["id"]] = r
     return out
 
@@ -68,6 +70,15 @@ def _line(info: dict, sid: str, qty: int, finish: str = "nonfoil", prices: bool 
     line = {"id": sid, "name": c["name"], "set": (c["set_code"] or "").upper(), "cn": c["collector_number"], "qty": int(qty)}
     if finish in ("foil", "etched"):
         line["finish"] = finish
+    # what the viewer groups and sorts by (all optional: a link made before this has none of it)
+    if c["type_line"]:
+        line["ty"] = c["type_line"][:80]
+    if c["cmc"] is not None:
+        line["mv"] = c["cmc"]
+    if c["colors"] is not None:
+        line["co"] = "".join(json.loads(c["colors"] or "[]")) or "C"
+    if c["rarity"]:
+        line["ra"] = c["rarity"]
     if prices:
         p = price if price is not None else {"foil": c["eur_foil"], "etched": c["eur_etched"]}.get(finish, c["eur"])
         if p is not None:
@@ -203,6 +214,14 @@ def parse(doc) -> dict:
                 card["lang"] = _text(c["lang"], "lang", 6)
             if c.get("loc"):
                 card["loc"] = _text(c["loc"], "loc")
+            if c.get("ty"):
+                card["ty"] = _text(c["ty"], "ty", 80)
+            if isinstance(c.get("mv"), (int, float)) and not isinstance(c["mv"], bool) and 0 <= c["mv"] <= 1000:
+                card["mv"] = c["mv"]
+            if isinstance(c.get("co"), str) and re.fullmatch(r"[WUBRGC]{1,5}", c["co"]):
+                card["co"] = c["co"]
+            if c.get("ra") in ("common", "uncommon", "rare", "mythic", "special", "bonus"):
+                card["ra"] = c["ra"]
             p = c.get("price")
             if p is not None:
                 if isinstance(p, bool) or not isinstance(p, (int, float)) or p < 0:

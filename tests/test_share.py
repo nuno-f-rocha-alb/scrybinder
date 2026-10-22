@@ -269,3 +269,17 @@ def test_update_route_and_existing_in_the_preview(db, worker):
     assert c.put(f"/api/shares/{ID}", json={"note": "now with a note"}).status_code == 200
     assert worker.store[ID]["note"] == "now with a note"
     assert c.put("/api/shares/nope", json={}).status_code == 404
+
+
+def test_lines_carry_what_the_viewer_groups_and_sorts_by(db):
+    a, _, _ = _cards(db)
+    db.execute("UPDATE oracle_cards SET type_line='Legendary Creature — Human', cmc=3, colors='[\"W\",\"B\"]' WHERE oracle_id=?", (_oracle(db, a),))
+    db.execute("UPDATE cards SET rarity='rare' WHERE id=?", (a,))
+    row = collection.add(db, scryfall_id=a)
+    line = share.collection_doc(db, ids=[row])["sections"][0]["cards"][0]
+    assert (line["ty"], line["mv"], line["co"], line["ra"]) == ("Legendary Creature — Human", 3, "WB", "rare")
+    kept = share.parse({"format": "scrybinder-share", "v": 1, "kind": "collection", "sections": [{"cards": [{**line, "co": "X!", "ra": "godly", "mv": -4, "ty": "x" * 200}]}]})
+    c = kept["sections"][0]["cards"][0]
+    assert "co" not in c and "ra" not in c and "mv" not in c and len(c["ty"]) == 80  # bad values are dropped, a long type is cut
+    ok = share.parse({"format": "scrybinder-share", "v": 1, "kind": "collection", "sections": [{"cards": [line]}]})["sections"][0]["cards"][0]
+    assert (ok["ty"], ok["mv"], ok["co"], ok["ra"]) == ("Legendary Creature — Human", 3, "WB", "rare")

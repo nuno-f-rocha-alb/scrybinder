@@ -28,6 +28,13 @@
         <button id="download" type="button">Download JSON</button>
       </div>
     </div>
+    <div id="controls" class="controls" hidden>
+      <div id="view" class="seg" role="group" aria-label="View">
+        <button type="button" data-v="grid" aria-pressed="true">Grid</button><button type="button" data-v="compact" aria-pressed="false">Compact</button><button type="button" data-v="list" aria-pressed="false">List</button>
+      </div>
+      <label>Group <select id="group"></select></label>
+      <label>Sort <select id="sort"></select></label>
+    </div>
     <p id="message" class="message" role="status" hidden></p>
     <div id="open" class="open">
       <div class="drop">

@@ -32,6 +32,10 @@ export function validate(doc) {
       if (cond !== "NM") card.cond = cond;
       if (c.lang && c.lang !== "en") card.lang = text(c.lang, "lang", 6);
       if (c.loc) card.loc = text(c.loc, "loc");
+      if (c.ty) card.ty = text(c.ty, "ty", 80);
+      if (typeof c.mv === "number" && Number.isFinite(c.mv) && c.mv >= 0 && c.mv <= 1000) card.mv = c.mv;
+      if (typeof c.co === "string" && /^[WUBRGC]{1,5}$/.test(c.co)) card.co = c.co;
+      if (["common", "uncommon", "rare", "mythic", "special", "bonus"].includes(c.ra)) card.ra = c.ra;
       if (c.price !== undefined && c.price !== null) {
         if (typeof c.price !== "number" || !Number.isFinite(c.price) || c.price < 0) throw new Error("price: a number");
         card.price = Math.round(c.price * 100) / 100;
