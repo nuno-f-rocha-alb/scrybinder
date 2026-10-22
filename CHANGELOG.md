@@ -4,6 +4,8 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+## [0.8.4] — 2026-10-22
+
 ### Added
 - Share links: the viewer page has View (Grid, Compact, List), Group (as shared, type, colour, mana value, rarity, set) and Sort (name, mana value, price, quantity, set) controls, remembered between visits. New links carry the type, mana value, colours and rarity of each card for that; older links still open but offer only what they have.
 
