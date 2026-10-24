@@ -170,6 +170,7 @@ class Identifier:
     def __init__(self, db, use_visual=True):
         self.db = db
         self._names = None
+        self._proc: list[str] | None = None  # the names as `utils.default_process` leaves them, for title_names
         self._use_visual = use_visual
         self._vis = None
         self._vis_tried = False
@@ -240,7 +241,32 @@ class Identifier:
                                limit=limit, score_cutoff=NAME_CUTOFF)
         return [(h[0], h[1]) for h in hits]
 
+    def title_names(self, text: str, limit=8) -> list[tuple[str, float, float]]:
+        """Names that `text` (a line of text found in a photo) may be the beginning of or all of: (name, similarity of the part
+        read, share of the whole name that was read). The name starts where the text does; a sentence that merely contains one
+        does not count."""
+        if self._names is None:
+            self._load()
+        if self._proc is None:
+            self._proc = [utils.default_process(c) for c in self._choices]
+        q = utils.default_process(_clean(text))
+        if len(q) < 5:
+            return []
+        out = []
+        for _, _, i in process.extract(q, self._proc, scorer=fuzz.partial_ratio, limit=40, score_cutoff=88):
+            full = self._proc[i]
+            a = fuzz.partial_ratio_alignment(q, full)
+            if a is None or a.dest_start > 2 or len(q) > len(full) + 3:
+                continue
+            r = fuzz.ratio(q[:len(full)], full[:len(q)])
+            if r >= 82:
+                out.append((self._choices[i], r, min(1.0, len(q) / len(full))))
+        out.sort(key=lambda t: (-t[1], -t[2]))
+        return out[:limit]
+
     def prints(self, names: list[str]) -> list[dict]:
+        if self._names is None:
+            self._load()
         out: list[dict] = []
         for n in names:
             for full in dict.fromkeys(self._names[n]):

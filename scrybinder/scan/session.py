@@ -12,8 +12,9 @@ import numpy as np
 
 from .. import collection
 from ..db import DATA_DIR
+from . import overlap
 from .identify import Identifier
-from .vision import Stability, card_from_photo, card_signature, find_card, find_cards, inner_card, warp_card
+from .vision import CARD_H, CARD_W, Stability, card_from_photo, card_signature, find_card, find_cards, inner_card, warp_card
 
 log = logging.getLogger(__name__)
 
@@ -64,6 +65,7 @@ class Scanner:
         self.notice = ""                   # a passing remark for the UI (e.g. a read ignored as the card still on the stand); cleared by the next capture
         self.split_next = False            # the next capture opens a new entry (e.g. the foil among identical regular cards)
         self.page_mode = False             # photos are binder pages (up to 3x3 cards) instead of one card each
+        self.overlap_mode = False          # photos are fans/columns of overlapping cards
         self.list_mode = False             # True: reads go to the temporary list (reads) and only enter the collection in commit_reads()
         self._cards: dict[str, dict | None] = {}
         self.reads: list[dict] = self._load_reads()
@@ -185,9 +187,10 @@ class Scanner:
         return {"added": added, "rows": rows}
 
     # --- processing one image (same for photos, folder and webcam) ---
-    def process(self, img: np.ndarray, label: str = "", warped: bool = False, live: bool = False) -> dict:
-        """`live`: the capture comes from the camera, where a card read again right after itself is the same card still on the stand."""
-        card, detected, res = identify_image(self.ident, img, warped)
+    def process(self, img: np.ndarray, label: str = "", warped: bool = False, live: bool = False, result: dict | None = None) -> dict:
+        """`live`: the capture comes from the camera, where a card read again right after itself is the same card still on the stand.
+        `result`: an identification made elsewhere (overlapping cards); `img` is then the picture kept with it."""
+        card, detected, res = (img, True, result) if result is not None else identify_image(self.ident, img, warped)
         predicted = res["candidates"][0]["id"] if res["candidates"] else None
         with self._lock:
             sid, self._next_id = self._next_id, self._next_id + 1
@@ -225,10 +228,35 @@ class Scanner:
         self.message = f"{len(entries)} cards detected" if entries else "No cards detected"
         return {"detected": len(entries), "entries": entries}
 
+    def process_overlap(self, img: np.ndarray, label: str = "") -> dict:
+        """A photo of overlapping cards (fans, columns): every title found is a card, confirmed against the images of its printings."""
+        if not overlap.available():
+            self.message = "Overlapping cards need Windows text recognition"
+            return {"detected": 0, "entries": [], "boxes": []}
+        entries, boxes = [], []
+        try:
+            cards = overlap.find_cards(img, self.ident)
+        except overlap.OcrError as e:
+            self.message = f"Windows text recognition is not available: {e}"
+            return {"detected": 0, "entries": [], "boxes": []}
+        for i, f in enumerate(cards, 1):
+            cands = [{**c, "score": 0, "name_score": f["similarity"]} for c in f["prints"][:40]]
+            matched = f["verified"] and f["inliers"] >= overlap.MIN_INLIERS
+            confidence = ("high" if f["inliers"] >= overlap.STRONG_INLIERS else "medium") if matched else "low"
+            res = {"ocr": {"name": f["text"], "name_conf": 0.0, "name_match": round(f["similarity"], 1), "number": None, "set": None,
+                           "bottom_text": "", "rotated": False, "spark": False},
+                   "candidates": cands, "confidence": confidence if cands else "none", "visual": {"inliers": f["inliers"]}}
+            x0, y0, x1, y1 = f["box"]
+            crop = cv2.resize(img[y0:y1, x0:x1], (CARD_W, CARD_H), interpolation=cv2.INTER_AREA)
+            entries.append(self.process(crop, f"{label} #{i}" if label else f"#{i}", warped=True, result=res))
+            boxes.append({"box": [x0, y0, x1, y1], "name": f["name"], "confidence": res["confidence"]})
+        self.message = f"{len(entries)} cards detected" if entries else "No cards detected"
+        return {"detected": len(entries), "entries": entries, "boxes": boxes}
+
     def state(self) -> dict:
         with self._lock:
             return {"running": bool(self._thread and self._thread.is_alive()), "source": self.source,
-                    "message": self.message, "notice": self.notice, "beep": self.beep, "split_next": self.split_next, "list_mode": self.list_mode, "page_mode": self.page_mode,
+                    "message": self.message, "notice": self.notice, "beep": self.beep, "split_next": self.split_next, "list_mode": self.list_mode, "page_mode": self.page_mode, "overlap_mode": self.overlap_mode,
                     "pending": list(self.pending),
                     "reads": [{k: v for k, v in r.items() if k != "candidates"} | {"card": self.card_info(r["scryfall_id"])}
                               for r in self.reads]}
@@ -298,7 +326,7 @@ class Scanner:
                 self._seen.add(p.name)
                 img = decode(p.read_bytes())
                 if img is not None:
-                    self.process_page(img, p.name) if self.page_mode else self.process(img, p.name)
+                    (self.process_overlap if self.overlap_mode else self.process_page if self.page_mode else self.process)(img, p.name)
             self._stop.wait(1.0)
 
     def _run_webcam(self, index: int):

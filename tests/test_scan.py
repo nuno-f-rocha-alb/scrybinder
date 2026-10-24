@@ -635,3 +635,122 @@ def test_identify_reads_the_bottom_strip_once_alongside_the_name(db, monkeypatch
     monkeypatch.setattr(ident_mod, "name_reads", lambda card: iter([(name, 95.0)]))
     res = ident_mod.Identifier(db, use_visual=False).identify(np.zeros((880, 630, 3), np.uint8))
     assert len(calls) == 1 and res["candidates"] and res["candidates"][0]["name"] == name
+
+
+# --- overlapping cards (fans and columns): found by their titles ---
+
+def _fixture_cards(n=3):
+    meta = json.loads((CARDS / "index.json").read_text(encoding="utf-8"))
+    return [m for m in meta if (CARDS / f"{m['id']}.jpg").exists() and m["layout"] == "normal"][:n]
+
+
+def _fan_photo(cards, step=0.4):
+    """Cards laid in a row, each covering the one before it, on a dark table; returns the photo and the (x, y) of each title."""
+    cw, ch = 400, 560
+    img = np.full((760, 120 + int(step * cw * len(cards)) + cw + 60, 3), (45, 52, 60), np.uint8)
+    titles = []
+    for i, m in enumerate(cards):
+        x, y = 60 + int(i * step * cw), 100
+        img[y:y + ch, x:x + cw] = cv2.resize(cv2.imread(str(CARDS / f"{m['id']}.jpg")), (cw, ch))
+        titles.append((x + 0.09 * cw, y + 0.06 * ch))
+    return img, titles
+
+
+@pytest.fixture
+def local_images(monkeypatch):
+    from scrybinder.scan import overlap
+    monkeypatch.setattr(overlap, "_img_file", lambda cid, face=0: CARDS / f"{cid}.jpg")
+    monkeypatch.setattr(overlap, "card_height", lambda img: 560.0)
+    overlap._feats.clear()
+    return overlap
+
+
+def test_title_names_take_the_beginning_of_a_name_and_not_a_sentence(db):
+    ident = identify.Identifier(db)
+    m = _fixture_cards(1)[0]
+    name = m["name"]
+    whole = ident.title_names(name)
+    assert whole and whole[0][0] == name and whole[0][2] == 1.0
+    part = ident.title_names(name[:len(name) - 3])
+    assert part and part[0][0] == name and part[0][2] < 1.0
+    assert ident.title_names(f"when {name} enters the battlefield, you may") == []  # a sentence that contains a name
+    assert ident.title_names("abc") == []
+
+
+def test_type_lines_are_not_titles():
+    from scrybinder.scan import overlap
+    for t in ("Creature \u2014 Human Wizard", "Legendary Creature -", "Instant", "Artifact Creature", "Enchantment — Aura", "Sorcery"):
+        assert overlap.TYPE_LINE.match(t), t
+    for t in ("Creature Bond", "Battle Screech", "Artifact Mutation", "Land Tax", "Instant Ramen"):
+        assert not overlap.TYPE_LINE.match(t), t
+
+
+def test_a_card_is_found_by_its_title_and_its_printing_confirmed_by_the_picture(db, local_images):
+    cards = _fixture_cards(3)
+    img, titles = _fan_photo(cards)
+    lines = [(m["name"], x, y, 180.0, 24.0) for m, (x, y) in zip(cards, titles)]
+    found = local_images.find_cards(img, identify.Identifier(db), lines=lines)
+    assert [f["name"] for f in found] == [m["name"] for m in cards]
+    for f, m in zip(found, cards):
+        assert f["prints"][0]["id"] == m["id"] and f["inliers"] >= local_images.MIN_INLIERS  # the covered ones too
+    assert any(f["inliers"] >= local_images.STRONG_INLIERS for f in found)
+
+
+def test_text_that_is_not_a_title_is_left_out(db, local_images):
+    cards = _fixture_cards(2)
+    img, titles = _fan_photo(cards)
+    lines = [(cards[0]["name"], *titles[0], 90.0, 12.0),
+             ("Creature \u2014 Human Wizard", titles[1][0], titles[1][1], 90.0, 12.0),                  # a type line
+             (f"when {cards[1]['name']} enters", 70.0, 300.0, 90.0, 12.0),                          # a sentence
+             (cards[1]["name"], 400.0, 450.0, 90.0, 12.0)]                                          # a name on the table: no card there
+    found = local_images.find_cards(img, identify.Identifier(db), lines=lines)
+    assert [f["name"] for f in found if f["verified"]] == [cards[0]["name"]]
+
+
+def test_a_card_read_by_two_lines_counts_once(db, local_images):
+    cards = _fixture_cards(1)
+    img, titles = _fan_photo(cards)
+    x, y = titles[0]
+    lines = [(cards[0]["name"], x, y, 90.0, 12.0), (cards[0]["name"], x + 8, y + 3, 90.0, 12.0)]
+    assert len(local_images.find_cards(img, identify.Identifier(db), lines=lines)) == 1
+
+
+def test_a_degenerate_placement_is_not_a_match(local_images):
+    """RANSAC can 'explain' the points by collapsing them onto one: that must count for nothing."""
+    from scrybinder.scan import overlap
+    cid = _fixture_cards(1)[0]["id"]
+    gray = cv2.cvtColor(cv2.imread(str(CARDS / f"{cid}.jpg")), cv2.COLOR_BGR2GRAY)
+    kq, dq = cv2.SIFT_create(nfeatures=1500).detectAndCompute(cv2.resize(gray, (630, 880)), None)
+    n, M = overlap._match(kq, dq, cid)
+    assert n >= overlap.STRONG_INLIERS and 0.4 < np.hypot(M[0, 0], M[1, 0]) < 5
+    other = _fixture_cards(2)[1]["id"]
+    assert overlap._match(kq, dq, other)[0] < n / 2  # another card shares the frame and text layout: it matches a little, never as well
+
+
+def test_process_overlap_adds_one_entry_per_card(db, tmp_path, monkeypatch):
+    from scrybinder.scan import overlap, session
+    monkeypatch.setattr(overlap, "available", lambda: True)
+    cards = _fixture_cards(2)
+    ident_prints = identify.Identifier(db).prints([cards[0]["name"]])
+    found = [{"name": cards[0]["name"], "text": cards[0]["name"], "similarity": 100.0, "whole": 1.0, "x": 10.0, "y": 10.0, "inliers": 55,
+              "verified": True, "geo": True, "box": (0, 0, 60, 80), "prints": ident_prints}]
+    monkeypatch.setattr(overlap, "find_cards", lambda img, ident: found)
+    scanner = session.Scanner(db, tmp_path)
+    scanner.list_mode = True
+    out = scanner.process_overlap(np.zeros((200, 200, 3), np.uint8), "fan.jpg")
+    assert out["detected"] == 1 and out["boxes"][0]["name"] == cards[0]["name"] and out["boxes"][0]["confidence"] == "high"
+    assert scanner.reads[0]["scryfall_id"] == ident_prints[0]["id"] and scanner.message == "1 cards detected"
+    monkeypatch.setattr(overlap, "find_cards", lambda img, ident: [])
+    assert scanner.process_overlap(np.zeros((200, 200, 3), np.uint8))["detected"] == 0 and scanner.message == "No cards detected"
+    monkeypatch.setattr(overlap, "available", lambda: False)
+    assert scanner.process_overlap(np.zeros((200, 200, 3), np.uint8))["detected"] == 0 and "Windows" in scanner.message
+
+
+def test_scan_overlap_endpoint(client, monkeypatch):
+    ok, jpg = cv2.imencode(".jpg", np.full((200, 300, 3), 80, np.uint8))
+    assert ok
+    monkeypatch.setattr(client.app.state.scanner, "process_overlap", lambda i, name="": {"detected": 3, "entries": [], "boxes": []})
+    assert client.post("/api/scan/overlap", content=jpg.tobytes()).json()["detected"] == 3
+    assert client.post("/api/scan/overlap", content=b"").status_code == 400
+    assert client.post("/api/scan/mode", json={"overlap": True}).json()["overlap_mode"] is True
+    assert client.get("/api/scan/state").json()["overlap_mode"] is True
