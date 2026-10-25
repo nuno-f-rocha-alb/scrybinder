@@ -4,6 +4,9 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Added
+- Scan > **Overlapping cards** (Photos and Folder tabs): a photo of cards laid in a fan or a column, each partly covered by the next, adds one entry per card. Each card is found by its title (read with Windows' own text recognition, so Windows only; half a title is enough) and the printing is confirmed by comparing the photo with the card images the app has downloaded (Settings > visual index). Entries whose title was read but not confirmed come out with low confidence, and an extra entry can appear where text on a card looked like a title (delete it). Experimental: the title of each card has to show.
+
 ## [0.8.4] — 2026-10-22
 
 ### Added

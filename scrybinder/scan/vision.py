@@ -241,6 +241,69 @@ def find_cards(frame: np.ndarray, max_cards=9) -> list[np.ndarray]:
     return [q / scale for q in ordered[:max_cards]]
 
 
+def _edge_lines(img: np.ndarray) -> list[tuple[np.ndarray, np.ndarray, float]]:
+    """Near-vertical straight lines (centre, unit direction pointing down, length): LSD segments of every colour channel
+    (neighbouring cards often differ in hue and not in brightness), the collinear ones merged."""
+    H, W = img.shape[:2]
+    lsd = cv2.createLineSegmentDetector(cv2.LSD_REFINE_STD)
+    chans = list(cv2.split(img)) if img.ndim == 3 else [img]
+    found = [lsd.detect(cv2.GaussianBlur(c, (3, 3), 0))[0] for c in chans + ([cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)] if img.ndim == 3 else [])]
+    items = []
+    for x1, y1, x2, y2 in np.concatenate([f.reshape(-1, 4) for f in found if f is not None] or [np.zeros((0, 4), np.float32)]):
+        if y2 < y1:
+            x1, y1, x2, y2 = x2, y2, x1, y1
+        L = float(np.hypot(x2 - x1, y2 - y1))
+        if L >= 0.03 * max(H, W) and abs(np.degrees(np.arctan2(x2 - x1, y2 - y1))) <= 20:
+            items.append((L, np.array([[x1, y1], [x2, y2]], np.float32)))
+    items.sort(key=lambda t: -t[0])
+    clusters: list[list[np.ndarray]] = []
+    fits: list[tuple[np.ndarray, np.ndarray, float, float]] = []  # centre, direction, min and max position along it
+    gap = 0.02 * max(H, W)
+    for _, pts in items:
+        mid, d = pts.mean(0), pts[1] - pts[0]
+        d /= np.linalg.norm(d)
+        for k, (c, u, lo, hi) in enumerate(fits):
+            t = [float((p - c) @ u) for p in pts]
+            if (abs(d @ u) > np.cos(np.radians(5)) and abs(float((mid - c) @ np.array([u[1], -u[0]]))) <= 0.004 * max(H, W)
+                    and min(t) <= hi + gap and max(t) >= lo - gap):
+                clusters[k].append(pts)
+                allp = np.concatenate(clusters[k])
+                vx, vy, x0, y0 = cv2.fitLine(allp, cv2.DIST_L2, 0, 0.01, 0.01).ravel()
+                u2 = np.array([vx, vy]) * (1 if vy >= 0 else -1)
+                c2 = np.array([x0, y0])
+                ts = (allp - c2) @ u2
+                fits[k] = (c2, u2, float(ts.min()), float(ts.max()))
+                break
+        else:
+            clusters.append([pts])
+            fits.append((mid, d, float(min((p - mid) @ d for p in pts)), float(max((p - mid) @ d for p in pts))))
+    return [(c + u * (lo + hi) / 2, u, hi - lo) for c, u, lo, hi in fits]
+
+
+def _e_candidates(lines, size: int) -> list[float]:
+    """Likely edge lengths: the lengths many lines share (the most numerous and longest first), at least 15 % apart."""
+    lens = np.array([L for _, _, L in lines])
+    scored = []
+    for L in lens:
+        near = lens[np.abs(lens / L - 1) < 0.12]
+        if len(near) >= 2 and L >= 0.05 * size:
+            scored.append((len(near) * L ** 3, float(np.percentile(near, 75))))
+    out: list[float] = []
+    for _, e in sorted(scored, reverse=True):
+        if all(abs(e / o - 1) > 0.15 for o in out):
+            out.append(e)
+    return out[:3]
+
+
+def card_height(img: np.ndarray) -> float:
+    """Height of a card in the photo, in pixels: the long straight edges that many cards share (the largest length that
+    still repeats: the shorter ones are the frames inside the border). A quarter of the photo when nothing repeats."""
+    s = 1000 / max(img.shape[:2])
+    small = cv2.resize(img, None, fx=s, fy=s, interpolation=cv2.INTER_AREA) if s < 1 else img
+    es = _e_candidates(_edge_lines(small), 1000)
+    return (max(es) if es else 0.25 * 1000) / min(s, 1.0)
+
+
 def warp_card(frame: np.ndarray, quad: np.ndarray) -> np.ndarray:
     q = order_quad(quad)
     w = np.linalg.norm(q[1] - q[0])

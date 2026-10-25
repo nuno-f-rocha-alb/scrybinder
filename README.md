@@ -109,6 +109,10 @@ Your collection, images and index are never touched. The package only works on t
 - The capture triggers when a card stays still for 0.3 s and re-arms when it leaves the frame. A card the camera reads again right after itself (it is still on the stand) is not counted twice: fix the quantity with − / +, or show another card.
 - Photos and folders: identical cards in a row add up. `N` marks the next card as foil / a new entry (foil is not detected from the picture: press `N` before showing it). In the one-by-one confirmation mode (turn *List mode* off): `Enter` accept, `Esc` discard, `←`/`→` change printing, `F` foil, `C` condition, `L` language, `+`/`-` quantity.
 
+### Scanning overlapping cards
+
+Turn on **Overlapping cards** in the Scan page (Photos and Folder tabs) and drop a photo of cards laid in a fan (each partly covered by the next, side by side or stacked). Every card is found by its title, which the app reads with Windows' own text recognition (nothing is sent anywhere); half a title is enough, because card names are a closed list. The printing is then confirmed by comparing the photo with the card images the app has downloaded (the visual index). Cards whose title was read but not confirmed come out with low confidence. It is experimental and Windows only: the title of every card has to show, and a stray entry can appear where text on a card looked like a title, so check the list.
+
 ### Scanning a binder page
 
 Turn on **Binder page (3×3)** in the Scan page (it applies to the Photos and Folder tabs) and drop a photo of a whole binder page: up to 9 cards are found and each one lands in the review list as its own entry, with "N cards detected" shown after the upload.
