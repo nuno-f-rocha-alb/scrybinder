@@ -125,21 +125,21 @@ def _match(kq, dq, card_id: str) -> tuple[int, np.ndarray | None]:
     return int(inl.sum()), M
 
 
-def find_cards(img: np.ndarray, ident, lines=None) -> list[dict]:
-    """The cards of the photo, one per title found: {name, text, similarity, whole, x, y, box, inliers, verified, prints}. `prints` are the
-    printings of the name (the one the picture agrees with first). `lines` is for tests."""
-    ch = card_height(img)
-    cw = ch * RATIO
-    if lines is None:
-        seen: dict = {}
-        with ThreadPoolExecutor(3) as ex:  # larger passes read the small titles the first one misses
-            for found_lines in ex.map(lambda sc: ocr_lines(img, sc), (1, 2, 3)):
-                for ln in found_lines:
-                    seen[(round(ln[1] / 25), round(ln[2] / 25), ln[0])] = ln
-        lines = list(seen.values())
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if img.ndim == 3 else img
+def accept(verified: bool, name: str, sim: float, whole: float, inliers: int) -> bool:
+    """Is this title a card? One the picture confirmed, yes. One that was only read has to be a clean, whole name: a word of rules text
+    ("Sacrifice", "Counters") is also a card's name, so a single word or a misread one needs some support from the picture."""
+    if verified:
+        return True
+    if whole < 0.85 or sim < 88 or len(name) < 6:
+        return False
+    return inliers >= 15 or (sim >= 95 and " " in name)
+
+
+def _read_lines(img, gray, lines, ident, ch, cw) -> tuple[list[dict], list[dict]]:
+    """Every line of text that may be a title: looked up, compared with the printings, kept if it passes `accept`. Returns (kept, left
+    out); the left out ones with few names to choose from (`few`) can still be a title, see `find_cards`."""
     sift = cv2.SIFT_create(nfeatures=1500)
-    found = []
+    found, left = [], []
     for text, x, y, w, h in lines:
         if TYPE_LINE.match(text.strip()):
             continue
@@ -164,14 +164,71 @@ def find_cards(img: np.ndarray, ident, lines=None) -> list[dict]:
             p = M @ np.array([x - x0, y + h / 2 - y0, 1.0])
             geo = abs(p[0] - 70) < 120 and abs(p[1] - 75) < 70
         verified = geo or inl >= STRONG_INLIERS
-        ok = verified or (whole >= 0.85 and sim >= 88 and len(name) >= 6)
-        if not ok:
-            continue
         order = ([p for p in prints if p["id"] == best] + [p for p in prints if p["id"] != best]) if best else prints
         if best:  # the picture decides between names that start alike ("Murmuring Mystic" and "Murmuring Bosk")
             name = order[0]["name"]
-        found.append({"name": name, "text": text, "similarity": sim, "whole": whole, "x": x, "y": y, "inliers": inl, "verified": verified, "geo": geo,
-                      "box": (x0, y0, x1, y1), "prints": order})
+        card = {"name": name, "text": text, "similarity": sim, "whole": whole, "x": x, "y": y, "h": h, "inliers": inl, "verified": verified,
+                "geo": geo, "box": (x0, y0, x1, y1), "prints": order}
+        if accept(verified, name, sim, whole, inl):
+            found.append(card)
+        elif sum(1 for _, r, _ in names if r >= 95) <= 3:
+            left.append(card)
+    return found, left
+
+
+def _title_bands(img: np.ndarray, found: list[dict], ch: float):
+    """One strip of the photo per row of titles already found, read again enlarged: the recogniser does better on a strip than on the
+    whole photo, and the strip holds the beginnings of the titles that the rest of the photo made it miss."""
+    rows: list[list[float]] = []
+    for y in sorted(f["y"] for f in found):
+        if rows and y - rows[-1][-1] < 0.12 * ch:
+            rows[-1].append(y)
+        else:
+            rows.append([y])
+    jobs = [(max(0, int(r[0] - 0.05 * ch)), min(img.shape[0], int(r[-1] + 0.13 * ch))) for r in rows]
+    jobs = [(a, b) for a, b in jobs if b - a > 20]
+
+    def read(job):
+        a, b = job
+        band = img[a:b]
+        gray = cv2.createCLAHE(3.0, (8, 8)).apply(cv2.cvtColor(band, cv2.COLOR_BGR2GRAY))
+        out = []
+        for im, sc in ((band, 3), (cv2.cvtColor(gray, cv2.COLOR_GRAY2BGR), 3)):
+            out += [(t, x, y + a, w, h) for t, x, y, w, h in ocr_lines(im, sc)]
+        return out
+    with ThreadPoolExecutor(3) as ex:
+        return [ln for part in ex.map(read, jobs) for ln in part]
+
+
+def find_cards(img: np.ndarray, ident, lines=None, bands=True) -> list[dict]:
+    """The cards of the photo, one per title found: {name, text, similarity, whole, x, y, box, inliers, verified, prints}. `prints` are the
+    printings of the name (the one the picture agrees with first). `lines` is for tests (they skip the second reading of the strips)."""
+    ch = card_height(img)
+    cw = ch * RATIO
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY) if img.ndim == 3 else img
+    if lines is None:
+        seen: dict = {}
+        with ThreadPoolExecutor(3) as ex:  # larger passes read the small titles the first one misses
+            for found_lines in ex.map(lambda sc: ocr_lines(img, sc), (1, 2, 3)):
+                for ln in found_lines:
+                    seen[(round(ln[1] / 25), round(ln[2] / 25), ln[0])] = ln
+        lines = list(seen.values())
+    else:
+        bands = False
+    found, left = _read_lines(img, gray, lines, ident, ch, cw)
+    titles = [f for f in found if f["geo"]]  # rules text can match a card strongly too, but only a title sits where the card has its title
+    if bands and titles:
+        known = {(round(ln[1] / 25), round(ln[2] / 25), ln[0]) for ln in lines}
+        extra = {}
+        for ln in _title_bands(img, titles, ch):
+            k = (round(ln[1] / 25), round(ln[2] / 25), ln[0])
+            if k not in known:
+                extra[k] = ln
+        more, more_left = _read_lines(img, gray, list(extra.values()), ident, ch, cw)
+        found, left = found + more, left + more_left
+    # a few letters of a title that the picture could not confirm are still a title when they sit on the row of confirmed ones
+    rows = [f["y"] for f in found if f["geo"]]
+    found += [f for f in left if len(f["name"]) >= 7 and len(re.sub(r"\W", "", f["text"])) >= 6 and any(abs(f["y"] - y) < 0.1 * ch for y in rows)]
     # a card read by two lines (or two passes) counts once: the better confirmed one stays
     found.sort(key=lambda f: (f["geo"], f["verified"], f["inliers"], f["whole"]), reverse=True)
     kept: list[dict] = []

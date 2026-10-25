@@ -715,6 +715,17 @@ def test_a_card_read_by_two_lines_counts_once(db, local_images):
     assert len(local_images.find_cards(img, identify.Identifier(db), lines=lines)) == 1
 
 
+def test_rules_text_that_happens_to_be_a_name_is_not_a_card():
+    from scrybinder.scan import overlap
+    assert overlap.accept(True, "Sacrifice", 80.0, 0.3, 0)                 # confirmed by the picture
+    assert overlap.accept(False, "Shambling Ghast", 100.0, 1.0, 6)         # a clean, whole, two-word title
+    assert overlap.accept(False, "Miscast", 100.0, 1.0, 26)                # one word, but the picture agrees a little
+    assert not overlap.accept(False, "Sacrifice", 89.0, 1.0, 7)            # a misread single word with no support (seen on a real photo)
+    assert not overlap.accept(False, "Counters", 100.0, 1.0, 3)            # a single word with no support
+    assert not overlap.accept(False, "Shambling Ghast", 90.0, 1.0, 3)      # misread and unsupported
+    assert not overlap.accept(False, "Shambling Ghast", 100.0, 0.5, 20)    # half a title and not confirmed
+
+
 def test_a_degenerate_placement_is_not_a_match(local_images):
     """RANSAC can 'explain' the points by collapsing them onto one: that must count for nothing."""
     from scrybinder.scan import overlap
