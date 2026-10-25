@@ -1,6 +1,6 @@
 [project]
 name = "scrybinder"
-version = "0.8.4"
+version = "0.8.5"
 description = "Scan, identify and catalogue your Magic: The Gathering collection locally"
 requires-python = ">=3.12,<3.13"
 dependencies = [
