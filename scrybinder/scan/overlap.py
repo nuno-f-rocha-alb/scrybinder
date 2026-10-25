@@ -135,7 +135,15 @@ def accept(verified: bool, name: str, sim: float, whole: float, inliers: int) ->
     return inliers >= 15 or (sim >= 95 and " " in name)
 
 
-def _read_lines(img, gray, lines, ident, ch, cw) -> tuple[list[dict], list[dict]]:
+def _owned_first(names: list[tuple[str, float, float]], owned: set[str]) -> list[tuple[str, float, float]]:
+    """Names a part of a title may belong to, those of cards in the collection first: a half-read title is more likely one of them."""
+    if not names or names[0][2] >= 0.85 or not owned:
+        return names
+    mine = [n for n in names if n[0].upper() in owned]
+    return mine + [n for n in names if n not in mine]
+
+
+def _read_lines(img, gray, lines, ident, ch, cw, owned=frozenset()) -> tuple[list[dict], list[dict]]:
     """Every line of text that may be a title: looked up, compared with the printings, kept if it passes `accept`. Returns (kept, left
     out); the left out ones with few names to choose from (`few`) can still be a title, see `find_cards`."""
     sift = cv2.SIFT_create(nfeatures=1500)
@@ -143,7 +151,7 @@ def _read_lines(img, gray, lines, ident, ch, cw) -> tuple[list[dict], list[dict]
     for text, x, y, w, h in lines:
         if TYPE_LINE.match(text.strip()):
             continue
-        names = ident.title_names(text, limit=30)
+        names = _owned_first(ident.title_names(text, limit=30), owned)
         if not names:
             continue
         name, sim, whole = names[0]
@@ -215,7 +223,8 @@ def find_cards(img: np.ndarray, ident, lines=None, bands=True) -> list[dict]:
         lines = list(seen.values())
     else:
         bands = False
-    found, left = _read_lines(img, gray, lines, ident, ch, cw)
+    owned = {r[0].upper() for r in ident.db.execute("SELECT DISTINCT c.name FROM collection o JOIN cards c ON c.id=o.scryfall_id")}
+    found, left = _read_lines(img, gray, lines, ident, ch, cw, owned)
     titles = [f for f in found if f["geo"]]  # rules text can match a card strongly too, but only a title sits where the card has its title
     if bands and titles:
         known = {(round(ln[1] / 25), round(ln[2] / 25), ln[0]) for ln in lines}
@@ -224,7 +233,7 @@ def find_cards(img: np.ndarray, ident, lines=None, bands=True) -> list[dict]:
             k = (round(ln[1] / 25), round(ln[2] / 25), ln[0])
             if k not in known:
                 extra[k] = ln
-        more, more_left = _read_lines(img, gray, list(extra.values()), ident, ch, cw)
+        more, more_left = _read_lines(img, gray, list(extra.values()), ident, ch, cw, owned)
         found, left = found + more, left + more_left
     # a few letters of a title that the picture could not confirm are still a title when they sit on the row of confirmed ones
     rows = [f["y"] for f in found if f["geo"]]
@@ -233,7 +242,8 @@ def find_cards(img: np.ndarray, ident, lines=None, bands=True) -> list[dict]:
     found.sort(key=lambda f: (f["geo"], f["verified"], f["inliers"], f["whole"]), reverse=True)
     kept: list[dict] = []
     for f in found:
-        if any(abs(f["y"] - k["y"]) < 0.12 * ch and abs(f["x"] - k["x"]) < (0.3 if f["name"] == k["name"] else 0.15) * cw for k in kept):
+        if any((abs(f["y"] - k["y"]) < 0.3 * ch and abs(f["x"] - k["x"]) < 0.3 * cw) if f["name"] == k["name"]
+               else (abs(f["y"] - k["y"]) < 0.12 * ch and abs(f["x"] - k["x"]) < 0.15 * cw) for k in kept):
             continue
         # text that sits inside a confirmed card, below its title, is that card's rules text, not another title
         if not f["geo"] and any(k["geo"] and 0 <= f["x"] - k["x"] < cw and 0.15 * ch < f["y"] - k["y"] < ch for k in kept):
