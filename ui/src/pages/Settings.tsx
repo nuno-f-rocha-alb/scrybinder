@@ -214,10 +214,10 @@ type CmSettings = { enabled: boolean; collection: string; deck: string; updated_
 const METRIC_LABEL: Record<string, string> = { trend: "Trend", avg: "Average", low: "Low" };
 
 /** Cardmarket's own price guide instead of the one price Scryfall passes on; which of its three prices the collection and the decks use. */
-function PricesSection({ refresh }: { refresh: () => void }) {
+function PricesSection({ refresh, jobState }: { refresh: () => void; jobState?: string }) {
   const [s, setS] = useState<CmSettings | null>(null);
   const [err, setErr] = useState("");
-  useEffect(() => { api<CmSettings>("/cardmarket").then(setS).catch((e) => setErr(e.message)); }, []);
+  useEffect(() => { api<CmSettings>("/cardmarket").then(setS).catch((e) => setErr(e.message)); }, [jobState]);  // again when an update ends: the date it took
   const save = (body: Partial<Pick<CmSettings, "enabled" | "collection" | "deck">>) =>
     api<CmSettings>("/cardmarket", { method: "POST", body: JSON.stringify(body) }).then((r) => { setS(r); setErr(""); refresh(); }).catch((e) => setErr(e.message));
   if (!s) return null;
@@ -288,7 +288,7 @@ export default function Settings({ status, refresh }: { status: Status | null; r
               {LABEL[j.state]} {j.state === "download" && j.total > 0 && `${mb(j.done)} / ${mb(j.total)} MB`}
               {j.state === "import" && `${j.done.toLocaleString()} cards`}
               {j.state === "cardmarket" && j.total > 0 && `${mb(j.done)} / ${mb(j.total)} MB`}
-              {j.state === "done" && ` — ${j.cards.toLocaleString()} cards`}
+              {j.state === "done" && (j.cards > 0 ? ` — ${j.cards.toLocaleString()} cards` : " — prices updated")}
             </div>
             {(j.state === "download" || j.state === "cardmarket") && j.total > 0 && (
               <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-raised"><div className="h-full bg-accent transition-all" style={{ width: `${(j.done / j.total) * 100}%` }} /></div>
@@ -297,7 +297,7 @@ export default function Settings({ status, refresh }: { status: Status | null; r
           </div>
         )}
       </section>
-      <PricesSection refresh={refresh} />
+      <PricesSection refresh={refresh} jobState={j?.state} />
       <section className="mt-4 rounded-2xl border border-line bg-surface p-5">
         <h2 className="font-semibold">Visual index (Scan)</h2>
         <p className="mt-1 text-sm text-mute">

@@ -4,6 +4,10 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Fixed
+- Cardmarket prices: a The List card whose name is in two of its Cardmarket expansions is now priced when one of them already belongs to another printing of that card (about 20 more cards).
+- Settings: after Cardmarket prices are turned on, the card database panel no longer says "Done — 0 cards", and the date of the last update appears when it finishes.
+
 ## [0.8.8] — 2026-10-27
 
 ### Added
