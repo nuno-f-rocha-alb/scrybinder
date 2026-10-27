@@ -32,6 +32,13 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
     job = {"state": "idle", "done": 0, "total": 0, "error": None, "cards": 0}
     sets_tried = []  # list used as a mutable flag: one /sets attempt per start-up
 
+    @app.exception_handler(sqlite3.OperationalError)
+    async def busy(request: Request, exc: sqlite3.OperationalError):
+        if "locked" not in str(exc):
+            raise exc
+        # the card data update (which runs by itself after start-up) holds the database for a minute or two; a change waits 60 s and then gives up
+        return JSONResponse({"detail": "Scrybinder is busy updating the card data. Try again in a minute or two."}, status_code=503)
+
     @app.middleware("http")
     async def guard(request: Request, call_next):
         host = request.headers.get("host", "").split(":")[0]

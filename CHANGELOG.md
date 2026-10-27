@@ -4,6 +4,9 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Fixed
+- Changes made while the card data is being updated (it runs by itself after start-up, for a minute or two) now say that Scrybinder is busy and to try again, instead of "Internal Server Error".
+
 ## [0.8.7] — 2026-10-27
 
 ### Added
