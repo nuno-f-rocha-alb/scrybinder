@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { api, Status } from "../api";
 import { PlaymatSection } from "../components/playmat";
+import { Select } from "../components/select";
 
 type Gpu = {
   supported: boolean; driver: number | null; gpu: string | null; wheel: { tag: string; torch: string; size: number } | null;
@@ -207,10 +208,49 @@ function UpdateSection({ refresh }: { refresh: () => void }) {
   );
 }
 
-const LABEL: Record<string, string> = { download: "Downloading bulk data…", import: "Importing cards…", done: "Done", error: "Error" };
+const LABEL: Record<string, string> = { download: "Downloading bulk data…", import: "Importing cards…", cardmarket: "Updating Cardmarket prices…", done: "Done", error: "Error" };
+
+type CmSettings = { enabled: boolean; collection: string; deck: string; updated_at: string | null; metrics: string[] };
+const METRIC_LABEL: Record<string, string> = { trend: "Trend", avg: "Average", low: "Low" };
+
+/** Cardmarket's own price guide instead of the one price Scryfall passes on; which of its three prices the collection and the decks use. */
+function PricesSection({ refresh }: { refresh: () => void }) {
+  const [s, setS] = useState<CmSettings | null>(null);
+  const [err, setErr] = useState("");
+  useEffect(() => { api<CmSettings>("/cardmarket").then(setS).catch((e) => setErr(e.message)); }, []);
+  const save = (body: Partial<Pick<CmSettings, "enabled" | "collection" | "deck">>) =>
+    api<CmSettings>("/cardmarket", { method: "POST", body: JSON.stringify(body) }).then((r) => { setS(r); setErr(""); refresh(); }).catch((e) => setErr(e.message));
+  if (!s) return null;
+  const choose = (label: string, key: "collection" | "deck") => (
+    <label className="flex items-center justify-between gap-3 text-sm">{label}
+      <Select value={s[key]} onChange={(e) => save({ [key]: e.target.value })} className="w-36">
+        {s.metrics.map((m) => <option key={m} value={m}>{METRIC_LABEL[m]}</option>)}
+      </Select>
+    </label>
+  );
+  return (
+    <section className="mt-4 rounded-2xl border border-line bg-surface p-5">
+      <h2 className="font-semibold">Prices (Cardmarket)</h2>
+      <p className="mt-2 text-xs text-mute">
+        Turning this on makes Scrybinder download Cardmarket's public price guide and product list (~45 MB, from <code>downloads.s3.cardmarket.com</code>) once a day.
+        Nothing from your collection is sent. It prices every printing Cardmarket lists, including The List cards Scryfall has no price for. Without it, the one Scryfall price is used.
+      </p>
+      <label className="mt-3 flex items-center gap-2 text-sm">
+        <input type="checkbox" checked={s.enabled} onChange={(e) => save({ enabled: e.target.checked })} />Use Cardmarket prices
+      </label>
+      {s.enabled && s.updated_at && <p className="mt-1 text-xs text-mute">Updated {new Date(s.updated_at).toLocaleString()}</p>}
+      <div className="mt-4 space-y-2">
+        {choose("Price used for the collection", "collection")}
+        {choose("Price used for decks", "deck")}
+      </div>
+      <p className="mt-2 text-xs text-mute">Trend is Cardmarket's price trend, average the average sell price, low the cheapest offer. Cards show all three.</p>
+      {err && <p className="mt-2 text-xs text-danger">{err}</p>}
+    </section>
+  );
+}
 
 export default function Settings({ status, refresh }: { status: Status | null; refresh: () => void }) {
-  const running = status?.job.state === "download" || status?.job.state === "import";
+  const running = status?.job.state === "download" || status?.job.state === "import" || status?.job.state === "cardmarket";
   const ij = status?.index_job;
   const building = ij?.state === "prepare" || ij?.state === "build";
   const [est, setEst] = useState<{ printings: number; hours: number; gb: number } | null>(null);
@@ -247,15 +287,17 @@ export default function Settings({ status, refresh }: { status: Status | null; r
             <div className={j.state === "error" ? "text-danger" : j.state === "done" ? "text-ok" : ""}>
               {LABEL[j.state]} {j.state === "download" && j.total > 0 && `${mb(j.done)} / ${mb(j.total)} MB`}
               {j.state === "import" && `${j.done.toLocaleString()} cards`}
+              {j.state === "cardmarket" && j.total > 0 && `${mb(j.done)} / ${mb(j.total)} MB`}
               {j.state === "done" && ` — ${j.cards.toLocaleString()} cards`}
             </div>
-            {j.state === "download" && j.total > 0 && (
+            {(j.state === "download" || j.state === "cardmarket") && j.total > 0 && (
               <div className="mt-2 h-1.5 overflow-hidden rounded-full bg-raised"><div className="h-full bg-accent transition-all" style={{ width: `${(j.done / j.total) * 100}%` }} /></div>
             )}
             {j.error && <p className="mt-1 text-xs text-danger">{j.error}</p>}
           </div>
         )}
       </section>
+      <PricesSection refresh={refresh} />
       <section className="mt-4 rounded-2xl border border-line bg-surface p-5">
         <h2 className="font-semibold">Visual index (Scan)</h2>
         <p className="mt-1 text-sm text-mute">

@@ -13,6 +13,7 @@ import ValueHistory from "../components/valuehistory";
 import SpareCards from "../components/sparecards";
 import CardDetails, { CardInfoLoader } from "../components/carddetails";
 import LocationPicker from "../components/locationpicker";
+import PrintingDialog from "../components/printings";
 
 const ALL = 100000;  // the whole collection at once: the images load as they scroll into view
 const placeName = (l: string) => l || "(no location)";
@@ -436,6 +437,7 @@ function EditModal({ row, locations, onClose, onDone, onError, onSwitch, onOpenD
   const [moveTo, setMoveTo] = useState("");
   const [moveQty, setMoveQty] = useState(1);
   const [confirmDel, setConfirmDel] = useState(false);
+  const [picking, setPicking] = useState(false);
   const set = <K extends keyof Row>(k: K, v: Row[K]) => setF((o) => ({ ...o, [k]: v }));
   const [blocked, setBlocked] = useState<{ message: string; retry: () => void } | null>(null);
   // `go` gets "" or "?release=1": a 409 (copies assigned to decks) offers to free them and run it again
@@ -448,10 +450,14 @@ function EditModal({ row, locations, onClose, onDone, onError, onSwitch, onOpenD
     quantity: f.quantity, finish: f.finish, condition: f.condition, language: f.language, location: f.location,
     altered: f.altered, signed: f.signed, misprint: f.misprint, proxy: f.proxy, notes: f.notes,
     purchase_price: f.purchase_price, purchase_date: f.purchase_date }) }), "Saved");
+  // another printing of the same card: done at once (as Move is), the other fields stay as they are on the card
+  const changePrinting = (scryfall_id: string, finish: string) => { setPicking(false); run((r) => api(`/collection/${row.id}${r}`, { method: "PATCH", body: JSON.stringify({ scryfall_id, finish }) }), "Printing changed"); };
   const total = row.places.reduce((n, p) => n + p.quantity, 0);
   const allDecks = row.places.flatMap((p) => p.decks).reduce((m, d) => m.set(d.deck_id, { ...d, quantity: (m.get(d.deck_id)?.quantity ?? 0) + d.quantity }), new Map<number, Row["decks"][number]>());
 
   return (
+    <>
+    {picking && row.oracle_id && <PrintingDialog oracleId={row.oracle_id} name={row.name} current={row.scryfall_id} currentFinish={row.finish} onPick={changePrinting} onClose={() => setPicking(false)} />}  {/* outside the drawer: it is click-through and animated */}
     <Drawer onClose={onClose} title={row.name}>
       <div className="flex flex-col gap-5 md:flex-row md:gap-0">
         {/* the card overlaps the fields box (like Scryfall): -ml-6 on the box + pl-10 so the content is not covered */}
@@ -460,7 +466,8 @@ function EditModal({ row, locations, onClose, onDone, onError, onSwitch, onOpenD
         <Hit className="min-w-0 flex-1 rounded-xl border border-line/70 bg-surface/85 p-5 backdrop-blur-md md:-ml-6 md:pl-10 md:pt-6">
           <h2 className="text-xl font-semibold">{row.name}</h2>
           <p className="text-sm text-mute">{row.set_name} ({row.set_code.toUpperCase()}) · #{row.collector_number} · {eur(row.price)}</p>
-          <div className="mb-4 mt-1"><ExtLinks id={row.scryfall_id} cardmarketId={row.cardmarket_id} /></div>
+          <div className="mb-4 mt-1 flex flex-wrap items-center gap-x-4 gap-y-1"><ExtLinks id={row.scryfall_id} cardmarketId={row.cardmarket_id} />
+            {row.oracle_id && <button className="cursor-pointer text-xs text-accent hover:underline" onClick={() => setPicking(true)}>Change printing…</button>}</div>
           {row.places.length > 1 && <div className="mb-4 rounded-xl border border-line bg-bg p-3 text-sm">
             <div className="mb-1 font-medium">{total} copies in {row.places.length} locations</div>
             <ul>{row.places.map((p) => (
@@ -517,5 +524,6 @@ function EditModal({ row, locations, onClose, onDone, onError, onSwitch, onOpenD
         </Hit>
       </div>
     </Drawer>
+    </>
   );
 }

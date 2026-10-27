@@ -45,13 +45,32 @@ def add(db, **fields) -> int:
         return cur.lastrowid
 
 
+def _check_printing(db, old_id: str, new_id: str, finish: str, explicit: bool) -> str:
+    """The finish a row has after it moves to another printing of its card: the same when the printing comes in it, else (when the finish
+    was not asked for) the printing's first. ValueError for another card, an unknown printing or a finish it does not come in."""
+    new = db.execute("SELECT oracle_id, finishes FROM cards WHERE id=?", (new_id,)).fetchone()
+    old = db.execute("SELECT oracle_id FROM cards WHERE id=?", (old_id,)).fetchone()
+    if not new:
+        raise ValueError("unknown printing")
+    if not old or not old["oracle_id"] or new["oracle_id"] != old["oracle_id"]:
+        raise ValueError("choose another printing of the same card")
+    if finish in (json.loads(new["finishes"] or "[]") or ["nonfoil"]):
+        return finish
+    if explicit:
+        raise ValueError(f"that printing does not come in {finish}")
+    return decks._first_finish(new["finishes"])
+
+
 def update(db, row_id: int, release: bool = False, **fields) -> int:
     """Edit a row. If the new key collides with another row they are merged. Returns the resulting id.
-    Copies assigned to decks follow a merge; fewer copies than assigned (or a proxy) raise decks.Conflict unless `release`."""
+    Copies assigned to decks follow a merge; fewer copies than assigned (or a proxy) raise decks.Conflict unless `release`.
+    `scryfall_id` moves the row to another printing of the same card (its assignments stay: they are by card, not printing)."""
     cur = db.execute("SELECT * FROM collection WHERE id=?", (row_id,)).fetchone()
     if not cur:
         raise KeyError(row_id)
-    merged = {**dict(cur), **{k: v for k, v in fields.items() if k in EDITABLE}}
+    merged = {**dict(cur), **{k: v for k, v in fields.items() if k in EDITABLE or k == "scryfall_id"}}
+    if merged["scryfall_id"] != cur["scryfall_id"]:
+        merged["finish"] = _check_printing(db, cur["scryfall_id"], merged["scryfall_id"], merged["finish"], "finish" in fields)
     r = _norm(merged)
     where = " AND ".join(f"{k}=?" for k in KEY)
     with db:
@@ -63,8 +82,8 @@ def update(db, row_id: int, release: bool = False, **fields) -> int:
                        (r["quantity"], r["purchase_price"], other["id"]))
             db.execute("DELETE FROM collection WHERE id=?", (row_id,))
             return other["id"]
-        sets = ",".join(f"{k}=?" for k in EDITABLE)
-        db.execute(f"UPDATE collection SET {sets} WHERE id=?", [r[k] for k in EDITABLE] + [row_id])
+        cols = ("scryfall_id",) + EDITABLE
+        db.execute(f"UPDATE collection SET {','.join(f'{k}=?' for k in cols)} WHERE id=?", [r[k] for k in cols] + [row_id])
     return row_id
 
 

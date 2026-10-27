@@ -160,6 +160,10 @@ CREATE TABLE IF NOT EXISTS shares (  -- links made with the share service; delet
     id TEXT PRIMARY KEY, kind TEXT NOT NULL, title TEXT NOT NULL, url TEXT NOT NULL, delete_token TEXT NOT NULL, expires_at TEXT, spec TEXT, ref TEXT,
     created_at TEXT NOT NULL DEFAULT (strftime('%Y-%m-%dT%H:%M:%SZ','now'))
 );
+CREATE TABLE IF NOT EXISTS cm_prices (  -- Cardmarket's price guide, by product (cards.cardmarket_id); see cardmarket.py
+    id_product INTEGER PRIMARY KEY, avg REAL, low REAL, trend REAL, avg_foil REAL, low_foil REAL, trend_foil REAL
+);
+CREATE TABLE IF NOT EXISTS cm_link (scryfall_id TEXT PRIMARY KEY, id_product INTEGER NOT NULL);  -- The List cards Scryfall has no product for
 CREATE TABLE IF NOT EXISTS trade_in (
     id INTEGER PRIMARY KEY, trade_id INTEGER NOT NULL REFERENCES trades(id) ON DELETE CASCADE, scryfall_id TEXT NOT NULL REFERENCES cards(id),
     finish TEXT NOT NULL, condition TEXT NOT NULL, language TEXT NOT NULL, location TEXT NOT NULL DEFAULT '',
@@ -171,7 +175,10 @@ CREATE TABLE IF NOT EXISTS trade_in (
 # additive migrations (never delete or rewrite data): (table, column, definition)
 _ADD = [("decks", "folder_id", "INTEGER REFERENCES deck_folders(id) ON DELETE SET NULL"),
         ("decks", "cover_card_id", "INTEGER REFERENCES deck_cards(id) ON DELETE SET NULL"), ("deck_cards", "finish", "TEXT"), ("cards", "illustration_id", "TEXT"), ("cards", "image_status", "TEXT"), ("scan_log", "topk_json", "TEXT"),
-        ("oracle_cards", "power", "TEXT"), ("oracle_cards", "toughness", "TEXT"), ("trades", "traded_on", "TEXT"), ("shares", "spec", "TEXT"), ("shares", "ref", "TEXT")]
+        ("oracle_cards", "power", "TEXT"), ("oracle_cards", "toughness", "TEXT"), ("trades", "traded_on", "TEXT"), ("shares", "spec", "TEXT"), ("shares", "ref", "TEXT"),
+        # sf_*: Scryfall's own prices (eur/eur_foil may hold Cardmarket's instead); cm_*: the Cardmarket price guide of the printing
+        ("cards", "sf_eur", "REAL"), ("cards", "sf_eur_foil", "REAL"), ("cards", "cm_avg", "REAL"), ("cards", "cm_low", "REAL"),
+        ("cards", "cm_trend", "REAL"), ("cards", "cm_avg_foil", "REAL"), ("cards", "cm_low_foil", "REAL"), ("cards", "cm_trend_foil", "REAL")]
 
 
 def _migrate(db):
@@ -182,6 +189,15 @@ def _migrate(db):
     db.execute("DROP INDEX IF EXISTS deck_cards_key")  # replaced: the same card in two finishes are two rows
     db.execute("DROP INDEX IF EXISTS deck_cards_key2")  # a deck may have several lines of the same card (one per art)
     db.execute("CREATE INDEX IF NOT EXISTS deck_cards_find ON deck_cards(deck_id, oracle_id)")
+
+
+def _seed_scryfall_prices(db):
+    """Once, keep Scryfall's prices apart (nothing has overwritten them yet): later imports fill sf_* themselves."""
+    if db.execute("SELECT 1 FROM meta WHERE key='sf_prices_seeded'").fetchone():
+        return
+    with db:
+        db.execute("UPDATE cards SET sf_eur = eur, sf_eur_foil = eur_foil")
+        db.execute("INSERT OR REPLACE INTO meta VALUES ('sf_prices_seeded', '1')")
 
 
 def _fix_reversible(db):
@@ -326,5 +342,6 @@ def connect(path: Path | str | None = None) -> sqlite3.Connection:
         db.execute("DROP TABLE trade_out")
     db.executescript(SCHEMA)
     _migrate(db)
+    _seed_scryfall_prices(db)
     _fix_reversible(db)
     return db

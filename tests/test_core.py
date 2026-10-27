@@ -207,7 +207,7 @@ def test_group_printings(db):
     base = db.execute("SELECT * FROM cards WHERE id='dfc-1'").fetchone()
     db.execute("INSERT INTO cards SELECT 'dfc-2', oracle_id, name, set_code, set_name, '999', released_at, rarity, layout,"
                " lang, type_line, 1, border_color, frame, frame_effects, promo_types, finishes, cardmarket_id, eur, eur_foil,"
-               " eur_etched, image_small, image_normal, digital, NULL, NULL FROM cards WHERE id='dfc-1'")  # variante: mesma carta, outra arte
+               " eur_etched, image_small, image_normal, digital, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL FROM cards WHERE id='dfc-1'")  # variante: mesma carta, outra arte
     scryfall.refresh_set_totals(db)  # the bulk import does this; here we insert the variant by hand
     collection.add(db, scryfall_id="dfc-1")
     collection.add(db, scryfall_id="dfc-2")

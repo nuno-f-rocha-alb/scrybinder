@@ -5,10 +5,15 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 ## [Unreleased]
 
 ### Added
+- Settings > **Prices (Cardmarket)**: price your cards from Cardmarket's own price guide instead of the one price Scryfall passes on (off by default; ~45 MB a day from `downloads.s3.cardmarket.com`, nothing from your collection is sent). Choose whether the collection and the decks use Cardmarket's trend, average or low price; the card details show all three. It also prices about 650 of The List's cards that Scryfall has no price for.
+- Collection > edit a card > **Change printing…**: move a row to another printing of the same card (and finish) without deleting and adding it again. Copies assigned to decks stay assigned; a row that ends up identical to another is merged into it.
 - Deck > **Find copies**: the free copies you own of the cards the deck still needs, by the location they are in (so you can fetch them from the binder in one go), each with an **Add** button, or **Add all from here** per location.
 
 ### Changed
 - Decks: a basic land with no printing chosen is never "missing" and never offered for assigning, whether you own it or not. Choose a printing (a full art, say) and it counts like any other card.
+
+### Fixed
+- Changes made while the card data is being updated (it runs by itself after start-up, for a minute or two) now say that Scrybinder is busy and to try again, instead of "Internal Server Error".
 
 ## [0.8.7] — 2026-10-27
 
