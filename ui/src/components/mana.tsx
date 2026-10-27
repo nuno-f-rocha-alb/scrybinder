@@ -1,4 +1,4 @@
-import { IconBox, IconCheck, IconCopy, IconShoppingCart, IconSwitchHorizontal } from "@tabler/icons-react";
+import { IconBox, IconCheck, IconCopy, IconMountain, IconShoppingCart, IconSwitchHorizontal } from "@tabler/icons-react";
 import type { CardStatus } from "../decks";
 
 export const PIP: Record<string, string> = { W: "#f6f1c9", U: "#7fb8e8", B: "#9d8f99", R: "#ee8a6e", G: "#6dbb85", C: "#c9c5c0", X: "#c9c5c0" };
@@ -25,6 +25,7 @@ const STATUS: Record<CardStatus, { label: string; cls: string; Icon: typeof Icon
   elsewhere: { label: "In other deck", cls: "text-gold", Icon: IconSwitchHorizontal, hint: "Your copies are assigned to other decks" },
   missing: { label: "Missing", cls: "text-danger", Icon: IconShoppingCart, hint: "You do not own enough copies" },
   proxy: { label: "Proxy", cls: "text-mute", Icon: IconCopy, hint: "A proxy: present in the deck, never counted as missing" },
+  basic: { label: "Basic land", cls: "text-mute", Icon: IconMountain, hint: "A basic land: never counted as missing, whether you own it or not. Choose a printing (a full art, say) to count it like any card" },
 };
 
 /** Status with an icon and a word, never colour alone. */
@@ -34,7 +35,7 @@ export function StatusBadge({ status, title }: { status: CardStatus; title?: str
 }
 
 export const STATUS_RING: Record<CardStatus, string> = {
-  assigned: "ring-ok/70", available: "ring-accent/70", elsewhere: "ring-gold/70", missing: "ring-danger/70", proxy: "ring-mute/50",
+  assigned: "ring-ok/70", available: "ring-accent/70", elsewhere: "ring-gold/70", missing: "ring-danger/70", proxy: "ring-mute/50", basic: "ring-mute/50",
 };
 
 /** The status as a small round icon (for the visual views, where there is no room for the word). */
