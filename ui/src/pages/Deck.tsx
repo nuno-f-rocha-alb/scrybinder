@@ -3,7 +3,7 @@ import { Select } from "../components/select";
 import { createPortal } from "react-dom";
 import { IconAlertTriangle, IconArrowLeft, IconBox, IconCheck, IconChecklist, IconCopy, IconDownload, IconPlus, IconShare, IconStack2, IconTrash, IconUpload, IconX } from "@tabler/icons-react";
 import { api, eur, qs } from "../api";
-import { BOARDS, BOARD_LABEL, Board, exportDeckList, CardFilter, Deck as DeckT, DeckCard as DeckCardT, DeckStats, editionOf, FORMATS, Format, GROUPS, GroupBy, Legality, OracleRow, Preview, SORTS, SortBy, VIEWS, View, groupCards, matchesFilter, resultPreview, toPreview } from "../decks";
+import { BOARDS, BOARD_LABEL, Board, CardFilter, Deck as DeckT, DeckCard as DeckCardT, DeckStats, editionOf, FORMATS, Format, GROUPS, GroupBy, Legality, OracleRow, Preview, SORTS, SortBy, VIEWS, View, groupCards, matchesFilter, resultPreview, toPreview } from "../decks";
 import { CardImg, FinishTag, Modal, cardmarketUrl, openExternal, scryfallUrl, useToast } from "../components/ui";
 import { MenuItem, useContextMenu } from "../components/contextmenu";
 import PrintingDialog from "../components/printings";
@@ -21,6 +21,7 @@ import Suggestions from "../components/suggestions";
 import AddMissingDialog from "../components/addmissing";
 import AddCards from "../components/addcards";
 import ShareDialog from "../components/sharedialog";
+import ExportDialog from "../components/deckinclude";
 import AddToList, { ListPayload } from "../components/addtolist";
 import ImportDialog, { Skipped } from "../components/decklist";
 import type { ImportReport } from "../components/decklist";
@@ -84,6 +85,7 @@ export default function Deck({ id, onBack, focusOracle }: { id: number; onBack: 
   const [assignId, setAssignId] = useState<number | null>(null);
   const [importing, setImporting] = useState(false);
   const [sharing, setSharing] = useState(false);
+  const [exporting, setExporting] = useState(false);
   const [toList, setToList] = useState<{ payload: ListPayload; what: string } | null>(null);
   const [adding, setAdding] = useState(false);
   const [folded, setFolded] = useState<Set<string>>(() => { try { return new Set<string>(JSON.parse(localStorage.getItem("scrybinder.folded") ?? "[]")); } catch { return new Set<string>(); } });
@@ -176,7 +178,6 @@ export default function Deck({ id, onBack, focusOracle }: { id: number; onBack: 
     ...(c.cardmarket_id ? [{ label: "Open on Cardmarket", onSelect: () => openExternal(cardmarketUrl(c.cardmarket_id!)) }] : []),
   ];
 
-  const exportList = () => exportDeckList(id, deck.name, toast);
   const patchDeck = (body: object) => act(api(`/decks/${id}`, { method: "PATCH", body: JSON.stringify(body) }));
   const errors = legality?.problems.filter((p) => p.severity === "error").length ?? 0;
   const main = (stats?.totals.main ?? 0) + (stats?.totals.commander ?? 0);
@@ -218,7 +219,7 @@ export default function Deck({ id, onBack, focusOracle }: { id: number; onBack: 
             <IconUpload className="size-4" />Import list
           </button>
           <button className="btn-ghost" title="Make a link to this deck that anyone can open" onClick={() => setSharing(true)}><IconShare className="size-4" />Share</button>
-          <button className="btn-ghost" title="Save the deck as a text list" onClick={exportList}>
+          <button className="btn-ghost" title="Save the deck as a text list" onClick={() => setExporting(true)}>
             <IconDownload className="size-4" />Export list
           </button>
           <button className="btn-ghost" title="Copy this deck (without assigned copies)"
@@ -351,7 +352,8 @@ export default function Deck({ id, onBack, focusOracle }: { id: number; onBack: 
           onDone={(n) => { setPickId(null); toast(`${c.name} added to ${n}`); }} />; })()}
       {menu.node}
       {toList && <AddToList payload={toList.payload} what={toList.what} onClose={() => setToList(null)} onDone={(m) => { setToList(null); toast(m); }} />}
-      {sharing && deck && <ShareDialog title={deck.name} spec={{ kind: "deck", deck_id: id }} onClose={() => setSharing(false)} />}
+      {exporting && deck && <ExportDialog id={id} name={deck.name} onClose={() => setExporting(false)} />}
+      {sharing && deck &&<ShareDialog title={deck.name} spec={{ kind: "deck", deck_id: id }} onClose={() => setSharing(false)} />}
       {importing && <ImportDialog deckId={id} onClose={() => setImporting(false)} onDone={(r) => { setImporting(false); setImported(r); reload(); }} />}
       {imported && (
         <Modal title="Deck list imported" onClose={() => setImported(null)}>

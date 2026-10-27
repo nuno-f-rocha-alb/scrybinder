@@ -133,6 +133,18 @@ def cards(db, deck_id: int) -> list[dict]:
     return out
 
 
+INCLUDE = {"assigned": "collection", "available": "collection", "elsewhere": "elsewhere", "proxy": "proxy", "missing": "missing"}  # card status -> export option
+
+
+def include_only(cs: list[dict], include) -> list[dict]:
+    """The cards whose state is among `include` (any of collection, elsewhere, proxy, missing); None keeps them all."""
+    if include is None:
+        return cs
+    if not isinstance(include, (list, tuple, set)) or not all(isinstance(i, str) for i in include) or not set(include) <= set(INCLUDE.values()):
+        raise ValueError("include must list some of: " + ", ".join(sorted(set(INCLUDE.values()))))
+    return [c for c in cs if INCLUDE[c["status"]] in include]
+
+
 def summary(cs: list[dict]) -> dict:
     """Counts over the boards that make the deck (everything but `maybe`)."""
     real = [c for c in cs if c["board"] != "maybe"]

@@ -120,14 +120,15 @@ def import_text(db, deck_id: int, text: str, dry_run: bool = False) -> dict:
             "preview": [{"line": i["line"], "board": i["board"], "quantity": i["quantity"], "name": i["name"]} for i in ok]}
 
 
-def export_text(db, deck_id: int, maybe: bool = False) -> str:
-    """`N Name (SET) number [*F*|*E*] [#tag]` per card, in Commander / Deck / Sideboard (/ Maybeboard) sections."""
+def export_text(db, deck_id: int, maybe: bool = False, include=None) -> str:
+    """`N Name (SET) number [*F*|*E*] [#tag]` per card, in Commander / Deck / Sideboard (/ Maybeboard) sections.
+    `include` keeps only the cards in those states (see decks.include_only)."""
     decks._deck(db, deck_id)
     printings = {r[0]: (r[1], r[2]) for r in db.execute(
         "SELECT c.id, c.set_code, c.collector_number FROM cards c WHERE c.id IN"
         " (SELECT scryfall_id FROM deck_cards WHERE deck_id=? AND scryfall_id IS NOT NULL)", (deck_id,))}
     sections = {"commander": [], "main": [], "side": [], "maybe": []}
-    for c in decks.cards(db, deck_id):
+    for c in decks.include_only(decks.cards(db, deck_id), include):
         line = f"{c['quantity']} {c['name']}"
         if c["scryfall_id"] in printings:
             line += " ({}) {}".format(printings[c["scryfall_id"]][0].upper(), printings[c["scryfall_id"]][1])

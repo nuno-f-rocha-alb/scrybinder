@@ -7,6 +7,7 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 ### Added
 - Deck > **Visual** tab: the deck as a picture, with the cards of each type stacked so that only their title bars show (every copy is its own strip), the commander first and the sideboard apart. Hover a card to see it in the side panel, click it to open it. **Download image** saves the whole deck as a PNG.
 - Scan photos are now told apart by themselves (**Auto**, the new default): a binder page when several whole card outlines show, overlapping cards when few show and at least two titles can be read (Windows), otherwise one card. The One card, Binder page and Overlapping choices stay for when it guesses wrong. A fan with only one whole outline is still read as one card: choose Overlapping then.
+- Deck > **Export list** and **Share** let you choose which cards go out by where they are: in your collection, in another deck, proxies, or missing.
 
 ### Fixed
 - Clicking **Decks** in the menu while a deck is open goes back to the list of decks.

@@ -126,11 +126,12 @@ export const toPreview = (c: DeckCard): Preview => ({ image_id: c.image_id, fini
 export const resultPreview = (r: OracleRow): Preview => ({ image_id: r.id, name: r.name, type_line: r.type_line, mana_cost: r.mana_cost, price: r.price, owned: r.owned });
 
 /** Save a deck as a text list: through the app window's save dialog when there is one, else as a download. */
-export async function exportDeckList(id: number, name: string, toast: (m: string, err?: boolean) => void) {
+export async function exportDeckList(id: number, name: string, toast: (m: string, err?: boolean) => void, include?: string[]) {
   const bridge = (window as { pywebview?: { api?: { save_text?: (n: string, t: string) => Promise<string | null> } } }).pywebview?.api;
-  if (!bridge?.save_text) { window.location.assign(`/api/decks/${id}/export`); return; }
+  const url = `/api/decks/${id}/export${include ? `?include=${include.join(",")}` : ""}`;
+  if (!bridge?.save_text) { window.location.assign(url); return; }
   try {
-    const r = await fetch(`/api/decks/${id}/export`);
+    const r = await fetch(url);
     if (!r.ok) throw new Error(r.statusText);
     const path = await bridge.save_text(`${name.replace(/[^\w .-]+/g, "").trim() || "deck"}.txt`, await r.text());
     if (path) toast(`Saved to ${path}`);

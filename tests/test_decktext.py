@@ -111,6 +111,30 @@ def test_deck_text_api(db):
     assert c.get("/api/decks/999/export").status_code == 404
 
 
+def test_export_and_share_leave_out_the_states_not_included(db):
+    from scrybinder import collection, share
+    a, b, c = _cards(db)
+    d = decks.create(db, "T")
+    collection.add(db, scryfall_id=a["id"], quantity=1)
+    decks.add_card(db, d, a["oracle_id"], 1, "main", a["id"])  # owned: collection
+    decks.add_card(db, d, b["oracle_id"], 1, "main", b["id"], ["proxy"])
+    decks.add_card(db, d, c["oracle_id"], 1, "main", c["id"])  # not owned: missing
+    names = lambda text: [l.split(" (")[0][2:] for l in text.splitlines() if l[:1].isdigit()]
+    assert names(T.export_text(db, d)) == [a["name"], b["name"], c["name"]]
+    assert names(T.export_text(db, d, include=["proxy"])) == [b["name"]]
+    assert names(T.export_text(db, d, include=["collection", "missing"])) == [a["name"], c["name"]]
+    doc = share.deck_doc(db, d, include=["proxy", "missing"])
+    assert sorted(l["name"] for s in doc["sections"] for l in s["cards"]) == sorted([b["name"], c["name"]])
+    with pytest.raises(ValueError):
+        share.deck_doc(db, d, include=[])  # nothing left to share
+    with pytest.raises(ValueError):
+        T.export_text(db, d, include=["nope"])
+    cl = TestClient(create_app(db, token="t", allowed_hosts={"testserver"}))
+    cl.get("/api/status?t=t")
+    assert names(cl.get(f"/api/decks/{d}/export?include=proxy").text) == [b["name"]]
+    assert cl.get(f"/api/decks/{d}/export?include=nope").status_code == 422
+
+
 def test_bad_tags_are_skipped_and_huge_lists_refused(db):
     a = _cards(db)[0]
     d = decks.create(db, "T")

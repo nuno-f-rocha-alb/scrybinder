@@ -724,8 +724,8 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
         return _wrap(decktext.import_text, db, deck_id, text, bool(body.get("dry_run")))
 
     @app.get("/api/decks/{deck_id}/export")
-    def decks_export(deck_id: int, maybe: bool = False):
-        text = _wrap(decktext.export_text, db, deck_id, maybe)
+    def decks_export(deck_id: int, maybe: bool = False, include: str | None = None):  # include: comma-separated states, none = all
+        text = _wrap(decktext.export_text, db, deck_id, maybe, include.split(",") if include else None)
         return Response(text, media_type="text/plain; charset=utf-8",
                         headers={"Content-Disposition": f'attachment; filename="scrybinder-deck-{deck_id}.txt"'})
 
