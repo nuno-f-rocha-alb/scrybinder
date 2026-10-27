@@ -4,6 +4,9 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Security
+- Updated the bundled `certifi` to 2026.10.23, which drops the eMudhra root certificates that browsers and Python no longer trust.
+
 ## [0.8.6] — 2026-10-27
 
 ### Added
