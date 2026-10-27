@@ -6,6 +6,7 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ### Added
 - Scan > **Only these sets**: limit the scan to the sets you choose (e.g. PLST, The List), so it never names a card as another printing of the same card. A card with no printing in those sets comes out as not recognised.
+- Deck > **Select**: a **Mark as proxy** button (and **Not proxies** when all the selected cards are proxies) changes every selected card at once.
 
 ### Security
 - Updated the bundled `certifi` to 2026.10.23, which drops the eMudhra root certificates that browsers and Python no longer trust.

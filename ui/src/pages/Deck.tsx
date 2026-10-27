@@ -255,6 +255,7 @@ export default function Deck({ id, onBack, focusOracle }: { id: number; onBack: 
         {tab === "cards" && <>
         {selecting && (() => {
           const picks = deck.cards.filter((c) => selected.has(c.id));
+          const allProxy = picks.length > 0 && picks.every((c) => c.tags.includes("proxy"));
           const missing = picks.reduce((n, c) => n + (c.board === "maybe" ? 0 : c.missing), 0);
           const end = () => { setSelecting(false); setSelected(new Set()); setConfirmRemove(false); };
           // one after the other: the server shares one database connection, and each change can move copies between rows
@@ -271,6 +272,10 @@ export default function Deck({ id, onBack, focusOracle }: { id: number; onBack: 
               <button className="btn-ghost !py-1" disabled={!picks.length} title="Reserve the free copies of your collection for the selected cards"
                 onClick={() => api<{ assigned: number }>(`/decks/${id}/assign-free`, { method: "POST", body: JSON.stringify({ card_ids: picks.map((c) => c.id) }) }).then((r) => { toast(r.assigned ? `Assigned ${r.assigned} ${r.assigned === 1 ? "copy" : "copies"}` : "No free copies to assign"); setSelected(new Set()); reload(); }).catch((e) => toast(e.message, true))}>
                 <IconBox className="size-4" />Assign free copies</button>
+              <button className="btn-ghost !py-1" disabled={!picks.length}
+                title={allProxy ? "Make the selected cards real copies again" : "Mark the selected cards as proxies: they stay in the deck, never count as missing and use no copy of your collection"}
+                onClick={() => run(each((c) => api(`/decks/${id}/cards/${c.id}`, { method: "PATCH", body: JSON.stringify({ tags: allProxy ? c.tags.filter((t) => t !== "proxy") : c.tags.includes("proxy") ? c.tags : [...c.tags, "proxy"] }) })))}>
+                <IconCopy className="size-4" />{allProxy ? "Not proxies" : "Mark as proxy"}</button>
               <Select className="field !w-auto !py-1 text-xs" aria-label="Move the selected cards to a board" disabled={!picks.length} value="" onChange={(e) => e.target.value && run(each((c) => api(`/decks/${id}/cards/${c.id}`, { method: "PATCH", body: JSON.stringify({ board: e.target.value }) })))}>
                 <option value="">Move to…</option>{BOARDS.map((b) => <option key={b} value={b}>{BOARD_LABEL[b]}</option>)}
               </Select>
