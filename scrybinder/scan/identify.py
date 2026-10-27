@@ -177,6 +177,17 @@ class Identifier:
         self._vis_fails, self._vis_retry_at = 0, 0.0  # a failed open (not "there is no index") is tried again a few times, 30 s apart
         self._vis_lock = threading.Lock()
         self._sets = None
+        self.locked: frozenset[str] = frozenset()  # set codes the scan is limited to (lower case); empty: any set
+
+    def lock_sets(self, codes) -> frozenset[str]:
+        """Limit identification to printings of these sets (empty: no limit). Unknown codes are refused."""
+        codes = frozenset(str(c).strip().lower() for c in codes if str(c).strip())
+        known = {r[0] for r in self.db.execute(f"SELECT DISTINCT set_code FROM cards WHERE set_code IN ({','.join('?' * len(codes))})", tuple(codes))}
+        unknown = codes - known
+        if unknown:
+            raise ValueError("unknown set: " + ", ".join(sorted(unknown)))
+        self.locked = codes
+        return codes
 
     def reset_vis(self):
         """Forget the cached index decision (e.g. after building it from Settings) so the next scan reopens it."""
@@ -273,7 +284,7 @@ class Identifier:
                 out += [dict(r) for r in self.db.execute(
                     "SELECT id, name, set_code, set_name, collector_number, released_at, rarity, finishes, eur, eur_foil,"
                     " eur_etched, promo_types FROM cards WHERE UPPER(name)=UPPER(?) AND digital=0 ORDER BY released_at DESC", (full,))]
-        return out
+        return [p for p in out if p["set_code"] in self.locked] if self.locked else out
 
     @staticmethod
     def _score(c: dict, bottom: dict, promo_parents: set | None = None) -> int:
@@ -368,7 +379,7 @@ class Identifier:
     def _with_visual(self, vis, img, text, conf, score, names, rotated, bottom_of=read_bottom) -> dict:
         w = visual.weights()
         priors = self._priors()
-        scores, top_art, rot = vis.best_orientation(img, w, try_rotated=score < 85)
+        scores, top_art, rot = vis.best_orientation(img, w, try_rotated=score < 85, sets=self.locked)
         if rot is not None:
             img = cv2.rotate(img, rot)
             rotated = rotated != (rot == cv2.ROTATE_180)  # the 'rotated' field still means 180°

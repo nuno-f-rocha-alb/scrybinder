@@ -273,6 +273,7 @@ class Scanner:
         with self._lock:
             return {"running": bool(self._thread and self._thread.is_alive()), "source": self.source,
                     "message": self.message, "notice": self.notice, "beep": self.beep, "split_next": self.split_next, "list_mode": self.list_mode, "page_mode": self.page_mode, "overlap_mode": self.overlap_mode, "auto_mode": self.auto_mode,
+                    "sets": sorted(self.ident.locked),
                     "pending": list(self.pending),
                     "reads": [{k: v for k, v in r.items() if k != "candidates"} | {"card": self.card_info(r["scryfall_id"])}
                               for r in self.reads]}

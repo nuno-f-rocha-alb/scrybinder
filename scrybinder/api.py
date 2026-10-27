@@ -440,6 +440,13 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
             scanner.auto_mode = bool(body["auto"])
         return {"list_mode": scanner.list_mode, "page_mode": scanner.page_mode, "overlap_mode": scanner.overlap_mode, "auto_mode": scanner.auto_mode}
 
+    @app.post("/api/scan/sets")
+    def scan_sets(body: dict = Body(...)):  # {"sets": ["plst"]}: the scan only recognises printings of these sets; [] lifts the limit
+        codes = body.get("sets")
+        if not isinstance(codes, list):
+            raise HTTPException(422, "sets must be a list of set codes")
+        return {"sets": sorted(_wrap(scanner.ident.lock_sets, codes))}
+
     @app.get("/api/scan/reads/{rid}/candidates")
     def read_candidates(rid: int):
         r = next((x for x in scanner.reads if x["id"] == rid), None)

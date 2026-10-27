@@ -260,6 +260,51 @@ def test_the_list_spark_decides_between_plst_and_original(db):
     assert not r2["ocr"]["spark"] and r2["candidates"][0]["id"] == "nh-mm2", r2["candidates"][:3]
 
 
+def test_locked_sets_limit_the_printings_the_scan_can_name(db):
+    _noble_db(db)
+    ident = identify.Identifier(db)
+    name = ["Noble Hierarch"]
+    assert {p["set_code"] for p in ident.prints(name)} == {"mm2", "plst", "2xm"}
+    assert ident.lock_sets([" PLST "]) == {"plst"}
+    assert [p["set_code"] for p in ident.prints(name)] == ["plst"]
+    assert ident.prints(["Thrill of Possibility"]) == []  # a card that has no printing in the chosen sets is not guessed
+    with pytest.raises(ValueError):
+        ident.lock_sets(["nope"])
+    assert ident.locked == {"plst"}  # a refused change leaves the lock as it was
+    ident.lock_sets([])
+    assert len(ident.prints(name)) == 3
+
+
+def test_locked_sets_limit_the_artwork_search(db):
+    from scrybinder.scan import visual
+
+    _noble_db(db)
+
+    class Ix:
+        rows = [{"card_id": c, "illustration_id": f"ill-{c}"} for c in ("nh-mm2", "nh-plst", "nh-2xm")]
+        scores = staticmethod(lambda cv, av: (np.array([0.9, 0.8, 0.7]), np.array([0.9, 0.8, 0.7])))
+
+    class Emb:
+        query = staticmethod(lambda card: (None, None))
+
+    v = visual.Visual(Emb(), Ix(), db)
+    w = visual.weights()
+    card = np.zeros((880, 630, 3), np.uint8)
+    assert set(v.query(card, w)[0]) == {"nh-mm2", "nh-plst", "nh-2xm"}
+    got, top = v.query(card, w, frozenset({"plst"}))
+    assert set(got) == {"nh-plst"} and top == pytest.approx(0.8)  # the better-looking printings of other sets are out
+    assert v.query(card, w, frozenset({"2xm"}))[0].keys() == {"nh-2xm"}
+
+
+def test_scan_sets_endpoint(client, db):
+    _noble_db(db)
+    assert client.post("/api/scan/sets", json={"sets": ["plst"]}).json() == {"sets": ["plst"]}
+    assert client.get("/api/scan/state").json()["sets"] == ["plst"]
+    assert client.post("/api/scan/sets", json={"sets": ["nope"]}).status_code == 422
+    assert client.post("/api/scan/sets", json={"sets": "plst"}).status_code == 422
+    assert client.post("/api/scan/sets", json={"sets": []}).json() == {"sets": []}
+
+
 def test_compound_number_scoring_unit():
     sc = identify.Identifier._score
     b = identify.parse_bottom("151/249 R\nMM2 • EN")

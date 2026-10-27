@@ -36,6 +36,8 @@ class Visual:
         bad = {r[0] for r in db.execute(f"SELECT id FROM cards WHERE layout IN ({','.join('?' * len(self.NO_ART_LAYOUTS))})",
                                         self.NO_ART_LAYOUTS)} if db is not None else set()
         self._no_art = np.array([r["card_id"] in bad for r in ix.rows], dtype=bool)
+        self._db = db
+        self._locks: dict[frozenset, np.ndarray] = {}  # sets -> which index rows belong to them
 
     @classmethod
     def try_open(cls, emb=None, db=None):
@@ -82,15 +84,25 @@ class Visual:
             self._by_ill = m
         return self._by_ill
 
-    def query(self, card: np.ndarray, w: dict):
-        """Visual scores per card (scryfall_id) for the given orientation: {id: (art, card)}, best art."""
+    def _in_sets(self, sets: frozenset) -> np.ndarray:
+        if sets not in self._locks:
+            ids = {r[0] for r in self._db.execute(f"SELECT id FROM cards WHERE set_code IN ({','.join('?' * len(sets))})", tuple(sets))}
+            self._locks[sets] = np.array([r["card_id"] in ids for r in self.ix.rows], dtype=bool)
+        return self._locks[sets]
+
+    def query(self, card: np.ndarray, w: dict, sets: frozenset = frozenset()):
+        """Visual scores per card (scryfall_id) for the given orientation: {id: (art, card)}, best art. `sets` limits it to those sets."""
         with self._lock:
             cv, av = self.emb.query(normalize_card(card))
             art, cardsc = self.ix.scores(cv, av)
         art = np.where(self._no_art, -1.0, art)
+        if sets:
+            art = np.where(self._in_sets(sets), art, -1.0)
         order = np.argsort(-art)
         shortlist: list = []
         for i in order[:400]:
+            if art[i] <= -1.0:  # masked out (no art box, or outside the chosen sets): not a candidate
+                break
             ill = self.ix.rows[i]["illustration_id"] or f"row{i}"
             if ill not in shortlist:
                 shortlist.append(ill)
@@ -105,13 +117,13 @@ class Visual:
         top = float(art[order[0]]) if len(order) else 0.0
         return {k: tuple(v) for k, v in out.items()}, top
 
-    def best_orientation(self, card: np.ndarray, w: dict, try_rotated: bool):
+    def best_orientation(self, card: np.ndarray, w: dict, try_rotated: bool, sets: frozenset = frozenset()):
         """Returns (scores, top_art, cv2 rotation or None). Only tries 180° when the name reading did not settle it.
         (Detection already forces the card upright: 90° makes no sense.)"""
         import cv2
-        best = (*self.query(card, w), None)
+        best = (*self.query(card, w, sets), None)
         if try_rotated:
-            res = self.query(cv2.rotate(card, cv2.ROTATE_180), w)
+            res = self.query(cv2.rotate(card, cv2.ROTATE_180), w, sets)
             if res[1] > best[1]:
                 best = (*res, cv2.ROTATE_180)
         return best

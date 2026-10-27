@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Select } from "../components/select";
+import SetLock from "../components/setlock";
 import { IconCamera, IconFolder, IconPhoto, IconSearch } from "@tabler/icons-react";
 import { api, CONDITIONS, eur, FINISH, LANGS, Print, qs } from "../api";
 import { Badge, CardImg, ExtLinks, HoverZoom, Modal, useToast } from "../components/ui";
@@ -64,6 +65,7 @@ export default function Scan() {
   const [listMode, setListMode] = useState(store("scrybinder.listmode", "1") === "1");
   const [kind, setKind] = useState<Kind>(() => (store("scrybinder.photokind", "") || (store("scrybinder.overlap", "0") === "1" ? "overlap" : store("scrybinder.binder", "0") === "1" ? "page" : "auto")) as Kind);
   const overlap = kind === "overlap", binder = kind === "page";
+  const [lockSets, setLockSets] = useState<string[]>(() => { try { const v = JSON.parse(store("scrybinder.scansets", "[]")); return Array.isArray(v) ? v.filter((x) => typeof x === "string") : []; } catch { return []; } });
   const { toast, node } = useToast();
   const beepSeen = useRef<number | null>(null);
   const audio = useRef<AudioContext | null>(null);
@@ -77,6 +79,10 @@ export default function Scan() {
     api("/scan/mode", { method: "POST", body: JSON.stringify({ auto: kind === "auto", overlap: kind === "overlap", page: kind === "page" }) }).catch(() => {});
     try { localStorage.setItem("scrybinder.photokind", kind); } catch { /* no storage */ }
   }, [kind]);
+  useEffect(() => {  // the sets the scan is limited to: the server keeps them, the choice persists in the browser
+    api("/scan/sets", { method: "POST", body: JSON.stringify({ sets: lockSets }) }).catch((e) => toast(e.message, true));
+    try { localStorage.setItem("scrybinder.scansets", JSON.stringify(lockSets)); } catch { /* no storage */ }
+  }, [lockSets]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { poll(); const t = setInterval(poll, 700); return () => clearInterval(t); }, [poll]);
 
   const unlockAudio = () => { try { audio.current ??= new AudioContext(); void audio.current.resume(); } catch { /* no audio */ } };
@@ -171,6 +177,7 @@ export default function Scan() {
                 : "Each photo is one card."}</p>
             </div>
           )}
+          <SetLock value={lockSets} onChange={setLockSets} />
           {mode === "folder" && (
             <div className="space-y-2 rounded-2xl border border-line bg-surface p-4">
               <label className="text-xs font-medium text-mute">Folder to watch (new files only)
