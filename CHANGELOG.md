@@ -7,6 +7,9 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 ### Changed
 - Decks: a basic land with no printing chosen is never "missing" and never offered for assigning, whether you own it or not. Choose a printing (a full art, say) and it counts like any other card.
 
+### Fixed
+- Changes made while the card data is being updated (it runs by itself after start-up, for a minute or two) now say that Scrybinder is busy and to try again, instead of "Internal Server Error".
+
 ## [0.8.7] — 2026-10-27
 
 ### Added
