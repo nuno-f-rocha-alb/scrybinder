@@ -20,7 +20,9 @@ _CARD_SQL = """
 SELECT x.*, (SELECT cardmarket_id FROM cards WHERE id = x.image_id) AS cardmarket_id,
        (SELECT set_code FROM cards WHERE id = x.scryfall_id) AS set_code,
        (SELECT set_name FROM cards WHERE id = x.scryfall_id) AS set_name,
-       (SELECT collector_number FROM cards WHERE id = x.scryfall_id) AS collector_number FROM (
+       (SELECT collector_number FROM cards WHERE id = x.scryfall_id) AS collector_number,
+       (SELECT full_art OR COALESCE(border_color, 'black') != 'black' OR COALESCE(promo_types, '[]') NOT IN ('[]', '') OR COALESCE(frame_effects, '[]') NOT IN ('[]', '')
+          FROM cards WHERE id = x.scryfall_id) AS special_print FROM (
 SELECT d.id, d.oracle_id, d.scryfall_id, d.finish, d.quantity, d.board, o.name, o.mana_cost, o.cmc, o.type_line, o.colors, o.color_identity,
        o.produced_mana, o.game_changer, o.power, o.toughness,
        (SELECT COALESCE(SUM(c.quantity), 0) FROM collection c JOIN cards k ON k.id = c.scryfall_id
@@ -130,8 +132,8 @@ def cards(db, deck_id: int) -> list[dict]:
             r["missing"] = need - take
             r["status"] = ("assigned" if not need else "available" if not r["missing"]
                            else "elsewhere" if r["elsewhere"] else "missing")
-        if (r["status"] in ("available", "elsewhere", "missing") and not r["scryfall_id"]
-                and "Basic Land" in (r["type_line"] or "")):  # a basic land with no printing chosen: owning it or not does not matter
+        if (r["status"] in ("available", "elsewhere", "missing") and not r["special_print"]
+                and (r["type_line"] or "").startswith("Basic ")):  # a basic land (snow ones too) in a plain printing, or none chosen: owning it does not matter
             r["missing"], r["status"] = 0, "basic"
         r["available"] = 0 if PROXY in r["tags"] or r["status"] == "basic" else take
         out.append(r)

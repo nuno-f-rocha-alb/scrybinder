@@ -25,7 +25,7 @@ const STATUS: Record<CardStatus, { label: string; cls: string; Icon: typeof Icon
   elsewhere: { label: "In other deck", cls: "text-gold", Icon: IconSwitchHorizontal, hint: "Your copies are assigned to other decks" },
   missing: { label: "Missing", cls: "text-danger", Icon: IconShoppingCart, hint: "You do not own enough copies" },
   proxy: { label: "Proxy", cls: "text-mute", Icon: IconCopy, hint: "A proxy: present in the deck, never counted as missing" },
-  basic: { label: "Basic land", cls: "text-mute", Icon: IconMountain, hint: "A basic land: never counted as missing, whether you own it or not. Choose a printing (a full art, say) to count it like any card" },
+  basic: { label: "Basic land", cls: "text-mute", Icon: IconMountain, hint: "A basic land in an ordinary printing: never counted as missing, whether you own it or not. A full art, borderless or promo printing counts like any card" },
 };
 
 /** Status with an icon and a word, never colour alone. */

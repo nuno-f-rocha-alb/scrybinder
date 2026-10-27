@@ -66,16 +66,20 @@ def test_status_summary_and_proxy(db):
     assert {c["id"]: c["status"] for c in decks.get(db, d)["cards"]}[ca] == "available"
 
 
-def test_basic_lands_without_a_printing_are_never_missing(db):
+def test_basic_lands_in_a_plain_printing_are_never_missing(db):
     d = decks.create(db, "B")
-    rows = db.execute("SELECT oracle_id, id FROM cards WHERE oracle_id != 'o-dfc' GROUP BY oracle_id LIMIT 2").fetchall()
-    for oid, _ in rows:  # make two cards basic lands
-        db.execute("UPDATE oracle_cards SET type_line='Basic Land — Forest' WHERE oracle_id=?", (oid,))
-    plain = decks.add_card(db, d, rows[0][0], 5)  # no printing: ignored
-    chosen = decks.add_card(db, d, rows[1][0], 1, "main", rows[1][1])  # a printing chosen (a full art, say): counts like any card
+    rows = db.execute("SELECT oracle_id, id FROM cards WHERE oracle_id != 'o-dfc' GROUP BY oracle_id LIMIT 4").fetchall()
+    for (oid, _), tl in zip(rows, ("Basic Land — Forest", "Basic Land — Island", "Basic Land — Swamp", "Basic Snow Land — Snow-Covered Plains")):
+        db.execute("UPDATE oracle_cards SET type_line=? WHERE oracle_id=?", (tl, oid))
+    db.execute("UPDATE cards SET full_art=1 WHERE id=?", (rows[2][1],))  # the printing of the third is a full art
+    none = decks.add_card(db, d, rows[0][0], 5)  # no printing: ignored
+    plain = decks.add_card(db, d, rows[1][0], 2, "main", rows[1][1])  # an ordinary printing (an import always picks one): ignored too
+    art = decks.add_card(db, d, rows[2][0], 1, "main", rows[2][1])  # a full art: counts like any card
+    snow = decks.add_card(db, d, rows[3][0], 1, "main", rows[3][1])  # a snow basic is a basic too
     st = {c["id"]: c for c in decks.get(db, d)["cards"]}
-    assert (st[plain]["status"], st[plain]["missing"], st[plain]["available"]) == ("basic", 0, 0)
-    assert (st[chosen]["status"], st[chosen]["missing"]) == ("missing", 1)
+    for c in (none, plain, snow):
+        assert (st[c]["status"], st[c]["missing"], st[c]["available"]) == ("basic", 0, 0)
+    assert (st[art]["status"], st[art]["missing"]) == ("missing", 1)
     assert decks.get(db, d)["summary"]["missing"] == 1
     assert decks.assign_free(db, d) == 0
 
