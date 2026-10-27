@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Select } from "../components/select";
 import { createPortal } from "react-dom";
-import { IconAlertTriangle, IconArrowLeft, IconBox, IconCheck, IconChecklist, IconCopy, IconDownload, IconPlus, IconShare, IconStack2, IconTrash, IconUpload, IconX } from "@tabler/icons-react";
+import { IconAlertTriangle, IconArrowLeft, IconBox, IconCheck, IconChecklist, IconCopy, IconDownload, IconEdit, IconPlus, IconShare, IconStack2, IconTrash, IconUpload, IconX } from "@tabler/icons-react";
 import { api, eur, qs } from "../api";
 import { BOARDS, BOARD_LABEL, Board, CardFilter, Deck as DeckT, DeckCard as DeckCardT, DeckStats, editionOf, FORMATS, Format, GROUPS, GroupBy, Legality, OracleRow, Preview, SORTS, SortBy, VIEWS, View, groupCards, matchesFilter, resultPreview, toPreview } from "../decks";
 import { CardImg, FinishTag, Modal, cardmarketUrl, openExternal, scryfallUrl, useToast } from "../components/ui";
@@ -22,6 +22,7 @@ import AddMissingDialog from "../components/addmissing";
 import AddCards from "../components/addcards";
 import ShareDialog from "../components/sharedialog";
 import ExportDialog from "../components/deckinclude";
+import BatchEdit from "../components/batchedit";
 import AddToList, { ListPayload } from "../components/addtolist";
 import ImportDialog, { Skipped } from "../components/decklist";
 import type { ImportReport } from "../components/decklist";
@@ -86,6 +87,7 @@ export default function Deck({ id, onBack, focusOracle }: { id: number; onBack: 
   const [importing, setImporting] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [exporting, setExporting] = useState(false);
+  const [batch, setBatch] = useState(false);
   const [toList, setToList] = useState<{ payload: ListPayload; what: string } | null>(null);
   const [adding, setAdding] = useState(false);
   const [folded, setFolded] = useState<Set<string>>(() => { try { return new Set<string>(JSON.parse(localStorage.getItem("scrybinder.folded") ?? "[]")); } catch { return new Set<string>(); } });
@@ -261,6 +263,7 @@ export default function Deck({ id, onBack, focusOracle }: { id: number; onBack: 
           const each = async (f: (c: DeckCardT) => Promise<unknown>) => { for (const c of picks) await f(c); };
           const run = (p: Promise<unknown>) => { p.then(() => { setSelected(new Set()); reload(); }).catch((e) => toast(e.message, true)); };
           return (
+            <>
             <div role="toolbar" aria-label="Selected cards" className="sticky top-0 z-20 mb-4 flex flex-wrap items-center gap-2 rounded-xl border border-accent/40 bg-surface/95 px-3 py-2 shadow-lg backdrop-blur">
               <span className="mr-2 text-sm font-medium tabular-nums">{picks.length} selected</span>
               <button className="btn-ghost !py-1" onClick={() => setSelected(new Set(cards.map((c) => c.id)))}>Select all shown</button>
@@ -271,9 +274,7 @@ export default function Deck({ id, onBack, focusOracle }: { id: number; onBack: 
               <button className="btn-ghost !py-1" disabled={!picks.length} title="Reserve the free copies of your collection for the selected cards"
                 onClick={() => api<{ assigned: number }>(`/decks/${id}/assign-free`, { method: "POST", body: JSON.stringify({ card_ids: picks.map((c) => c.id) }) }).then((r) => { toast(r.assigned ? `Assigned ${r.assigned} ${r.assigned === 1 ? "copy" : "copies"}` : "No free copies to assign"); setSelected(new Set()); reload(); }).catch((e) => toast(e.message, true))}>
                 <IconBox className="size-4" />Assign free copies</button>
-              <Select className="field !w-auto !py-1 text-xs" aria-label="Move the selected cards to a board" disabled={!picks.length} value="" onChange={(e) => e.target.value && run(each((c) => api(`/decks/${id}/cards/${c.id}`, { method: "PATCH", body: JSON.stringify({ board: e.target.value }) })))}>
-                <option value="">Move to…</option>{BOARDS.map((b) => <option key={b} value={b}>{BOARD_LABEL[b]}</option>)}
-              </Select>
+              <button className="btn-ghost !py-1" disabled={!picks.length} title="Change the board, proxy, quantity or tags of the selected cards" onClick={() => setBatch(true)}><IconEdit className="size-4" />Edit</button>
               <button className="btn-ghost !py-1" disabled={!picks.length} title="Add the selected cards to a list"
                 onClick={() => setToList({ payload: { items: picks.filter((c) => c.image_id).map((c) => ({ scryfall_id: c.image_id as string, finish: c.finish ?? undefined, quantity: c.quantity })) }, what: `${picks.length} selected ${picks.length === 1 ? "card" : "cards"}` })}>Add to list</button>
               <button className="btn-danger !py-1" disabled={!picks.length} onClick={() => {
@@ -282,6 +283,8 @@ export default function Deck({ id, onBack, focusOracle }: { id: number; onBack: 
               }}><IconTrash className="size-4" />{confirmRemove ? "Click again to remove" : "Remove"}</button>
               <button className="btn-ghost ml-auto !py-1" onClick={end}>Done</button>
             </div>
+            {batch && <BatchEdit deckId={id} cards={picks} onClose={() => setBatch(false)} onDone={() => { setBatch(false); setSelected(new Set()); reload(); }} />}
+            </>
           );
         })()}
         <AddCards deck={deck} setPreview={setPreview} toast={toast} onAdd={(oracle_id, board, new_line) => act(api(`/decks/${id}/cards`, { method: "POST", body: JSON.stringify({ oracle_id, board, new_line }) }))} />
