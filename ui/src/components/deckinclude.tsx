@@ -4,7 +4,7 @@ import { exportDeckList } from "../decks";
 
 export const INCLUDE_ALL = ["collection", "elsewhere", "proxy", "missing"];
 const OPTIONS: [string, string][] = [
-  ["collection", "In my collection (assigned, or free to assign)"],
+  ["collection", "In my collection (assigned, free to assign, or basic lands)"],
   ["elsewhere", "In another deck"],
   ["proxy", "Proxies"],
   ["missing", "Missing (not owned)"],
