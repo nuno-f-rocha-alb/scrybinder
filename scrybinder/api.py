@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 
 import time
 
-from . import __version__, carddetails, collection, db as dbmod, decks, decktext, deckurl, formats, gpu as gpumod, lists, oracle, playmats, scryfall, share, suggest, trades, updater as updmod
+from . import __version__, cardmarket, carddetails, collection, db as dbmod, decks, decktext, deckurl, formats, gpu as gpumod, lists, oracle, playmats, scryfall, share, suggest, trades, updater as updmod
 from .scan.session import MAX_SIDE, MAX_SIDE_PAGE, Scanner, decode
 
 UI_DIST = Path(__file__).resolve().parent.parent / "ui" / "dist"
@@ -91,6 +91,12 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
             conn = dbmod.connect(db.execute("PRAGMA database_list").fetchone()[2])  # own connection for this thread
             job["cards"] = scryfall.import_bulk(conn, path, progress=lambda n: job.update(done=n))
             try:
+                if cardmarket.enabled(conn):
+                    job.update(state="cardmarket", done=0, total=0)
+                cardmarket.refresh(conn, dbmod.DATA_DIR, progress=lambda d, t: job.update(done=d, total=t))
+            except Exception:  # Cardmarket's prices are optional: Scryfall's stay when it cannot be reached
+                logging.getLogger("scrybinder").exception("could not update the Cardmarket prices")
+            try:
                 collection.record_snapshot(conn)  # prices just changed: note the collection's value for the history
             except Exception:  # the history is optional: it must not fail the update
                 logging.getLogger("scrybinder").exception("could not record the value snapshot")
@@ -105,7 +111,7 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
 
     @app.post("/api/bulk/update")
     def bulk_update():
-        if job["state"] in ("download", "import"):
+        if job["state"] in ("download", "import", "cardmarket"):
             raise HTTPException(409, "an update is already running")
         threading.Thread(target=_run_bulk, daemon=True).start()
         return {"started": True}
@@ -330,7 +336,7 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
     def prints(oracle_id: str = "", name: str = "", deck: int | None = None):
         where, arg = ("oracle_id=?", oracle_id) if oracle_id else ("UPPER(name)=UPPER(?)", name)  # uses the cards_name_upper index
         rows = db.execute(f"SELECT id, oracle_id, name, set_code, set_name, collector_number, released_at, rarity, finishes,"
-                          f" frame, full_art, border_color, promo_types, eur, eur_foil, eur_etched, lang, cardmarket_id,"
+                          f" frame, full_art, border_color, promo_types, eur, eur_foil, eur_etched, cm_avg, cm_low, cm_trend, cm_avg_foil, cm_low_foil, cm_trend_foil, lang, cardmarket_id,"
                           f" (SELECT COALESCE(SUM(quantity), 0) FROM collection WHERE scryfall_id=cards.id AND proxy=0) AS owned,"
                           f" (SELECT COALESCE(SUM(c.quantity), 0) - COALESCE(SUM((SELECT SUM(a.quantity) FROM deck_assignments a"
                           f" JOIN deck_cards dc ON dc.id=a.deck_card_id WHERE a.collection_id=c.id AND dc.deck_id IS NOT ?)), 0)"
@@ -770,6 +776,31 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
     @app.get("/api/edhrec")
     def edhrec_status():
         return {"enabled": _edhrec_on()}
+
+    @app.get("/api/cardmarket")
+    def cardmarket_status():
+        return cardmarket.settings(db)
+
+    @app.post("/api/cardmarket")
+    def cardmarket_settings(body: dict = Body(...)):
+        was = cardmarket.enabled(db)
+        try:
+            cardmarket.set_options(db, body.get("enabled"), body.get("collection"), body.get("deck"))
+        except ValueError as e:
+            raise HTTPException(422, str(e))
+        if cardmarket.enabled(db) and not was and job["state"] not in ("download", "import", "cardmarket"):
+            job.update(state="cardmarket", done=0, total=0, error=None)  # before the thread starts, so the page sees it at once
+
+            def run():  # the first download (~45 MB) runs in the background: switching on must not wait for it
+                try:
+                    conn = dbmod.connect(db.execute("PRAGMA database_list").fetchone()[2])
+                    cardmarket.refresh(conn, dbmod.DATA_DIR, progress=lambda d, t: job.update(done=d, total=t))
+                    conn.close()
+                    job["state"] = "done"
+                except Exception as e:
+                    job.update(state="error", error=f"Cardmarket prices: {e}")
+            threading.Thread(target=run, daemon=True).start()
+        return cardmarket.settings(db)
 
     @app.post("/api/edhrec")
     def edhrec_settings(body: dict = Body(...)):

@@ -4,6 +4,9 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Added
+- Settings > **Prices (Cardmarket)**: price your cards from Cardmarket's own price guide instead of the one price Scryfall passes on (off by default; ~45 MB a day from `downloads.s3.cardmarket.com`, nothing from your collection is sent). Choose whether the collection and the decks use Cardmarket's trend, average or low price; the card details show all three. It also prices about 650 of The List's cards that Scryfall has no price for.
+
 ### Changed
 - Decks: a basic land with no printing chosen is never "missing" and never offered for assigning, whether you own it or not. Choose a printing (a full art, say) and it counts like any other card.
 

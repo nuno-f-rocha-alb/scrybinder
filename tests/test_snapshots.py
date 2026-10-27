@@ -94,7 +94,7 @@ def test_compare_edge_cases(db):
     assert [(e["board"], e["delta_qty"]) for e in r["removed"]] == [("main", -1)] and [(e["board"], e["delta_qty"]) for e in r["added"]] == [("side", 1)]
     assert r["price_difference"] == 0
     # a card without a price counts as 0
-    db.execute("UPDATE cards SET eur=NULL, eur_foil=NULL, eur_etched=NULL WHERE oracle_id=?", (a,))
+    db.execute("UPDATE cards SET eur=NULL, eur_foil=NULL, eur_etched=NULL, sf_eur=NULL, sf_eur_foil=NULL WHERE oracle_id=?", (a,))
     db.commit()
     decks.add_card(db, d, a, 1)
     assert next(e for e in decks.compare(db, d, s, "current")["changed"] if e["oracle_id"] == a)["line_delta"] == 0

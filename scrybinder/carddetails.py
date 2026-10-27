@@ -11,7 +11,7 @@ def details(db, card_id: str) -> dict:
     """The printing `card_id` with the rules data of its card. KeyError when there is no such printing."""
     r = db.execute(
         "SELECT c.id, c.oracle_id, c.name, c.set_code, c.set_name, c.collector_number, c.released_at, c.rarity, c.layout, c.lang, c.finishes,"
-        " c.border_color, c.frame, c.full_art, c.cardmarket_id, c.eur, c.eur_foil, c.eur_etched, c.type_line AS print_type,"
+        " c.border_color, c.frame, c.full_art, c.cardmarket_id, c.eur, c.eur_foil, c.eur_etched, c.cm_avg, c.cm_low, c.cm_trend, c.cm_avg_foil, c.cm_low_foil, c.cm_trend_foil, c.type_line AS print_type,"
         " o.name AS card_name, o.mana_cost, o.cmc, o.type_line, o.oracle_text, o.keywords, o.colors, o.legalities, o.game_changer, o.edhrec_rank,"
         " (SELECT COALESCE(SUM(quantity), 0) FROM collection WHERE scryfall_id = c.id AND proxy = 0) AS owned"
         " FROM cards c LEFT JOIN oracle_cards o ON o.oracle_id = c.oracle_id WHERE c.id=?", (card_id,)).fetchone()

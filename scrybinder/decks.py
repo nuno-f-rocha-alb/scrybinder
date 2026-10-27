@@ -7,7 +7,7 @@ import json
 import re
 import sqlite3
 
-from . import deckrules, deckstats
+from . import cardmarket, deckrules, deckstats
 
 FORMATS = ("commander", "standard", "pioneer", "modern", "legacy", "vintage", "pauper", "casual")
 BOARDS = ("main", "side", "commander", "maybe")  # maybe never counts towards size, legality or statistics
@@ -28,8 +28,8 @@ SELECT d.id, d.oracle_id, d.scryfall_id, d.finish, d.quantity, d.board, o.name, 
        (SELECT COALESCE(SUM(quantity), 0) FROM deck_assignments WHERE deck_card_id = d.id) AS assigned,
        (SELECT COALESCE(SUM(a.quantity), 0) FROM deck_assignments a JOIN collection c ON c.id = a.collection_id
           JOIN cards k ON k.id = c.scryfall_id WHERE k.oracle_id = d.oracle_id) AS assigned_all,
-       COALESCE((SELECT CASE d.finish WHEN 'foil' THEN eur_foil WHEN 'etched' THEN eur_etched ELSE eur END FROM cards WHERE id = d.scryfall_id),
-                (SELECT MIN(eur) FROM cards WHERE oracle_id = d.oracle_id AND eur IS NOT NULL)) AS price,
+       COALESCE((SELECT @PRICE@ FROM cards WHERE id = d.scryfall_id),
+                (SELECT MIN(@NONFOIL@) FROM cards WHERE oracle_id = d.oracle_id AND @NONFOIL@ IS NOT NULL)) AS price,
        COALESCE(d.scryfall_id,  -- the printing whose image the app shows (/api/image/<id>)
                 (SELECT id FROM cards WHERE oracle_id = d.oracle_id AND digital = 0 AND image_small IS NOT NULL
                   ORDER BY released_at DESC LIMIT 1)) AS image_id
@@ -106,7 +106,8 @@ def cards(db, deck_id: int) -> list[dict]:
             " GROUP BY k.oracle_id, dk.id ORDER BY dk.name", (deck_id, deck_id)):
         elsewhere.setdefault(oid, []).append({"deck_id": did, "name": name, "quantity": q})
     out, pool = [], {}
-    for row in db.execute(_CARD_SQL, (deck_id,)):
+    sql = _CARD_SQL.replace("@PRICE@", cardmarket.finish_price_sql(db, "deck", "d.finish")).replace("@NONFOIL@", cardmarket.price_sql(db, "deck"))
+    for row in db.execute(sql, (deck_id,)):
         r = dict(row)
         r["colors"] = json.loads(r["colors"] or "[]")
         r["color_identity"] = json.loads(r["color_identity"] or "[]")
@@ -773,7 +774,7 @@ def copies(db, deck_id: int, card_id: int) -> dict:
     rows = [dict(r) for r in db.execute(
         "SELECT c.id, c.scryfall_id, c.quantity, c.finish, c.condition, c.language, c.location, c.altered, c.signed, c.misprint,"
         " k.set_code, k.set_name, k.collector_number,"
-        " CASE c.finish WHEN 'foil' THEN k.eur_foil WHEN 'etched' THEN k.eur_etched ELSE k.eur END AS price,"
+        " " + cardmarket.finish_price_sql(db, "deck", "c.finish", "k.") + " AS price,"
         " COALESCE((SELECT quantity FROM deck_assignments WHERE deck_card_id=? AND collection_id=c.id), 0) AS here"
         " FROM collection c JOIN cards k ON k.id = c.scryfall_id WHERE k.oracle_id=? AND c.proxy=0"
         " ORDER BY (c.scryfall_id = ?) DESC, (c.finish = ?) DESC, k.released_at DESC, c.id", (card_id, card["oracle_id"], card["scryfall_id"] or "", card["finish"] or ""))]
