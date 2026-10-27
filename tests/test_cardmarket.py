@@ -78,6 +78,23 @@ def test_list_cards_without_a_product_are_linked_by_name(db, tmp_path):
     assert [r[0] for r in db.execute("SELECT cm_trend FROM cards WHERE id IN ('twice', 'nowhere')")] == [None, None]
 
 
+def test_a_product_another_list_card_already_has_is_not_this_ones(db, tmp_path):
+    for i in range(2 * cardmarket.MIN_LIST_CARDS):
+        _card(db, f"k{i}", f"Known {i}", cm=100 + i)
+    _card(db, "shift-a", "Reality Shift", cm=1)  # Scryfall linked this printing to product 1 (second List expansion)
+    _card(db, "shift-b", "Reality Shift")  # so this one is product 2
+    _card(db, "geist-a", "Vile Requiem")  # two printings without a product, two products: which is which is unknown
+    _card(db, "geist-b", "Vile Requiem")
+    _card(db, "rebuff", "Rebuff the Wicked")  # one printing, two products, none taken
+    db.commit()
+    products = [(100 + i, f"Known {i}", LIST_EXP if i % 2 else SECOND_LIST_EXP) for i in range(2 * cardmarket.MIN_LIST_CARDS)]
+    products += [(1, "Reality Shift", SECOND_LIST_EXP), (2, "Reality Shift", LIST_EXP), (3, "Vile Requiem", LIST_EXP), (4, "Vile Requiem", SECOND_LIST_EXP),
+                 (5, "Rebuff the Wicked", LIST_EXP), (6, "Rebuff the Wicked", SECOND_LIST_EXP)]
+    cat, _ = _files(tmp_path, products, [])
+    assert cardmarket.link_list(db, cat) == 1
+    assert dict(db.execute("SELECT scryfall_id, id_product FROM cm_link").fetchall()) == {"shift-b": 2}
+
+
 def test_refresh_downloads_once_a_day_and_survives_a_new_bulk(db, tmp_path, monkeypatch):
     _card(db, "a", "Alpha", "zzz", cm=7001, eur=9.0)
     db.commit()
