@@ -790,6 +790,78 @@ def copies(db, deck_id: int, card_id: int) -> dict:
     return {"quantity": card["quantity"], "rows": rows}
 
 
+def locate(db, deck_id: int) -> dict:
+    """Where the free copies of the cards a deck still needs are, by location. A deck card needs copies when fewer than its quantity are
+    assigned (proxies, basic lands and the maybeboard never do). Only copies no deck holds are listed: those can be added right away.
+    Each entry is one collection row for one deck card: `free` copies of it, of the `need` the card still lacks."""
+    _deck(db, deck_id)
+    need = {c["id"]: c for c in cards(db, deck_id)
+            if c["board"] != "maybe" and c["status"] not in ("proxy", "basic") and c["quantity"] - c["assigned"] > 0}
+    by_oracle = {}
+    for c in need.values():
+        by_oracle.setdefault(c["oracle_id"], []).append(c)
+    out = {}
+    for oid, wanted in by_oracle.items():
+        for r in db.execute(
+                "SELECT c.id, c.scryfall_id, c.finish, c.condition, c.language, c.location, k.set_code, k.set_name, k.collector_number,"
+                " c.quantity - COALESCE((SELECT SUM(quantity) FROM deck_assignments WHERE collection_id = c.id), 0) AS free"
+                " FROM collection c JOIN cards k ON k.id = c.scryfall_id WHERE k.oracle_id=? AND c.proxy=0 AND free > 0"
+                " ORDER BY k.released_at DESC, c.id", (oid,)):
+            for c in wanted:
+                out.setdefault(r["location"], []).append({
+                    "card_id": c["id"], "name": c["name"], "board": c["board"], "need": c["quantity"] - c["assigned"], "collection_id": r["id"],
+                    "scryfall_id": r["scryfall_id"], "set_code": r["set_code"], "set_name": r["set_name"], "collector_number": r["collector_number"],
+                    "finish": r["finish"], "condition": r["condition"], "language": r["language"], "free": r["free"],
+                    "preferred": r["scryfall_id"] == c["scryfall_id"] and (not c["finish"] or r["finish"] == c["finish"])})
+    locations = [{"location": loc, "items": sorted(items, key=lambda i: (i["name"].lower(), i["card_id"], not i["preferred"], i["collection_id"]))}
+                 for loc, items in out.items()]
+    locations.sort(key=lambda g: (g["location"] == "", g["location"].lower()))  # "no location" last
+    return {"locations": locations, "copies": sum(i["free"] for g in locations for i in g["items"])}
+
+
+def assign_copies(db, deck_id: int, items) -> int:
+    """Add free copies to deck cards without touching what they hold already: items are [{card_id, collection_id, quantity}].
+    Everything is checked first (the copies must be a free, real copy of the card, the card must still need them), then done at once.
+    Returns the copies assigned."""
+    _deck(db, deck_id)
+    if not isinstance(items, list) or not items:
+        raise ValueError("items must be a list")
+    want = {}  # (deck card, collection row) -> quantity
+    for it in items:
+        if not isinstance(it, dict):
+            raise ValueError("each item needs card_id, collection_id and quantity")
+        q = _int(it.get("quantity"))
+        if q < 1:
+            raise ValueError("quantity must be at least 1")
+        key = (_int(it.get("card_id")), _int(it.get("collection_id")))
+        want[key] = want.get(key, 0) + q
+    per_card, per_row = {}, {}
+    for (card_id, coll), q in want.items():
+        card = db.execute("SELECT oracle_id, quantity FROM deck_cards WHERE id=? AND deck_id=?", (card_id, deck_id)).fetchone()
+        if not card:
+            raise KeyError(card_id)
+        if PROXY in _card_tags(db, card_id):
+            raise ValueError("a proxy has no real copies to assign")
+        row = db.execute("SELECT c.quantity, c.proxy, k.oracle_id FROM collection c JOIN cards k ON k.id = c.scryfall_id WHERE c.id=?", (coll,)).fetchone()
+        if not row or row["oracle_id"] != card["oracle_id"] or row["proxy"]:
+            raise ValueError(f"collection row {coll} is not a real copy of this card")
+        per_card[card_id] = per_card.get(card_id, 0) + q
+        per_row[coll] = per_row.get(coll, 0) + q
+        have = db.execute("SELECT COALESCE(SUM(quantity), 0) FROM deck_assignments WHERE deck_card_id=?", (card_id,)).fetchone()[0]
+        if have + per_card[card_id] > card["quantity"]:
+            raise ValueError(f"the deck has {card['quantity']} of this card: cannot assign {have + per_card[card_id]}")
+        held = db.execute("SELECT COALESCE(SUM(quantity), 0) FROM deck_assignments WHERE collection_id=?", (coll,)).fetchone()[0]
+        if held + per_row[coll] > row["quantity"]:
+            raise ValueError(f"collection row {coll} has {row['quantity'] - held} free copies")
+    before = _held(db, deck_id)
+    with db:
+        db.executemany("INSERT INTO deck_assignments VALUES (?,?,?) ON CONFLICT(deck_card_id, collection_id)"
+                       " DO UPDATE SET quantity = quantity + excluded.quantity", [(c, r, q) for (c, r), q in want.items()])
+        _touch(db, deck_id)
+    settle(db, deck_id, before)
+    return sum(want.values())
+
+
 def shopping_list(db, include_side: bool = False) -> dict:
     """What is still missing across every deck, one entry per card: the sum of each deck's `missing` (what the deck would have to buy;
     a free copy two decks both see as available is not shared out between them). `maybe` never counts; `side` only on request."""

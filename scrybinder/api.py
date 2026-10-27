@@ -789,6 +789,14 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
     def decks_copies(deck_id: int, card_id: int):
         return _wrap(decks.copies, db, deck_id, card_id)
 
+    @app.get("/api/decks/{deck_id}/locate")
+    def decks_locate(deck_id: int):
+        return _wrap(decks.locate, db, deck_id)
+
+    @app.post("/api/decks/{deck_id}/assign-copies")
+    def decks_assign_copies(deck_id: int, body: dict = Body(...)):
+        return {"assigned": _wrap(decks.assign_copies, db, deck_id, body.get("items"))}
+
     @app.put("/api/decks/{deck_id}/cards/{card_id}/assign")
     def decks_assign(deck_id: int, card_id: int, body: dict = Body(...)):
         _wrap(decks.assign, db, deck_id, card_id, body.get("items"))

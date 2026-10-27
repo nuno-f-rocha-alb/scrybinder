@@ -4,6 +4,9 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Added
+- Deck > **Find copies**: the free copies you own of the cards the deck still needs, by the location they are in (so you can fetch them from the binder in one go), each with an **Add** button, or **Add all from here** per location.
+
 ### Changed
 - Decks: a basic land with no printing chosen is never "missing" and never offered for assigning, whether you own it or not. Choose a printing (a full art, say) and it counts like any other card.
 

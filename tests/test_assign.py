@@ -380,3 +380,48 @@ def test_take_route(db):
     c.get(f"/api/status?t={TOKEN}")
     assert c.post(f"/api/decks/{d2}/cards/{c2}/take", json={"from_deck_id": d1, "collection_id": row}).json() == {"moved": 1}
     assert c.post(f"/api/decks/{d2}/cards/{c2}/take", json={"from_deck_id": d1, "collection_id": row}).status_code == 422
+
+
+def test_locate_lists_free_copies_by_location_and_assign_copies_adds_them(db):
+    oid, sid, row, d1, d2 = _setup(db, qty=2)  # 2 free copies in "no location"
+    in_b = collection.add(db, scryfall_id=sid, quantity=1, location="Binder B")
+    card = decks.add_card(db, d1, oid, 3)
+    found = decks.locate(db, d1)
+    assert [g["location"] for g in found["locations"]] == ["Binder B", ""]  # "no location" last
+    assert found["copies"] == 3
+    mine = {g["location"]: g["items"][0] for g in found["locations"]}
+    assert (mine[""]["free"], mine[""]["need"], mine[""]["collection_id"]) == (2, 3, row)
+    assert decks.assign_copies(db, d1, [{"card_id": card, "collection_id": in_b, "quantity": 1}]) == 1
+    after = decks.locate(db, d1)
+    assert [g["location"] for g in after["locations"]] == [""] and after["locations"][0]["items"][0]["need"] == 2  # the copy left B for the deck
+    assert _card(db, d1, card)["assigned"] == 1
+    with pytest.raises(ValueError):  # the card needs 2 more: 3 would be too many
+        decks.assign_copies(db, d1, [{"card_id": card, "collection_id": after["locations"][0]["items"][0]["collection_id"], "quantity": 3}])
+    assert decks.assign_copies(db, d1, [{"card_id": card, "collection_id": after["locations"][0]["items"][0]["collection_id"], "quantity": 2}]) == 2
+    assert decks.locate(db, d1) == {"locations": [], "copies": 0}  # nothing left to find
+    c2 = decks.add_card(db, d2, oid, 1)  # D1 holds every copy now: nothing is free for D2
+    assert decks.locate(db, d2)["locations"] == [] and _card(db, d2, c2)["status"] == "elsewhere"
+
+
+def test_locate_skips_proxies_and_the_maybeboard(db):
+    oid, sid, row, d1, _ = _setup(db)
+    decks.add_card(db, d1, oid, 1, board="maybe")
+    assert decks.locate(db, d1)["locations"] == []
+    c = decks.add_card(db, d1, oid, 1, tags=["proxy"])
+    assert decks.locate(db, d1)["locations"] == []
+    with pytest.raises(ValueError):
+        decks.assign_copies(db, d1, [{"card_id": c, "collection_id": row, "quantity": 1}])
+    with pytest.raises(ValueError):
+        decks.assign_copies(db, d1, [])
+
+
+def test_locate_api(db):
+    oid, sid, row, d1, _ = _setup(db)
+    card = decks.add_card(db, d1, oid, 1)
+    c = TestClient(create_app(db, token=TOKEN, allowed_hosts={"testserver"}))
+    c.get(f"/api/status?t={TOKEN}")
+    got = c.get(f"/api/decks/{d1}/locate").json()
+    assert got["copies"] == 2 and got["locations"][0]["items"][0]["card_id"] == card
+    assert c.get("/api/decks/999/locate").status_code == 404
+    assert c.post(f"/api/decks/{d1}/assign-copies", json={"items": [{"card_id": card, "collection_id": row, "quantity": 1}]}).json() == {"assigned": 1}
+    assert c.post(f"/api/decks/{d1}/assign-copies", json={"items": [{"card_id": card, "collection_id": row, "quantity": 1}]}).status_code == 422
