@@ -380,3 +380,40 @@ def test_take_route(db):
     c.get(f"/api/status?t={TOKEN}")
     assert c.post(f"/api/decks/{d2}/cards/{c2}/take", json={"from_deck_id": d1, "collection_id": row}).json() == {"moved": 1}
     assert c.post(f"/api/decks/{d2}/cards/{c2}/take", json={"from_deck_id": d1, "collection_id": row}).status_code == 422
+
+
+def _second_printing(db, sid, new_id, finishes='["nonfoil"]'):
+    cols = [r[1] for r in db.execute("PRAGMA table_info(cards)")]
+    db.execute(f"INSERT INTO cards ({','.join(cols)}) SELECT {','.join(repr(new_id) if k == 'id' else k for k in cols)} FROM cards WHERE id=?", (sid,))
+    db.execute("UPDATE cards SET finishes=? WHERE id=?", (finishes, new_id))
+
+
+def test_collection_row_changes_printing_and_keeps_its_deck_assignment(db):
+    oid, sid, row, d1, _ = _setup(db, qty=2)
+    _second_printing(db, sid, "second-print", '["nonfoil", "foil"]')
+    c1 = decks.add_card(db, d1, oid, 1)
+    decks.assign(db, d1, c1, [{"collection_id": row, "quantity": 1}])
+    held = _card(db, d1, c1)["assignments"][0]["collection_id"]  # the assigned copy moved to the deck's location: a row of its own
+    assert collection.update(db, held, scryfall_id="second-print") == held
+    got = db.execute("SELECT scryfall_id, finish, location FROM collection WHERE id=?", (held,)).fetchone()
+    assert tuple(got) == ("second-print", "nonfoil", "Deck: D1")
+    assert _card(db, d1, c1)["assigned"] == 1  # the assignment is by card, not printing: it followed the row
+    foil = collection.add(db, scryfall_id=sid, quantity=1, finish="foil")  # a foil of the first printing
+    assert collection.update(db, foil, scryfall_id="second-print", finish="foil") == foil
+    twin = collection.add(db, scryfall_id=sid, quantity=3, location="Deck: D1")
+    assert collection.update(db, twin, scryfall_id="second-print") == held  # same key as the assigned row: merged into it
+    assert db.execute("SELECT quantity FROM collection WHERE id=?", (held,)).fetchone()[0] == 4
+    assert _card(db, d1, c1)["assigned"] == 1
+
+
+def test_collection_printing_must_be_the_same_card_and_finish(db):
+    oid, sid, row, *_ = _setup(db)
+    _second_printing(db, sid, "second-print")  # nonfoil only
+    other_card = db.execute("SELECT id FROM cards WHERE oracle_id != ? AND oracle_id != 'o-dfc' LIMIT 1", (oid,)).fetchone()[0]
+    for bad, kw in (("nope", {}), (other_card, {}), ("second-print", {"finish": "foil"})):
+        with pytest.raises(ValueError):
+            collection.update(db, row, scryfall_id=bad, **kw)
+    assert db.execute("SELECT scryfall_id FROM collection WHERE id=?", (row,)).fetchone()[0] == sid  # nothing changed
+    foil = collection.add(db, scryfall_id=sid, quantity=1, finish="foil")  # the new printing has no foil: the finish falls back
+    collection.update(db, foil, scryfall_id="second-print")
+    assert db.execute("SELECT finish FROM collection WHERE id=?", (foil,)).fetchone()[0] == "nonfoil"
