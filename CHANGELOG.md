@@ -4,6 +4,8 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+## [0.8.7] — 2026-10-27
+
 ### Added
 - Scan > **Only these sets**: limit the scan to the sets you choose (e.g. PLST, The List), so it never names a card as another printing of the same card. A card with no printing in those sets comes out as not recognised.
 - Deck > **Select** > **Edit**: one window to change the board, proxy, quantity and tags of every selected card at once (it replaces the **Move to…** menu).
