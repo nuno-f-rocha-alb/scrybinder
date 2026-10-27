@@ -4,6 +4,8 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+## [0.8.8] — 2026-10-27
+
 ### Added
 - Settings > **Prices (Cardmarket)**: price your cards from Cardmarket's own price guide instead of the one price Scryfall passes on (off by default; ~45 MB a day from `downloads.s3.cardmarket.com`, nothing from your collection is sent). Choose whether the collection and the decks use Cardmarket's trend, average or low price; the card details show all three. It also prices about 650 of The List's cards that Scryfall has no price for.
 - Collection > edit a card > **Change printing…**: move a row to another printing of the same card (and finish) without deleting and adding it again. Copies assigned to decks stay assigned; a row that ends up identical to another is merged into it.
