@@ -121,11 +121,19 @@ def load_guide(db, path: Path):
 
 def link_list(db, catalog: Path) -> int:
     """Give The List's cards that Scryfall has no Cardmarket product for the product of the same name in The List's expansions.
-    Only a name found in exactly one of them is linked: a name in two could be either printing, so it stays without a price."""
+    A name found in exactly one of them is linked. A name in two could be either printing, so it stays without a price, unless one of the
+    products already belongs to another The List card of that name (Scryfall linked it): that one is a different printing, which leaves
+    the other. That only holds when this card is the only one of its name still without a product."""
     cards = {r["id"]: r["name"] for r in db.execute(
         "SELECT id, name FROM cards WHERE set_code=? AND digital=0 AND cardmarket_id IS NULL", (LIST_SET,))}
     wanted = {n for name in cards.values() for n in (name, name.split(" // ")[0])}
+    linked = {}  # name -> the products Scryfall already gave to The List cards of that name
+    for r in db.execute("SELECT name, cardmarket_id FROM cards WHERE set_code=? AND digital=0 AND cardmarket_id IS NOT NULL", (LIST_SET,)):
+        linked.setdefault(r["name"], set()).add(r["cardmarket_id"])
     known = {r[0] for r in db.execute("SELECT cardmarket_id FROM cards WHERE set_code=? AND cardmarket_id IS NOT NULL", (LIST_SET,))}
+    unlinked = {}  # name -> how many The List cards of that name have no product
+    for name in cards.values():
+        unlinked[name] = unlinked.get(name, 0) + 1
     expansions, found = {}, []  # expansion -> how many known List cards it holds; candidate products for the wanted names
     with open(catalog, "rb") as f:
         for p in ijson.items(f, "products.item", use_float=True):
@@ -141,6 +149,8 @@ def link_list(db, catalog: Path) -> int:
     links = {}
     for sid, name in cards.items():
         cand = by_name.get(name) or by_name.get(name.split(" // ")[0]) or set()
+        if len(cand) > 1 and unlinked[name] == 1:
+            cand = cand - linked.get(name, set())
         if len(cand) == 1:
             links[sid] = next(iter(cand))
     with db:
