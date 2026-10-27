@@ -4,7 +4,7 @@ export type Format = (typeof FORMATS)[number];
 export type Board = "main" | "side" | "commander" | "maybe";
 export const BOARDS: Board[] = ["main", "side", "commander", "maybe"];
 export const BOARD_LABEL: Record<Board, string> = { main: "Main deck", side: "Sideboard", commander: "Commander", maybe: "Maybeboard" };
-export type CardStatus = "assigned" | "available" | "elsewhere" | "missing" | "proxy";
+export type CardStatus = "assigned" | "available" | "elsewhere" | "missing" | "proxy" | "basic";
 
 export type DeckCard = {
   id: number; oracle_id: string; scryfall_id: string | null; quantity: number; board: Board; name: string; mana_cost: string;
@@ -83,8 +83,8 @@ const TYPE_LABEL: Record<string, string> = {
 };
 const COLOR_ORDER = ["W", "U", "B", "R", "G", "multi", "none", "land"];
 const COLOR_LABEL: Record<string, string> = { W: "White", U: "Blue", B: "Black", R: "Red", G: "Green", multi: "Multicolour", none: "Colourless", land: "Lands" };
-const STATUS_ORDER: CardStatus[] = ["missing", "elsewhere", "available", "assigned", "proxy"];
-const STATUS_LABEL: Record<CardStatus, string> = { missing: "Missing", elsewhere: "In other decks", available: "Available to assign", assigned: "Assigned", proxy: "Proxies" };
+const STATUS_ORDER: CardStatus[] = ["missing", "elsewhere", "available", "assigned", "proxy", "basic"];
+const STATUS_LABEL: Record<CardStatus, string> = { missing: "Missing", elsewhere: "In other decks", available: "Available to assign", assigned: "Assigned", proxy: "Proxies", basic: "Basic lands" };
 
 export type Group = { key: string; label: string; cards: DeckCard[]; count: number; pip?: string };
 

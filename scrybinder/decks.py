@@ -80,6 +80,7 @@ def cards(db, deck_id: int) -> list[dict]:
     """The deck's cards with their state. For each card, need = quantity - assigned and the free copies of the oracle card
     (owned - assigned to any deck) are shared out in order, so two boards of the same card do not both claim the same copy:
     - `proxy`: tagged proxy, present but never missing;
+    - `basic`: a basic land with no printing chosen, never missing (a printing, e.g. a full art, makes it count like any card);
     - `assigned`: every copy is assigned;
     - `available`: free copies cover the rest (assign them);
     - `elsewhere`: not enough free copies and some are assigned to other decks (`elsewhere` lists them);
@@ -128,12 +129,15 @@ def cards(db, deck_id: int) -> list[dict]:
             r["missing"] = need - take
             r["status"] = ("assigned" if not need else "available" if not r["missing"]
                            else "elsewhere" if r["elsewhere"] else "missing")
-        r["available"] = 0 if PROXY in r["tags"] else take
+        if (r["status"] in ("available", "elsewhere", "missing") and not r["scryfall_id"]
+                and "Basic Land" in (r["type_line"] or "")):  # a basic land with no printing chosen: owning it or not does not matter
+            r["missing"], r["status"] = 0, "basic"
+        r["available"] = 0 if PROXY in r["tags"] or r["status"] == "basic" else take
         out.append(r)
     return out
 
 
-INCLUDE = {"assigned": "collection", "available": "collection", "elsewhere": "elsewhere", "proxy": "proxy", "missing": "missing"}  # card status -> export option
+INCLUDE = {"assigned": "collection", "available": "collection", "elsewhere": "elsewhere", "proxy": "proxy", "missing": "missing", "basic": "collection"}  # card status -> export option
 
 
 def include_only(cs: list[dict], include) -> list[dict]:
@@ -624,7 +628,7 @@ def assign_free(db, deck_id: int, only=None) -> int:
     before = _held(db, deck_id)
     with db:
         for c in cards(db, deck_id):
-            if c["board"] == "maybe" or c["status"] == "proxy" or (only is not None and c["id"] not in only):
+            if c["board"] == "maybe" or c["status"] in ("proxy", "basic") or (only is not None and c["id"] not in only):
                 continue
             need = c["quantity"] - c["assigned"]
             if need <= 0:

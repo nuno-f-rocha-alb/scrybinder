@@ -66,6 +66,20 @@ def test_status_summary_and_proxy(db):
     assert {c["id"]: c["status"] for c in decks.get(db, d)["cards"]}[ca] == "available"
 
 
+def test_basic_lands_without_a_printing_are_never_missing(db):
+    d = decks.create(db, "B")
+    rows = db.execute("SELECT oracle_id, id FROM cards WHERE oracle_id != 'o-dfc' GROUP BY oracle_id LIMIT 2").fetchall()
+    for oid, _ in rows:  # make two cards basic lands
+        db.execute("UPDATE oracle_cards SET type_line='Basic Land — Forest' WHERE oracle_id=?", (oid,))
+    plain = decks.add_card(db, d, rows[0][0], 5)  # no printing: ignored
+    chosen = decks.add_card(db, d, rows[1][0], 1, "main", rows[1][1])  # a printing chosen (a full art, say): counts like any card
+    st = {c["id"]: c for c in decks.get(db, d)["cards"]}
+    assert (st[plain]["status"], st[plain]["missing"], st[plain]["available"]) == ("basic", 0, 0)
+    assert (st[chosen]["status"], st[chosen]["missing"]) == ("missing", 1)
+    assert decks.get(db, d)["summary"]["missing"] == 1
+    assert decks.assign_free(db, d) == 0
+
+
 def test_duplicate_delete_and_rebulk(db, bulk_file):
     d = decks.create(db, "D", "modern", "desc")
     a, _ = _two_oracles(db)
