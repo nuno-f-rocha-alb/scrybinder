@@ -23,6 +23,17 @@ export function totals(doc) {
   return out;
 }
 
+/** A trade is two sides, what the sender gives and gets (a side with no cards is not in the document). */
+export const isTrade = (doc) => doc.kind === "trade" && doc.sections.every((s) => s.name === "Giving" || s.name === "Getting");
+
+export function tradeSides(doc) {
+  const side = (name) => {
+    const cards = doc.sections.find((s) => s.name === name)?.cards ?? [];
+    return { cards, count: cards.reduce((a, c) => a + c.qty, 0), value: cards.reduce((a, c) => a + (c.price || 0) * c.qty, 0) };
+  };
+  return { out: side("Giving"), in: side("Getting") };
+}
+
 // "2 Sol Ring (C21) 263 *F*": the format Moxfield, Archidekt and Scrybinder read.
 export function toText(doc) {
   const line = (c) => `${c.qty} ${c.name || c.id}${c.set ? ` (${c.set}) ${c.cn || ""}`.trimEnd() : ""}${c.finish === "foil" ? " *F*" : c.finish === "etched" ? " *E*" : ""}`;

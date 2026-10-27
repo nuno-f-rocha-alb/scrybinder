@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { apiImageUrl, available, groupLines, imageUrl, sortLines, toText, totals, typeOf } from "../site/lib.js";
+import { apiImageUrl, available, groupLines, imageUrl, isTrade, sortLines, toText, totals, tradeSides, typeOf } from "../site/lib.js";
 
 const doc = {
   sections: [
@@ -58,4 +58,17 @@ test("a link made before type, colour and mana value existed offers only what it
   assert.deepEqual(available(old), { type: false, colour: false, mv: false, rarity: false, price: false });
   assert.equal(available(rich).type, true);
   assert.deepEqual(groupLines(old, "type").map((g) => g.name), ["Other"]);
+});
+
+test("a trade is shown as its two sides, with what each is worth", () => {
+  const trade = { kind: "trade", sections: [
+    { name: "Giving", cards: [{ id: "a", name: "Sol Ring", qty: 2, price: 1.5 }] },
+    { name: "Getting", cards: [{ id: "b", name: "Island", qty: 1, price: 0.25 }, { id: "c", name: "Swamp", qty: 3 }] },
+  ] };
+  assert.equal(isTrade(trade), true);
+  assert.equal(isTrade({ ...trade, kind: "deck" }), false);
+  assert.equal(isTrade({ kind: "trade", sections: [{ name: "Other", cards: [] }] }), false);
+  const s = tradeSides(trade);
+  assert.deepEqual([s.out.count, s.out.value, s.in.count, s.in.value], [2, 3, 4, 0.25]);
+  assert.deepEqual(tradeSides({ kind: "trade", sections: [trade.sections[1]] }).out, { cards: [], count: 0, value: 0 });  // a side with nothing is not in the document
 });

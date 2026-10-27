@@ -4,6 +4,9 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Changed
+- Shared trades: the link page now looks like the Trades page, with what goes out on one side, what comes in on the other (picture, edition, finish, condition, price each and per line), the total of each side and the balance. Cards that are not in near-mint condition say so. A link already made shows the new page too; its cards just have no condition.
+
 ## [0.8.9] — 2026-10-27
 
 ### Fixed
