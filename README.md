@@ -263,6 +263,7 @@ Known limits: Room/split cards (the artwork box does not exist), very strong hol
   | `download.pytorch.org` | only if you press *Enable GPU acceleration* | the CUDA build of PyTorch (checksum verified) |
   | `huggingface.co` | only in source builds, once | the DINOv2 weights (the installed app ships them) |
   | `api2.moxfield.com`, `archidekt.com`, `manabox.app` | only when you import a deck from a link | the public deck at that link |
+  | `downloads.s3.cardmarket.com` | only if you turn on *Use Cardmarket prices* in Settings, then once a day | Cardmarket's public price guide and product list (~45 MB), nothing from your collection is sent |
   | `json.edhrec.com` | only if you turn on *EDHREC suggestions* in a Commander deck | the commander's page (one request per commander, kept on your computer for a day); only the commander's name is sent |
   | the share service (`*.workers.dev`) and viewer (`*.github.io`) | only when you press *Create link* or *Delete* in the Share dialog, or open a link | the deck, trade or list you chose (cards, quantities, finishes, prices only if you tick it; never locations, notes, purchase prices or a trade's person and cash), kept 30 days; the viewer page loads card images from Scryfall |
 

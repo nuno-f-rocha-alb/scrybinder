@@ -12,14 +12,14 @@ import ijson
 
 from .db import DATA_DIR
 
-from . import __version__  # noqa: E402
+from . import __version__, cardmarket  # noqa: E402
 
 HEADERS = {"User-Agent": f"Scrybinder/{__version__} (local collection manager)", "Accept": "application/json;q=0.9,*/*;q=0.8"}
 BULK_STALE_DAYS = 7
 AUTO_BULK_DAYS = 1  # the app refreshes itself on start-up when the bulk data is older than 1 day (Scryfall only changes prices once a day)
 _COLS = ("id oracle_id name set_code set_name collector_number released_at rarity layout lang type_line "
          "full_art border_color frame frame_effects promo_types finishes cardmarket_id eur eur_foil eur_etched "
-         "image_small image_normal digital illustration_id image_status").split()
+         "image_small image_normal digital illustration_id image_status sf_eur sf_eur_foil").split()
 _INSERT = f"INSERT OR REPLACE INTO cards ({','.join(_COLS)}) VALUES ({','.join('?' * len(_COLS))})"
 
 _FACE = "INSERT OR REPLACE INTO card_faces (card_id, face, illustration_id, image_normal) VALUES (?,?,?,?)"
@@ -47,7 +47,8 @@ def card_row(c: dict) -> tuple:
             json.dumps(c.get("finishes", [])), c.get("cardmarket_id"),
             _price(p.get("eur")), _price(p.get("eur_foil")), _price(p.get("eur_etched")),
             imgs.get("small"), imgs.get("normal"), int(bool(c.get("digital"))),
-            c.get("illustration_id") or (c.get("card_faces") or [{}])[0].get("illustration_id"), c.get("image_status"))
+            c.get("illustration_id") or (c.get("card_faces") or [{}])[0].get("illustration_id"), c.get("image_status"),
+            _price(p.get("eur")), _price(p.get("eur_foil")))
 
 
 def face_rows(c: dict) -> list[tuple]:
@@ -142,6 +143,7 @@ def import_bulk(db, path: Path | str, progress=None) -> int:
         db.execute("INSERT OR REPLACE INTO meta VALUES ('bulk_updated', ?)",
                    (datetime.now(timezone.utc).isoformat(),))
     refresh_set_totals(db)
+    cardmarket.apply(db)  # the import put Scryfall's prices back: lay Cardmarket's over them again
     if progress:
         progress(n)
     return n

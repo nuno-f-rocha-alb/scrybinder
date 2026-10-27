@@ -7,6 +7,7 @@ import { ManaCost } from "./mana";
 type Details = {
   id: string; oracle_id: string | null; name: string; set_code: string; set_name: string; collector_number: string; released_at: string; rarity: string;
   finishes: string[]; border_color: string; full_art: number; cardmarket_id: number | null; eur: number | null; eur_foil: number | null; eur_etched: number | null;
+  cm_low: number | null; cm_avg: number | null; cm_trend: number | null; cm_low_foil: number | null; cm_avg_foil: number | null; cm_trend_foil: number | null;
   mana_cost: string | null; cmc: number | null; type_line: string | null; oracle_text: string | null; keywords: string[]; legalities: Record<string, string>;
   game_changer: boolean; edhrec_rank: number | null; owned: number;
 };
@@ -40,6 +41,21 @@ const LEGAL = {
   restricted: { Icon: IconAlertTriangle, cls: "text-gold", label: "Restricted" },
 } as const;
 
+/** Cardmarket's three prices of the printing (low, average, trend), per finish; nothing until the prices are turned on in Settings. */
+function CardmarketPrices({ d }: { d: Details }) {
+  const rows = [["Non-foil", d.cm_low, d.cm_avg, d.cm_trend], ["Foil", d.cm_low_foil, d.cm_avg_foil, d.cm_trend_foil]] as const;
+  const shown = rows.filter((r) => r[1] != null || r[2] != null || r[3] != null);
+  if (!shown.length) return null;
+  return (
+    <div className="mt-2 text-xs" aria-label="Cardmarket prices">
+      <div className="text-mute">Cardmarket</div>
+      {shown.map(([label, low, avg, trend]) => (
+        <div key={label} className="mt-0.5 flex flex-wrap gap-x-3 tabular-nums"><span className="w-16 text-mute">{label}</span><span>Low {eur(low)}</span><span>Avg {eur(avg)}</span><span>Trend {eur(trend)}</span></div>
+      ))}
+    </div>
+  );
+}
+
 /** The text side of a card: rules, printing (with the list of all printings), legality and rulings. `onPick` makes the printings clickable. */
 export function CardInfo({ d, id, onPick }: { d: Details; id: string; onPick?: (id: string) => void }) {
   const [rulings, setRulings] = useState<Ruling[] | null | "error">(null);
@@ -70,6 +86,7 @@ export function CardInfo({ d, id, onPick }: { d: Details; id: string; onPick?: (
         <div className="font-medium">{d.set_name} <span className="font-normal text-mute">({d.set_code.toUpperCase()})</span></div>
         <div className="text-mute">#{d.collector_number} · <span className="capitalize">{d.rarity}</span> · {d.released_at?.slice(0, 4)}{d.border_color === "borderless" ? " · borderless" : ""}</div>
         <div className="mt-1 text-xs text-mute">Comes in: {d.finishes.map((f) => FINISH[f] ?? f).join(", ") || "—"}</div>
+        <CardmarketPrices d={d} />
         {d.oracle_id && <button className="mt-2 cursor-pointer text-accent hover:underline" aria-expanded={showPrints} onClick={() => setShowPrints((v) => !v)}>
           {showPrints ? "Hide all printings" : "Show all printings"}</button>}
         {showPrints && (
