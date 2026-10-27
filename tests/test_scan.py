@@ -765,3 +765,31 @@ def test_scan_overlap_endpoint(client, monkeypatch):
     assert client.post("/api/scan/overlap", content=b"").status_code == 400
     assert client.post("/api/scan/mode", json={"overlap": True}).json()["overlap_mode"] is True
     assert client.get("/api/scan/state").json()["overlap_mode"] is True
+
+
+def test_clean_cell_count_reaches_the_page_threshold_on_binder_pages():
+    for seed in (1, 2, 3):
+        for kw in ({}, {"gap": 0.02}, {"glare": True}, {"occupied": [True, False, True, True, False, True, True, True, False]}):
+            assert vision.clean_cell_count(_page(seed, **kw)[0]) >= vision.MIN_PAGE_CELLS, (seed, kw)
+    assert vision.clean_cell_count(np.full((900, 1200, 3), 40, np.uint8)) == 0
+
+
+def test_process_auto_tells_the_photo_kinds_apart(db, tmp_path, monkeypatch):
+    from scrybinder.scan import session
+    scanner = session.Scanner(db, tmp_path)
+    fan = {"out": {"detected": 5, "entries": []}}
+    monkeypatch.setattr(scanner, "process_overlap", lambda i, label="", min_cards=0: fan["out"])
+    monkeypatch.setattr(scanner, "process_page", lambda i, label="": {"detected": 9, "entries": []})
+    monkeypatch.setattr(scanner, "process", lambda i, label="": {"id": 1})
+    monkeypatch.setattr(session.overlap, "available", lambda: True)
+    img, _ = _page(4)
+    assert scanner.process_auto(img)["kind"] == "page"                                     # whole outlines of many cards
+    monkeypatch.setattr(session, "clean_cell_count", lambda i: 3)
+    assert scanner.process_auto(img)["kind"] == "overlap"                                  # few outlines and several titles
+    fan["out"] = None                                                                      # ... but not two titles: one card
+    assert scanner.process_auto(img) == {"detected": 1, "entries": [{"id": 1}], "kind": "photo"}
+    fan["out"] = {"detected": 5, "entries": []}
+    monkeypatch.setattr(session.overlap, "available", lambda: False)                      # no text recognition: titles cannot be read
+    assert scanner.process_auto(img)["kind"] == "photo"
+    monkeypatch.setattr(session, "clean_cell_count", lambda i: 0)
+    assert scanner.process_auto(img)["kind"] == "photo"

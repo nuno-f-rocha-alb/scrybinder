@@ -21,8 +21,10 @@ def _get(url: str) -> dict:
         r = httpx.get(url, headers=HEADERS, timeout=30, follow_redirects=False)
     except httpx.HTTPError as e:
         raise ValueError(f"could not reach the site ({e.__class__.__name__}): check your connection") from None
-    if r.status_code in (401, 403, 404):
+    if r.status_code == 404:
         raise ValueError("the site did not give the deck: is the link right and the deck public?")
+    if r.status_code in (401, 403):
+        raise ValueError(f"the site refused the request ({r.status_code}): the deck is private, or the site is blocking Scrybinder right now; try again later")
     if r.status_code != 200 or len(r.content) > MAX_BYTES:
         raise ValueError(f"the site answered {r.status_code}: try again later")
     try:

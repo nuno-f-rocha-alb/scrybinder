@@ -14,7 +14,7 @@ from .. import collection
 from ..db import DATA_DIR
 from . import overlap
 from .identify import Identifier
-from .vision import CARD_H, CARD_W, Stability, card_from_photo, card_signature, find_card, find_cards, inner_card, warp_card
+from .vision import CARD_H, CARD_W, MIN_PAGE_CELLS, Stability, card_from_photo, card_signature, clean_cell_count, find_card, find_cards, inner_card, warp_card
 
 log = logging.getLogger(__name__)
 
@@ -66,6 +66,7 @@ class Scanner:
         self.split_next = False            # the next capture opens a new entry (e.g. the foil among identical regular cards)
         self.page_mode = False             # photos are binder pages (up to 3x3 cards) instead of one card each
         self.overlap_mode = False          # photos are fans/columns of overlapping cards
+        self.auto_mode = False             # each photo is told apart: one card, a binder page or overlapping cards
         self.list_mode = False             # True: reads go to the temporary list (reads) and only enter the collection in commit_reads()
         self._cards: dict[str, dict | None] = {}
         self.reads: list[dict] = self._load_reads()
@@ -228,7 +229,7 @@ class Scanner:
         self.message = f"{len(entries)} cards detected" if entries else "No cards detected"
         return {"detected": len(entries), "entries": entries}
 
-    def process_overlap(self, img: np.ndarray, label: str = "") -> dict:
+    def process_overlap(self, img: np.ndarray, label: str = "", min_cards: int = 0) -> dict | None:
         """A photo of overlapping cards (fans, columns): every title found is a card, confirmed against the images of its printings."""
         if not overlap.available():
             self.message = "Overlapping cards need Windows text recognition"
@@ -239,6 +240,8 @@ class Scanner:
         except overlap.OcrError as e:
             self.message = f"Windows text recognition is not available: {e}"
             return {"detected": 0, "entries": [], "boxes": []}
+        if len(cards) < min_cards:  # not a fan after all: nothing is added
+            return None
         for i, f in enumerate(cards, 1):
             cands = [{**c, "score": 0, "name_score": f["similarity"]} for c in f["prints"][:40]]
             matched = f["verified"] and f["inliers"] >= overlap.MIN_INLIERS
@@ -253,10 +256,23 @@ class Scanner:
         self.message = f"{len(entries)} cards detected" if entries else "No cards detected"
         return {"detected": len(entries), "entries": entries, "boxes": boxes}
 
+    def process_auto(self, img: np.ndarray, label: str = "") -> dict:
+        """A photo of whatever it is: a binder page when it shows several whole card outlines; one or two (or three) outlines may be a
+        fan of overlapping cards, which the titles confirm (Windows only): fewer than two cards read by title and it is one card."""
+        n = clean_cell_count(img)
+        if n >= MIN_PAGE_CELLS:
+            return {**self.process_page(img, label), "kind": "page"}
+        if n >= 2 and overlap.available():
+            out = self.process_overlap(img, label, min_cards=2)
+            if out and out["detected"]:
+                return {**out, "kind": "overlap"}
+        entry = self.process(img, label)
+        return {"detected": 1, "entries": [entry], "kind": "photo"}
+
     def state(self) -> dict:
         with self._lock:
             return {"running": bool(self._thread and self._thread.is_alive()), "source": self.source,
-                    "message": self.message, "notice": self.notice, "beep": self.beep, "split_next": self.split_next, "list_mode": self.list_mode, "page_mode": self.page_mode, "overlap_mode": self.overlap_mode,
+                    "message": self.message, "notice": self.notice, "beep": self.beep, "split_next": self.split_next, "list_mode": self.list_mode, "page_mode": self.page_mode, "overlap_mode": self.overlap_mode, "auto_mode": self.auto_mode,
                     "pending": list(self.pending),
                     "reads": [{k: v for k, v in r.items() if k != "candidates"} | {"card": self.card_info(r["scryfall_id"])}
                               for r in self.reads]}
@@ -326,7 +342,7 @@ class Scanner:
                 self._seen.add(p.name)
                 img = decode(p.read_bytes())
                 if img is not None:
-                    (self.process_overlap if self.overlap_mode else self.process_page if self.page_mode else self.process)(img, p.name)
+                    (self.process_auto if self.auto_mode else self.process_overlap if self.overlap_mode else self.process_page if self.page_mode else self.process)(img, p.name)
             self._stop.wait(1.0)
 
     def _run_webcam(self, index: int):

@@ -3,6 +3,7 @@
 Options: `--serve` prints the URL and waits (development), `--browser` opens your normal browser instead of a window.
 If no native web view is available (e.g. missing GTK/Qt on Linux) it falls back to the browser automatically.
 """
+import base64
 import os
 import secrets
 import socket
@@ -28,14 +29,17 @@ class Bridge:
     """Exposed to the page as `window.pywebview.api`: a native Save dialog for CSV and text exports."""
 
     @staticmethod
-    def _save(name: str, text: str, file_types: tuple) -> str | None:
+    def _save(name: str, text: str | bytes, file_types: tuple) -> str | None:
         """Ask where to save, write the file, return its path (None if the dialog was cancelled)."""
         import webview
         got = webview.windows[0].create_file_dialog(webview.FileDialog.SAVE, save_filename=Path(name).name, file_types=file_types)
         if not got:
             return None
         path = Path(got if isinstance(got, str) else got[0])
-        path.write_text(text, encoding="utf-8", newline="")
+        if isinstance(text, bytes):
+            path.write_bytes(text)
+        else:
+            path.write_text(text, encoding="utf-8", newline="")
         return str(path)
 
     def save_csv(self, name: str, text: str) -> str | None:
@@ -43,6 +47,12 @@ class Bridge:
 
     def save_text(self, name: str, text: str) -> str | None:  # a deck list
         return self._save(name, text, ("Text files (*.txt)",))
+
+    def save_image(self, name: str, data_url: str) -> str | None:  # the picture of a deck, as a data: URL of a PNG
+        prefix = "data:image/png;base64,"
+        if not data_url.startswith(prefix):
+            raise ValueError("not a PNG")
+        return self._save(name, base64.b64decode(data_url[len(prefix):]), ("PNG images (*.png)",))
 
     def save_db(self, name: str) -> str | None:
         """Ask where, then write a consistent backup of the database there (the file is too big to pass through the page)."""

@@ -2,6 +2,8 @@
 import sys
 import types
 
+import pytest
+
 from scrybinder.app import Bridge
 
 
@@ -37,3 +39,12 @@ def test_save_text_writes_a_deck_list(tmp_path, monkeypatch):
     seen = _fake_webview(monkeypatch, [str(target)])  # some versions answer with a list
     assert Bridge().save_text("../x/deck.txt", "Deck\n1 Sol Ring\n") == str(target)
     assert seen["name"] == "deck.txt" and target.read_bytes() == b"Deck\n1 Sol Ring\n"
+
+
+def test_save_image_writes_the_png_and_refuses_anything_else(tmp_path, monkeypatch):
+    target = tmp_path / "deck.png"
+    _fake_webview(monkeypatch, str(target))
+    assert Bridge().save_image("deck.png", "data:image/png;base64,iVBORw0KGgo=") == str(target)
+    assert target.read_bytes() == b"\x89PNG\r\n\x1a\n"
+    with pytest.raises(ValueError):
+        Bridge().save_image("deck.png", "data:text/html;base64,PGI+")
