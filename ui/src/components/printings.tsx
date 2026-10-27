@@ -14,15 +14,15 @@ const priceOf = (p: Print, f: Finish) => (f === "foil" ? p.eur_foil : f === "etc
 const finishesOf = (p: Print): Finish[] => { const f = (p.finishes ? JSON.parse(p.finishes) : []) as Finish[]; return f.length ? f : ["nonfoil"]; };
 const BUTTON: Record<Finish, string> = { nonfoil: "Select", foil: "Select foil", etched: "Select etched" };
 
-/** Pick the printing a deck card prefers, and its finish: the ones you own and no other deck holds first, then the rest. Each printing has one
+/** Pick the printing (and finish) of a deck card, or of a row of the collection when there is no `deckId`: the ones you own and no deck holds first. Of a deck card, the printing it prefers: the ones you own and no other deck holds first, then the rest. Each printing has one
  * button per finish it comes in. `current` / `currentFinish` are the chosen ones (null = not chosen). */
 export default function PrintingDialog({ deckId, oracleId, name, current, currentFinish, onPick, onClose }: {
-  deckId: number; oracleId: string; name: string; current: string | null; currentFinish: string | null; onPick: (scryfallId: string, finish: Finish) => void; onClose: () => void;
+  deckId?: number; oracleId: string; name: string; current: string | null; currentFinish: string | null; onPick: (scryfallId: string, finish: Finish) => void; onClose: () => void;
 }) {
   const [prints, setPrints] = useState<Print[] | null>(null);
   const [set, setSet] = useState("");
   const [err, setErr] = useState("");
-  useEffect(() => { api<Print[]>(`/cards/prints?oracle_id=${encodeURIComponent(oracleId)}&deck=${deckId}`).then(setPrints).catch((e) => setErr(e.message)); }, [oracleId, deckId]);
+  useEffect(() => { api<Print[]>(`/cards/prints?oracle_id=${encodeURIComponent(oracleId)}${deckId != null ? `&deck=${deckId}` : ""}`).then(setPrints).catch((e) => setErr(e.message)); }, [oracleId, deckId]);
 
   const sets = useMemo(() => [...new Map((prints ?? []).map((p) => [p.set_code, p.set_name])).entries()], [prints]);
   const shown = (prints ?? []).filter((p) => !set || p.set_code === set);
@@ -79,7 +79,7 @@ export default function PrintingDialog({ deckId, oracleId, name, current, curren
       {err && <p className="mt-3 text-sm text-danger">{err}</p>}
       <div className="mt-5 flex justify-end gap-2">
         <button className="btn-ghost" onClick={onClose}>Cancel</button>
-        <button className="btn-primary" disabled={!cheap} onClick={() => cheap && onPick(cheap.id, cheap.finish)}>Use cheapest</button>
+        {deckId != null && <button className="btn-primary" disabled={!cheap} onClick={() => cheap && onPick(cheap.id, cheap.finish)}>Use cheapest</button>}
       </div>
     </Modal>
   );

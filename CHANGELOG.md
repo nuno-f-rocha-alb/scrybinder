@@ -4,6 +4,9 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Added
+- Collection > edit a card > **Change printing…**: move a row to another printing of the same card (and finish) without deleting and adding it again. Copies assigned to decks stay assigned; a row that ends up identical to another is merged into it.
+
 ### Changed
 - Decks: a basic land with no printing chosen is never "missing" and never offered for assigning, whether you own it or not. Choose a printing (a full art, say) and it counts like any other card.
 
