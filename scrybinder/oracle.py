@@ -2,6 +2,8 @@
 import json
 import re
 
+from . import cardmarket
+
 SORTS = {"name": "o.name", "cmc": "o.cmc, o.name", "popularity": "o.edhrec_rank IS NULL, o.edhrec_rank, o.name"}
 LIMIT_MAX = 100
 
@@ -84,7 +86,7 @@ def search(db, q: str = "", text: str = "", colors: str = "", type: str = "", cm
         img = db.execute("SELECT id, image_small, image_normal FROM cards WHERE oracle_id=? AND digital=0 AND image_small IS NOT NULL"
                          " ORDER BY released_at DESC LIMIT 1", (oid,)).fetchone()
         r.update(dict(img) if img else {"id": None, "image_small": None, "image_normal": None})
-        r["price"] = db.execute("SELECT MIN(eur) FROM cards WHERE oracle_id=? AND digital=0", (oid,)).fetchone()[0]  # as decks price it
+        r["price"] = db.execute(f"SELECT MIN({cardmarket.price_sql(db, 'deck')}) FROM cards WHERE oracle_id=? AND digital=0", (oid,)).fetchone()[0]  # as decks price it
         r["owned"] = db.execute("SELECT COALESCE(SUM(c.quantity), 0) FROM collection c JOIN cards k ON k.id = c.scryfall_id"
                                 " WHERE k.oracle_id=? AND c.proxy=0", (oid,)).fetchone()[0]
         r["in_deck"] = (db.execute("SELECT COALESCE(SUM(quantity), 0) FROM deck_cards WHERE deck_id=? AND oracle_id=?"

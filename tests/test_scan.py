@@ -228,7 +228,7 @@ def _noble_db(db):
                               ("nh-2xm", "2xm", "177", "2020-08-07")]:
         db.execute("INSERT INTO cards SELECT ?, 'o-nh', 'Noble Hierarch', ?, 'x', ?, ?, rarity, layout, lang, type_line, full_art,"
                    " border_color, frame, frame_effects, promo_types, finishes, cardmarket_id, eur, eur_foil, eur_etched,"
-                   " image_small, image_normal, digital, NULL, NULL FROM cards WHERE id='dfc-1'", (cid, st, num, rel))
+                   " image_small, image_normal, digital, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL FROM cards WHERE id='dfc-1'", (cid, st, num, rel))
 
 
 def test_has_spark_on_the_list_cards_and_not_on_normal_cards():
@@ -337,7 +337,7 @@ def test_the_list_candidate_wins_with_spark_destroy_evil(db):
                               ("de-fdc", "fdc", "26", "2024-11-15")]:
         db.execute("INSERT INTO cards SELECT ?, 'o-de', 'Destroy Evil', ?, 'x', ?, ?, rarity, layout, lang, type_line, full_art,"
                    " border_color, frame, frame_effects, promo_types, finishes, cardmarket_id, eur, eur_foil, eur_etched,"
-                   " image_small, image_normal, digital, NULL, NULL FROM cards WHERE id='dfc-1'", (cid, st, num, rel))
+                   " image_small, image_normal, digital, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL FROM cards WHERE id='dfc-1'", (cid, st, num, rel))
     img = the_list_photo("plst_destroy_evil.png")
     r = identify.Identifier(db).identify(vision.card_from_photo(img)[0])
     assert r["ocr"]["spark"] and r["candidates"][0]["id"] == "de-plst", [(c["id"], c["score"]) for c in r["candidates"]]
@@ -347,7 +347,7 @@ def test_garbage_ocr_never_matches_blank_names(db):
     """Foto real: o texto lixo '| a' casava a 100 % com 'Unknown Event' ('______'), vazio depois de normalizar."""
     db.execute("INSERT INTO cards SELECT 'blank-1', 'o-blank', '______', set_code, set_name, collector_number, released_at,"
                " rarity, layout, lang, type_line, full_art, border_color, frame, frame_effects, promo_types, finishes,"
-               " cardmarket_id, eur, eur_foil, eur_etched, image_small, image_normal, digital, NULL, NULL FROM cards WHERE id='dfc-1'")
+               " cardmarket_id, eur, eur_foil, eur_etched, image_small, image_normal, digital, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL, NULL FROM cards WHERE id='dfc-1'")
     ident = identify.Identifier(db)
     for junk in ("| a", "  ", "!!", "a", "_ _"):
         assert ident.match_names(junk) == [], junk
