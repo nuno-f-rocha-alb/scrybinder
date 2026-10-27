@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { IconCopy, IconExternalLink, IconRefresh, IconTrash } from "@tabler/icons-react";
 import { api } from "../api";
 import { Field, Modal, openExternal, useToast } from "./ui";
+import { DeckInclude, INCLUDE_ALL } from "./deckinclude";
 
 type Summary = { configured: boolean; kind: string; title: string; lines: number; cards: number; bytes: number; existing: { id: string; url: string; expires_at: string | null } | null };
 type Made = { id: string; url: string; expires: string | null; lines: number; cards: number };
@@ -23,14 +24,19 @@ export default function ShareDialog({ spec, title, collection, onClose }: { spec
   const [made, setMade] = useState<Made | null>(null);
   const [links, setLinks] = useState(false);
   const { toast, node } = useToast();
-  const body = { ...spec, title: name, note, prices, locations, cash };
+  const [include, setInclude] = useState(INCLUDE_ALL);
+  const [chosen, setChosen] = useState(false);  // an update keeps the saved choice unless it is changed here
+  const deck = spec.kind === "deck";
+  const what = deck ? { ...spec, include } : spec;  // a deck can leave out cards by where they are
+  const body = { ...what, title: name, note, prices, locations, cash };
 
   useEffect(() => {
+    if (deck && !include.length) { setPre(null); setErr(""); return; }
     let live = true;  // an older answer must not replace a newer one
-    api<Summary>("/share/preview", { method: "POST", body: JSON.stringify({ ...spec, prices, locations, cash }) }).then((r) => { if (live) { setPre(r); setErr(""); } })
+    api<Summary>("/share/preview", { method: "POST", body: JSON.stringify({ ...what, prices, locations, cash }) }).then((r) => { if (live) { setPre(r); setErr(""); } })
       .catch((e) => { if (live) { setPre(null); setErr(e.message); } });
     return () => { live = false; };
-  }, [JSON.stringify(spec), prices, locations, cash]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [JSON.stringify(what), prices, locations, cash]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const create = async () => {
     setBusy(true);
@@ -39,7 +45,7 @@ export default function ShareDialog({ spec, title, collection, onClose }: { spec
   };
   const update = async (id: string) => {  // the same link, with the cards as they are now and the options chosen here
     setBusy(true);
-    try { setMade(await api<Made>(`/shares/${id}`, { method: "PUT", body: JSON.stringify({ title: name, note, prices, locations, cash }) })); setErr(""); }
+    try { setMade(await api<Made>(`/shares/${id}`, { method: "PUT", body: JSON.stringify({ title: name, note, prices, locations, cash, ...(deck && chosen ? { include } : {}) }) })); setErr(""); }
     catch (e) { setErr((e as Error).message); } finally { setBusy(false); }
   };
   const old = pre?.existing;
@@ -52,6 +58,7 @@ export default function ShareDialog({ spec, title, collection, onClose }: { spec
       {!made && <div className="space-y-3">
         <Field label="Title"><input className="field" value={name} maxLength={200} onChange={(e) => setName(e.target.value)} /></Field>
         <Field label="Message for the viewer (optional)"><textarea className="field" rows={2} maxLength={1000} value={note} onChange={(e) => setNote(e.target.value)} /></Field>
+        {deck && <DeckInclude value={include} onChange={(v) => { setInclude(v); setChosen(true); }} />}
         <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={prices} onChange={(e) => setPrices(e.target.checked)} />Include Cardmarket prices</label>
         {spec.kind === "trade" && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={cash} onChange={(e) => setCash(e.target.checked)} />Include the cash (what was paid or received)</label>}
         {collection && <label className="flex items-center gap-2 text-sm"><input type="checkbox" checked={locations} onChange={(e) => setLocations(e.target.checked)} />Include where each card is (its location)</label>}

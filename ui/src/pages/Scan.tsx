@@ -17,7 +17,9 @@ type Read = {
   id: number; confidence: "high" | "medium" | "low" | "none"; scryfall_id: string | null; finish: string; qty: number;
   condition: string; language: string; card: (Cand & { finishes: string; cardmarket_id?: number | null }) | null;
 };
-type State = { running: boolean; source: string | null; message: string; notice: string; beep: number; split_next: boolean; list_mode: boolean; page_mode: boolean; overlap_mode: boolean; pending: Pending[]; reads: Read[] };
+type Kind = "auto" | "photo" | "page" | "overlap";
+const KINDS: [Kind, string][] = [["auto", "Auto"], ["photo", "One card"], ["page", "Binder page"], ["overlap", "Overlapping"]];
+type State = { running: boolean; source: string | null; message: string; notice: string; beep: number; split_next: boolean; list_mode: boolean; page_mode: boolean; overlap_mode: boolean; auto_mode: boolean; pending: Pending[]; reads: Read[] };
 
 const LANG_KEYS = Object.keys(LANGS);
 const CONF: Record<string, { t: string; c: string }> = {
@@ -60,8 +62,8 @@ export default function Scan() {
   const [loc, setLoc] = useState(store("scrybinder.loc", ""));
   const [busy, setBusy] = useState(0);
   const [listMode, setListMode] = useState(store("scrybinder.listmode", "1") === "1");
-  const [overlap, setOverlap] = useState(store("scrybinder.overlap", "0") === "1");
-  const [binder, setBinder] = useState(store("scrybinder.binder", "0") === "1" && !overlap);
+  const [kind, setKind] = useState<Kind>(() => (store("scrybinder.photokind", "") || (store("scrybinder.overlap", "0") === "1" ? "overlap" : store("scrybinder.binder", "0") === "1" ? "page" : "auto")) as Kind);
+  const overlap = kind === "overlap", binder = kind === "page";
   const { toast, node } = useToast();
   const beepSeen = useRef<number | null>(null);
   const audio = useRef<AudioContext | null>(null);
@@ -71,14 +73,10 @@ export default function Scan() {
     api("/scan/mode", { method: "POST", body: JSON.stringify({ list: listMode }) }).catch(() => {});
     try { localStorage.setItem("scrybinder.listmode", listMode ? "1" : "0"); } catch { /* no storage */ }
   }, [listMode]);
-  useEffect(() => {  // photos are fans of overlapping cards
-    api("/scan/mode", { method: "POST", body: JSON.stringify({ overlap }) }).catch(() => {});
-    try { localStorage.setItem("scrybinder.overlap", overlap ? "1" : "0"); } catch { /* no storage */ }
-  }, [overlap]);
-  useEffect(() => {  // photos are binder pages (3x3): the folder watcher follows the same switch
-    api("/scan/mode", { method: "POST", body: JSON.stringify({ page: binder }) }).catch(() => {});
-    try { localStorage.setItem("scrybinder.binder", binder ? "1" : "0"); } catch { /* no storage */ }
-  }, [binder]);
+  useEffect(() => {  // what the photos show: the server needs it for the folder watcher too
+    api("/scan/mode", { method: "POST", body: JSON.stringify({ auto: kind === "auto", overlap: kind === "overlap", page: kind === "page" }) }).catch(() => {});
+    try { localStorage.setItem("scrybinder.photokind", kind); } catch { /* no storage */ }
+  }, [kind]);
   useEffect(() => { poll(); const t = setInterval(poll, 700); return () => clearInterval(t); }, [poll]);
 
   const unlockAudio = () => { try { audio.current ??= new AudioContext(); void audio.current.resume(); } catch { /* no audio */ } };
@@ -101,8 +99,8 @@ export default function Scan() {
     for (const f of Array.from(files)) {
       setBusy((n) => n + 1);
       try {
-        const r = await api<{ detected?: number }>(`/scan/${overlap ? "overlap" : binder ? "page" : "photo"}?` + qs({ name: f.name }), { method: "POST", headers: { "Content-Type": f.type || "image/jpeg" }, body: f });
-        if (binder || overlap) toast(r.detected ? `${f.name}: ${r.detected} cards detected` : `${f.name}: no cards detected`, !r.detected);
+        const r = await api<{ detected?: number; kind?: string }>(`/scan/${kind === "auto" ? "auto" : overlap ? "overlap" : binder ? "page" : "photo"}?` + qs({ name: f.name }), { method: "POST", headers: { "Content-Type": f.type || "image/jpeg" }, body: f });
+        if (kind !== "photo") toast(r.detected ? `${f.name}: ${r.detected} ${r.kind === "overlap" ? "overlapping cards" : r.kind === "page" ? "cards on a binder page" : "card"} detected` : `${f.name}: no cards detected`, !r.detected);
       }
       catch (e) { toast(`${f.name}: ${(e as Error).message}`, true); }
       finally { setBusy((n) => n - 1); poll(); }
@@ -155,21 +153,23 @@ export default function Scan() {
             <label onDragOver={(e) => e.preventDefault()} onDrop={(e) => { e.preventDefault(); upload(e.dataTransfer.files); }}
               className="flex h-40 cursor-pointer flex-col items-center justify-center gap-2 rounded-2xl border-2 border-dashed border-line text-center text-sm text-mute transition hover:border-accent hover:text-ink">
               <IconPhoto className="size-7" />{busy ? `Processing… (${busy})` : "Drop photos here or click"}
-              <span className="text-xs">{overlap ? "Cards in a fan or a column, each partly covered by the next" : binder ? "A full binder page, up to 9 cards" : "One card per photo, on a plain background"}</span>
+              <span className="text-xs">{{ auto: "One card, a binder page or overlapping cards: found by itself", overlap: "Cards in a fan or a column, each partly covered by the next", page: "A full binder page, up to 9 cards", photo: "One card per photo, on a plain background" }[kind]}</span>
               <input type="file" accept="image/*" multiple className="sr-only" onChange={(e) => { if (e.target.files) upload(e.target.files); e.target.value = ""; }} />
             </label>
           )}
           {mode !== "webcam" && (
-            <label className="flex cursor-pointer items-start gap-2 rounded-xl border border-line bg-surface p-3 text-sm">
-              <input type="checkbox" className="mt-1" checked={binder} disabled={overlap} onChange={(e) => setBinder(e.target.checked)} />
-              <span><b>Binder page (3×3)</b><br /><span className="text-xs text-mute">Each photo is a page of up to 9 cards, laid out as in a binder. Every card becomes its own entry.</span></span>
-            </label>
-          )}
-          {mode !== "webcam" && (
-            <label className="flex cursor-pointer items-start gap-2 rounded-xl border border-line bg-surface p-3 text-sm">
-              <input type="checkbox" className="mt-1" checked={overlap} onChange={(e) => { setOverlap(e.target.checked); if (e.target.checked) setBinder(false); }} />
-              <span><b>Overlapping cards</b><br /><span className="text-xs text-mute">Cards laid in a fan or a column, each partly covered by the next. Each card is found by its title, so every title has to show. Windows only; the ones not confirmed come out with low confidence, so check the list.</span></span>
-            </label>
+            <div className="rounded-xl border border-line bg-surface p-3 text-sm">
+              <div role="tablist" aria-label="What the photos show" className="flex gap-1 rounded-lg bg-black/20 p-1">
+                {KINDS.map(([k, l]) => (
+                  <button key={k} role="tab" aria-selected={kind === k} onClick={() => setKind(k)}
+                    className={`flex-1 cursor-pointer rounded-md px-2 py-1.5 text-xs ${kind === k ? "bg-accent-soft text-accent" : "text-mute hover:text-ink"}`}>{l}</button>
+                ))}
+              </div>
+              <p className="mt-2 text-xs text-mute">{kind === "auto" ? "Told apart for every photo. Overlapping cards are found by their title (Windows only; the ones not confirmed come out with low confidence, so check the list). If it guesses wrong, pick the kind yourself."
+                : kind === "overlap" ? "Cards laid in a fan or a column, each partly covered by the next. Each card is found by its title, so every title has to show. Windows only; the ones not confirmed come out with low confidence, so check the list."
+                : kind === "page" ? "Each photo is a page of up to 9 cards, laid out as in a binder. Every card becomes its own entry."
+                : "Each photo is one card."}</p>
+            </div>
           )}
           {mode === "folder" && (
             <div className="space-y-2 rounded-2xl border border-line bg-surface p-4">

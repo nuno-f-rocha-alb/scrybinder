@@ -105,9 +105,9 @@ def _doc(kind: str, title: str, sections: list[dict], prices: bool, note: str = 
     return doc
 
 
-def deck_doc(db, deck_id: int, prices: bool = False, note: str = "", title: str = "") -> dict:
+def deck_doc(db, deck_id: int, prices: bool = False, note: str = "", title: str = "", include=None) -> dict:
     deck = decks._deck(db, deck_id)
-    cs = decks.cards(db, deck_id)
+    cs = decks.include_only(decks.cards(db, deck_id), include)
     info = _info(db, [c["image_id"] for c in cs if c["image_id"]])
     sections = []
     for board, name in (("commander", "Commander"), ("main", "Main"), ("side", "Sideboard"), ("maybe", "Maybeboard")):
@@ -153,7 +153,7 @@ def build(db, spec: dict) -> dict:
     """The document for a share request: {kind, deck_id | trade_id | list_id | ids | filters, title, note, prices, locations}."""
     kind, prices, note, title = spec.get("kind"), bool(spec.get("prices")), _text(spec.get("note"), "note", 1000), _text(spec.get("title"), "title")
     if kind == "deck":
-        return deck_doc(db, spec.get("deck_id"), prices, note, title)
+        return deck_doc(db, spec.get("deck_id"), prices, note, title, spec.get("include"))
     if kind == "trade":
         return trade_doc(db, spec.get("trade_id"), prices, note, title, bool(spec.get("cash")))
     if kind == "collection":
@@ -291,7 +291,7 @@ def _client() -> httpx.Client:
     return httpx.Client(headers={"User-Agent": HEADERS["User-Agent"]}, timeout=30, transport=TRANSPORT)
 
 
-_SPEC_KEYS = ("kind", "deck_id", "trade_id", "list_id", "ids", "filters", "title", "note", "prices", "locations", "cash")
+_SPEC_KEYS = ("kind", "deck_id", "trade_id", "list_id", "ids", "filters", "title", "note", "prices", "locations", "cash", "include")
 
 
 def _ref(spec: dict) -> str | None:

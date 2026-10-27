@@ -21,6 +21,7 @@ export default function App() {
   const [open, setOpen] = useState(true);
   const [filter, setFilter] = useState<{ set?: string; location?: string }>({});
   const [deckTarget, setDeckTarget] = useState<{ deckId: number; oracleId?: string; n: number } | undefined>();  // `n` makes a repeat of the same target reopen it
+  const [decksN, setDecksN] = useState(0);  // clicking Decks again remounts it, which closes an open deck
   const [status, setStatus] = useState<Status | null>(null);
   const refresh = () => api<Status>("/status").then(setStatus).catch(() => {});
   useEffect(() => { refresh(); }, [page]);
@@ -45,7 +46,7 @@ export default function App() {
           {(["decks", "trades", "lists", "scan", "add", "io", "settings"] as const).map((p) => {
             const I = ICON[p];
             return <SidebarItem key={p} icon={<I className="size-[18px]" stroke={1.75} />} active={page === p} badge={p === "settings" && status?.update_available ? <span className="size-2 rounded-full bg-accent" title={`Scrybinder ${status.update_available} is available`} /> : undefined}
-              onClick={() => { if (p === "decks") setDeckTarget(undefined); setPage(p); }}>{PAGES[p]}</SidebarItem>;
+              onClick={() => { if (p === "decks") { setDeckTarget(undefined); setDecksN((n) => n + 1); } setPage(p); }}>{PAGES[p]}</SidebarItem>;
           })}
         </SidebarSection>
         <SidebarFooter>Card data and images © Scryfall<br />Scrybinder is not affiliated with Wizards of the Coast.</SidebarFooter>
@@ -64,7 +65,7 @@ export default function App() {
           {page === "collection" && <Collection key={`${filter.set}|${filter.location}`} initialSet={filter.set} initialLocation={filter.location}
             onOpenDeck={(deckId, oracleId) => { setDeckTarget({ deckId, oracleId, n: Date.now() }); setPage("decks"); }} />}
           {page === "sets" && <Sets onOpen={(set, location) => { setFilter({ set, location }); setPage("collection"); }} />}
-          {page === "decks" && <Decks key={deckTarget?.n} target={deckTarget} />}
+          {page === "decks" && <Decks key={`${deckTarget?.n}|${decksN}`} target={deckTarget} />}
           {page === "trades" && <Trades />}
           {page === "lists" && <Lists />}
           {page === "scan" && <Scan />}

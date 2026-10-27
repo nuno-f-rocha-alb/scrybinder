@@ -424,6 +424,10 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
     async def scan_overlap(request: Request, name: str = ""):
         return await run_in_threadpool(scanner.process_overlap, await _upload_image(request, MAX_SIDE_PAGE), name[:80])
 
+    @app.post("/api/scan/auto")
+    async def scan_auto(request: Request, name: str = ""):
+        return await run_in_threadpool(scanner.process_auto, await _upload_image(request, MAX_SIDE_PAGE), name[:80])
+
     @app.post("/api/scan/mode")
     def scan_mode(body: dict = Body(...)):
         if "list" in body:
@@ -432,7 +436,9 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
             scanner.page_mode = bool(body["page"])
         if "overlap" in body:
             scanner.overlap_mode = bool(body["overlap"])
-        return {"list_mode": scanner.list_mode, "page_mode": scanner.page_mode, "overlap_mode": scanner.overlap_mode}
+        if "auto" in body:
+            scanner.auto_mode = bool(body["auto"])
+        return {"list_mode": scanner.list_mode, "page_mode": scanner.page_mode, "overlap_mode": scanner.overlap_mode, "auto_mode": scanner.auto_mode}
 
     @app.get("/api/scan/reads/{rid}/candidates")
     def read_candidates(rid: int):
@@ -718,8 +724,8 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
         return _wrap(decktext.import_text, db, deck_id, text, bool(body.get("dry_run")))
 
     @app.get("/api/decks/{deck_id}/export")
-    def decks_export(deck_id: int, maybe: bool = False):
-        text = _wrap(decktext.export_text, db, deck_id, maybe)
+    def decks_export(deck_id: int, maybe: bool = False, include: str | None = None):  # include: comma-separated states, none = all
+        text = _wrap(decktext.export_text, db, deck_id, maybe, include.split(",") if include else None)
         return Response(text, media_type="text/plain; charset=utf-8",
                         headers={"Content-Disposition": f'attachment; filename="scrybinder-deck-{deck_id}.txt"'})
 

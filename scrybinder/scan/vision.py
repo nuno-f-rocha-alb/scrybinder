@@ -185,16 +185,29 @@ def _card_present(frame: np.ndarray, quad: np.ndarray, min_banding=100.0) -> boo
     return float(np.abs(np.diff(cv2.GaussianBlur(rows[:, None], (1, 0), 3)[:, 0])).sum()) >= min_banding
 
 
-def find_cards(frame: np.ndarray, max_cards=9) -> list[np.ndarray]:
-    """Quadrilaterals (tl,tr,br,bl, frame coordinates) of the cards on a binder page, row by row. The cards found fix a
-    3x3 lattice; the cells with no clean contour (touching borders, glare) are recovered from it. Empty pockets give no card."""
+def _clean_cells(frame: np.ndarray) -> tuple[np.ndarray, float, list[np.ndarray]]:
+    """(gray image, scale, the card-shaped contours of the same size that are really in the photo, not recovered from the lattice)."""
     h, w = frame.shape[:2]
     scale = 1000 / max(h, w) if max(h, w) > 1000 else 1.0
     small = cv2.resize(frame, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA) if scale < 1 else frame
     gray = cv2.cvtColor(small, cv2.COLOR_BGR2GRAY) if small.ndim == 3 else small
     # a card or pocket never takes more than a fifth of a page photo: the page itself (card-shaped, too) is not one of them
     found = _consistent([q for q in _page_candidates(gray) if cv2.contourArea(q) <= 0.2 * gray.shape[0] * gray.shape[1]])
-    found = _same_size_upright(found)
+    return gray, scale, _same_size_upright(found)
+
+
+MIN_PAGE_CELLS = 4  # a binder page shows at least this many cards with a clean outline (4-9 measured); a fan only its top cards (2-3), a single card 0-2
+
+
+def clean_cell_count(frame: np.ndarray) -> int:
+    """Whole card outlines in a photo. Cards that cover each other give few (the page detector then invents the rest of the lattice)."""
+    return len(_clean_cells(frame)[2])
+
+
+def find_cards(frame: np.ndarray, max_cards=9) -> list[np.ndarray]:
+    """Quadrilaterals (tl,tr,br,bl, frame coordinates) of the cards on a binder page, row by row. The cards found fix a
+    3x3 lattice; the cells with no clean contour (touching borders, glare) are recovered from it. Empty pockets give no card."""
+    gray, scale, found = _clean_cells(frame)
     if len(found) < 2:  # one card (or none): not a page, same detector as the single-card scan
         one = find_card(frame)
         return [] if one is None else [one]
