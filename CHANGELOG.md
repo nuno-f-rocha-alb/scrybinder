@@ -4,6 +4,9 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Fixed
+- Decks: basic lands (snow ones too) in an ordinary printing are never "missing", even when the printing is chosen, as an imported deck always does. A full art, borderless, promo or showcase printing still counts like any card.
+
 ## [0.8.8] — 2026-10-27
 
 ### Added
