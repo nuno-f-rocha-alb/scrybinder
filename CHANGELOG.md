@@ -4,6 +4,9 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Fixed
+- Updating the card database (Scryfall and Cardmarket) no longer freezes the app: anything you saved while it ran used to wait until the whole import finished (about half a minute or more); it now waits a second at most.
+
 ### Added
 - Decks: the Statistics tab lists the tokens the cards of the deck make, with the cards that make each one. It needs the card database to be updated once (Settings) or the cached bulk file, which is read at start-up.
 

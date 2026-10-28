@@ -109,14 +109,12 @@ def _fresh(path: Path) -> bool:
 
 def load_guide(db, path: Path):
     """Replace cm_prices with the guide in `path` ({"priceGuides": [{idProduct, avg, low, trend, avg-foil, ...}]})."""
-    def rows():
-        with open(path, "rb") as f:
-            for g in ijson.items(f, "priceGuides.item", use_float=True):
-                yield (g["idProduct"], g.get("avg"), g.get("low"), g.get("trend"),
-                       g.get("avg-foil"), g.get("low-foil"), g.get("trend-foil"))
+    with open(path, "rb") as f:  # read it all first: the writer lock is only held for the insert, not for the parsing
+        rows = [(g["idProduct"], g.get("avg"), g.get("low"), g.get("trend"), g.get("avg-foil"), g.get("low-foil"), g.get("trend-foil"))
+                for g in ijson.items(f, "priceGuides.item", use_float=True)]
     with db:
         db.execute("DELETE FROM cm_prices")
-        db.executemany("INSERT OR REPLACE INTO cm_prices VALUES (?,?,?,?,?,?,?)", rows())
+        db.executemany("INSERT OR REPLACE INTO cm_prices VALUES (?,?,?,?,?,?,?)", rows)
 
 
 def link_list(db, catalog: Path) -> int:
