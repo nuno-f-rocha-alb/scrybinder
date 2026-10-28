@@ -129,26 +129,30 @@ def import_bulk(db, path: Path | str, progress=None) -> int:
     n = 0
     path = Path(path)
     oracle, tokens = {}, set()
-    with db:
-        batch, faces = [], []
-        for c in _iter_cards(path):
-            if "id" not in c or "name" not in c:  # ponytail: skip entries without id/name instead of failing the whole import
-                continue
-            _keep_newest(oracle, oracle_row(c))
-            tokens |= token_links(c)
-            batch.append(card_row(c))
-            faces += face_rows(c)
-            if len(batch) >= 2000:
-                db.executemany(_INSERT, batch)
-                db.executemany(_FACE, faces)
-                n += len(batch)
-                batch.clear()
-                faces.clear()
-                if progress:
-                    progress(n)
-        db.executemany(_INSERT, batch)
-        db.executemany(_FACE, faces)
+    batch, faces = [], []
+
+    def flush():  # one short transaction per batch: the writer lock is free in between, so what the user does in the app is not held up
+        nonlocal n
+        with db:
+            db.executemany(_INSERT, batch)
+            db.executemany(_FACE, faces)
         n += len(batch)
+        batch.clear()
+        faces.clear()
+        if progress:
+            progress(n)
+
+    for c in _iter_cards(path):
+        if "id" not in c or "name" not in c:  # ponytail: skip entries without id/name instead of failing the whole import
+            continue
+        _keep_newest(oracle, oracle_row(c))
+        tokens |= token_links(c)
+        batch.append(card_row(c))
+        faces += face_rows(c)
+        if len(batch) >= 2000:
+            flush()
+    flush()
+    with db:
         _store_oracle(db, oracle, tokens)
         db.execute("INSERT INTO cards_fts(cards_fts) VALUES('rebuild')")
         db.execute("INSERT OR REPLACE INTO meta VALUES ('bulk_updated', ?)",
