@@ -119,7 +119,8 @@ def deck_doc(db, deck_id: int, prices: bool = False, note: str = "", title: str 
 def trade_doc(db, trade_id: int, prices: bool = False, note: str = "", title: str = "", cash: bool = False) -> dict:
     t = trades.get(db, trade_id)
     info = _info(db, [l["scryfall_id"] for l in t["out"] + t["in"]])
-    side = lambda lines: [l for x in lines for l in [_line(info, x["scryfall_id"], x["quantity"], x["finish"], prices, x["price_each"])] if l]
+    side = lambda lines: [l for x in lines for l in [_line(info, x["scryfall_id"], x["quantity"], x["finish"], prices, x["price_each"],
+                                                           cond=x["condition"] if x["condition"] != "NM" else "")] if l]
     return _doc("trade", title or "Trade", [{"name": "Giving", "cards": side(t["out"])}, {"name": "Getting", "cards": side(t["in"])}], prices, note,
                 {"cash": round(t["cash"], 2)} if cash else None)  # the cash (negative: the sender paid) goes only when asked
 
