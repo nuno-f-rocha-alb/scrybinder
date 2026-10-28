@@ -4,6 +4,8 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+## [0.8.10] — 2026-10-28
+
 ### Fixed
 - Updating the card database (Scryfall and Cardmarket) no longer freezes the app: anything you saved while it ran used to wait until the whole import finished (about half a minute or more); it now waits a second at most.
 
