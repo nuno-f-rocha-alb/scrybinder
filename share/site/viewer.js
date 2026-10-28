@@ -1,7 +1,7 @@
 // Scrybinder share viewer: shows a share document fetched from the share service (?id=) or opened from a file.
 // Everything from the document is written with textContent / attributes, never as HTML.
 import { SHARE_API } from "./config.js";
-import { apiImageUrl, available, eur, groupLines, imageUrl, totals, toText } from "./lib.js";
+import { apiImageUrl, available, eur, groupLines, imageUrl, isTrade, totals, toText, tradeSides } from "./lib.js";
 
 const $ = (id) => document.getElementById(id);
 let current = null;
@@ -60,10 +60,45 @@ function row(c, prices) {
   return li;
 }
 
+function thumb(c) {
+  const img = el("img", { alt: "", loading: "lazy", decoding: "async", src: imageUrl(c.id) });
+  let fallback = false;
+  img.addEventListener("error", () => {
+    if (!fallback && img.src !== apiImageUrl(c.id)) { fallback = true; img.src = apiImageUrl(c.id); return; }
+    img.replaceWith(el("div", { class: "noimg" }));
+  });
+  return img;
+}
+
+function tradeLine(c, prices) {
+  const sub = [[c.set, c.cn].filter(Boolean).join(" #"), c.cond].filter(Boolean).join(" · ");
+  const info = el("div", { class: "ti" }, el("div", { class: "tn" }, el("span", { text: c.name || c.id }), ...(finishTag(c) ? [finishTag(c)] : [])), el("div", { class: "ts", text: sub }));
+  const li = el("li", { class: "tline" }, el("div", { class: "tt" }, thumb(c)), info, el("div", { class: "tq", text: `×${c.qty}` }));
+  if (prices && c.price != null) li.append(el("div", { class: "tp" }, el("b", { text: eur(c.price * c.qty) }), ...(c.qty > 1 ? [el("small", { text: `${eur(c.price)} each` })] : [])));
+  return li;
+}
+
+// A trade looks like the trade page of the app: what goes out on one side, what comes in on the other, then the balance.
+function trade() {
+  const doc = current, s = tradeSides(doc);
+  const side = (title, hint, x) => el("section", { class: "side" },
+    el("h2", {}, el("span", { text: title }), el("small", { text: `${x.count}${doc.prices ? ` · ${eur(x.value)}` : ""}` })),
+    el("p", { class: "hint", text: hint }),
+    x.cards.length ? el("ul", { class: "tlines" }, ...x.cards.map((c) => tradeLine(c, doc.prices))) : el("p", { class: "empty", text: "Nothing" }));
+  const root = $("sections");
+  root.append(el("div", { class: "trade" }, side("Going out", "What the sender gives", s.out), side("Coming in", "What the sender gets", s.in)));
+  if (doc.prices) {
+    const d = s.in.value - s.out.value;
+    root.append(el("p", { class: "balance" }, el("span", { text: `Going out ${eur(s.out.value)}` }), el("span", { text: `Coming in ${eur(s.in.value)}` }),
+      el("b", { text: Math.abs(d) < 0.005 ? "Even" : d > 0 ? `The sender gets ${eur(d)} more` : `The sender gives ${eur(-d)} more` })));
+  }
+}
+
 function sections() {
   const doc = current;
   const root = $("sections");
   root.replaceChildren();
+  if (isTrade(doc)) { trade(); return; }
   for (const g of groupLines(doc, prefs.group, prefs.sort)) {
     const n = g.cards.reduce((a, c) => a + c.qty, 0), v = g.cards.reduce((a, c) => a + (c.price || 0) * c.qty, 0);
     const list = prefs.view === "list" ? el("ul", { class: "rows" }, ...g.cards.map((c) => row(c, doc.prices)))
@@ -79,6 +114,7 @@ const OPTIONS = {
 
 function controls() {
   const doc = current, a = available(doc);
+  if (isTrade(doc)) { $("controls").hidden = true; return; }  // a trade is always shown as its two sides
   const ok = { type: a.type, colour: a.colour, mv: a.mv, rarity: a.rarity, price: a.price };
   const fill = (id, list, kind) => {
     const s = $(id);

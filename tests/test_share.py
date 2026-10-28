@@ -317,3 +317,14 @@ def test_import_link_route_and_trades_are_only_for_looking(db, worker):
     ok = c.post("/api/import-share-link", json={"url": f"http://x/?id={ID}"})
     assert ok.status_code == 200 and ok.json()["cards"] == 5
     assert c.post("/api/import-share-link", json={"url": "nope"}).status_code == 422
+
+
+def test_trade_document_carries_the_condition_unless_it_is_near_mint(db):
+    a, b, _ = _cards(db)
+    lp = collection.add(db, scryfall_id=a, condition="LP")
+    nm = collection.add(db, scryfall_id=b)
+    t = trades.create(db, "Rui")
+    trades.add_out(db, t, lp)
+    trades.add_out(db, t, nm)
+    out = share.trade_doc(db, t)["sections"][0]["cards"]
+    assert {c["id"]: c.get("cond") for c in out} == {a: "LP", b: None}
