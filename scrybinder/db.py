@@ -94,6 +94,10 @@ CREATE TABLE IF NOT EXISTS oracle_cards (  -- one row per oracle_id: the rules d
 CREATE VIRTUAL TABLE IF NOT EXISTS oracle_fts USING fts5(
     name, oracle_text, content='oracle_cards', content_rowid='rowid', tokenize='unicode61 remove_diacritics 2');
 
+CREATE TABLE IF NOT EXISTS oracle_tokens (  -- the tokens a card makes (Scryfall's all_parts); token_id is a printing in cards
+    oracle_id TEXT NOT NULL, token_id TEXT NOT NULL, PRIMARY KEY (oracle_id, token_id)
+);
+
 CREATE TABLE IF NOT EXISTS rulings (  -- Scryfall rulings, fetched when a card's details are opened and kept for a while
     oracle_id TEXT PRIMARY KEY, data TEXT NOT NULL, fetched TEXT NOT NULL
 );

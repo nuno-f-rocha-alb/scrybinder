@@ -4,6 +4,9 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Added
+- Decks: a Tokens tab lists the tokens the cards of the deck make, with the cards that make each one. It needs the card database to be updated once (Settings) or the cached bulk file, which is read at start-up.
+
 ## [0.8.9] — 2026-10-27
 
 ### Fixed

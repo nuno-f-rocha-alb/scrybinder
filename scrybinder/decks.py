@@ -725,6 +725,22 @@ def stats(db, deck_id: int) -> dict:
     return {**deckstats.compute(cs), "cost_to_complete": summary([c for c in cs if c["board"] in deckstats.BOARDS])["cost_to_complete"]}
 
 
+def tokens(db, deck_id: int) -> list[dict]:
+    """The tokens the main deck and commander make (the maybeboard and sideboard are left out), one per kind with the cards that make it."""
+    _deck(db, deck_id)
+    out: dict[str, dict] = {}
+    for r in db.execute(
+            "SELECT t.id, t.name, t.type_line, t.oracle_id, t.released_at, o.name AS maker FROM deck_cards d"
+            " JOIN oracle_tokens k ON k.oracle_id = d.oracle_id JOIN cards t ON t.id = k.token_id JOIN oracle_cards o ON o.oracle_id = d.oracle_id"
+            " WHERE d.deck_id=? AND d.board IN ('main','commander') AND t.image_normal IS NOT NULL ORDER BY t.released_at DESC", (deck_id,)):
+        e = out.setdefault(r["oracle_id"] or r["id"], {"image_id": r["id"], "name": r["name"], "type_line": r["type_line"], "made_by": []})  # newest printing shows
+        if r["maker"] not in e["made_by"]:
+            e["made_by"].append(r["maker"])
+    for e in out.values():
+        e["made_by"].sort()
+    return sorted(out.values(), key=lambda e: (e["name"], e["type_line"] or ""))
+
+
 FOLDER_NAME_MAX = 60
 
 

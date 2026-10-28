@@ -288,7 +288,7 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
 
     def _backfill_oracle():  # databases from before decks: fill oracle_cards from the cached bulk file (no download)
         files = [f for f in (dbmod.DATA_DIR / "bulk").glob("default-cards.json*") if f.suffix != ".part"]
-        if files and db.execute("SELECT COUNT(*) FROM cards").fetchone()[0] and not db.execute("SELECT 1 FROM oracle_cards").fetchone():
+        if files and db.execute("SELECT COUNT(*) FROM cards").fetchone()[0] and not (db.execute("SELECT 1 FROM oracle_cards").fetchone() and db.execute("SELECT 1 FROM oracle_tokens").fetchone()):
             def run():
                 conn = dbmod.connect(db.execute("PRAGMA database_list").fetchone()[2])
                 try:
@@ -730,6 +730,10 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
     @app.get("/api/decks/{deck_id}/stats")
     def decks_stats(deck_id: int):
         return _wrap(decks.stats, db, deck_id)
+
+    @app.get("/api/decks/{deck_id}/tokens")
+    def decks_tokens(deck_id: int):
+        return _wrap(decks.tokens, db, deck_id)
 
     @app.post("/api/decks/{deck_id}/import")
     def decks_import(deck_id: int, body: dict = Body(...)):

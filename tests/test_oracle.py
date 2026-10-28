@@ -43,3 +43,20 @@ def test_backfill_from_cached_file(tmp_path):
     assert scryfall.backfill_oracle(d, path) == 2
     assert d.execute("SELECT COUNT(*) FROM oracle_cards").fetchone()[0] == 2
     assert d.execute("SELECT COUNT(*) FROM cards").fetchone()[0] == 0  # only the oracle table is touched
+
+
+def test_deck_tokens_from_all_parts(tmp_path):
+    from scrybinder import decks
+    d = dbmod.connect(tmp_path / "t.db")
+    part = lambda i: {"id": i, "component": "token"}
+    scryfall.import_bulk(d, _bulk(tmp_path, [
+        _card("m1", "o1", "Maker", "2020-01-01", all_parts=[part("t-old"), {"id": "x", "component": "combo_piece"}]),
+        _card("m2", "o2", "Maker Two", "2020-01-01", all_parts=[part("t-new")]),
+        _card("m3", "o3", "Sideboard Maker", "2020-01-01", all_parts=[part("t-side")]),
+        _card("t-old", "tok", "Bear Token", "2019-01-01", layout="token", image_uris={"normal": "u"}, type_line="Token Creature — Bear"),
+        _card("t-new", "tok", "Bear Token", "2023-01-01", layout="token", image_uris={"normal": "u"}, type_line="Token Creature — Bear"),
+        _card("t-side", "tok2", "Elk Token", "2023-01-01", layout="token", image_uris={"normal": "u"}, type_line="Token Creature — Elk")]))
+    deck = decks.create(d, "T", "casual")
+    for oid, board in (("o1", "main"), ("o2", "commander"), ("o3", "side")):
+        decks.add_card(d, deck, oid, 1, board=board)
+    assert decks.tokens(d, deck) == [{"image_id": "t-new", "name": "Bear Token", "type_line": "Token Creature — Bear", "made_by": ["Maker", "Maker Two"]}]
