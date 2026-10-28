@@ -84,6 +84,14 @@ def oracle_row(c: dict) -> tuple | None:
             c.get("power") or f0.get("power"), c.get("toughness") or f0.get("toughness"), c.get("layout"), c.get("released_at") or "")
 
 
+def token_links(c: dict) -> set[tuple[str, str]]:
+    """(oracle_id, token printing id) for each token the card makes."""
+    oid = _oracle_id(c)
+    if not oid or c.get("layout") in _NO_ORACLE:
+        return set()
+    return {(oid, p["id"]) for p in c.get("all_parts") or [] if p.get("component") == "token" and p.get("id")}
+
+
 def _iter_cards(path: Path):
     with (gzip.open(path, "rb") if path.suffix == ".gz" else open(path, "rb")) as f:
         # .jsonl.gz (formato atual do Scryfall: um objeto por linha) ou .json (array, formato antigo)
@@ -95,22 +103,24 @@ def _keep_newest(rows: dict, r: tuple | None):
         rows[r[0]] = r
 
 
-def _store_oracle(db, rows: dict):
-    """Replace the oracle rows with `rows` (newest printing per oracle_id) and rebuild the FTS."""
+def _store_oracle(db, rows: dict, tokens: set):
+    """Replace the oracle rows with `rows` (newest printing per oracle_id) and rebuild the FTS; `tokens` are added to oracle_tokens."""
     db.executemany(_ORACLE_INSERT, rows.values())
+    db.executemany("INSERT OR IGNORE INTO oracle_tokens VALUES (?,?)", tokens)
     db.execute("INSERT INTO oracle_fts(oracle_fts) VALUES('rebuild')")
 
 
 def backfill_oracle(db, path: Path | str, progress=None) -> int:
     """Fill oracle_cards from a bulk file already on disk (databases created before decks existed)."""
-    rows, n = {}, 0
+    rows, tokens, n = {}, set(), 0
     for c in _iter_cards(Path(path)):
         _keep_newest(rows, oracle_row(c) if "name" in c else None)
+        tokens |= token_links(c) if "name" in c else set()
         n += 1
         if progress and n % 2000 == 0:
             progress(n)
     with db:
-        _store_oracle(db, rows)
+        _store_oracle(db, rows, tokens)
     return len(rows)
 
 
@@ -118,13 +128,14 @@ def import_bulk(db, path: Path | str, progress=None) -> int:
     """Stream-import the bulk JSON. Upserts: never deletes cards (the collection references them)."""
     n = 0
     path = Path(path)
-    oracle = {}
+    oracle, tokens = {}, set()
     with db:
         batch, faces = [], []
         for c in _iter_cards(path):
             if "id" not in c or "name" not in c:  # ponytail: skip entries without id/name instead of failing the whole import
                 continue
             _keep_newest(oracle, oracle_row(c))
+            tokens |= token_links(c)
             batch.append(card_row(c))
             faces += face_rows(c)
             if len(batch) >= 2000:
@@ -138,7 +149,7 @@ def import_bulk(db, path: Path | str, progress=None) -> int:
         db.executemany(_INSERT, batch)
         db.executemany(_FACE, faces)
         n += len(batch)
-        _store_oracle(db, oracle)
+        _store_oracle(db, oracle, tokens)
         db.execute("INSERT INTO cards_fts(cards_fts) VALUES('rebuild')")
         db.execute("INSERT OR REPLACE INTO meta VALUES ('bulk_updated', ?)",
                    (datetime.now(timezone.utc).isoformat(),))

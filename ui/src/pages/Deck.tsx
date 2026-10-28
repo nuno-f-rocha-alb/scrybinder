@@ -18,6 +18,7 @@ import Playtest from "../components/playtest";
 import DeckVisual from "../components/deckvisual";
 import ByLocation from "../components/bylocation";
 import Snapshots from "../components/snapshots";
+import DeckTokens from "../components/decktokens";
 import Suggestions from "../components/suggestions";
 import AddMissingDialog from "../components/addmissing";
 import AddCards from "../components/addcards";
@@ -249,7 +250,7 @@ export default function Deck({ id, onBack, focusOracle }: { id: number; onBack: 
 
         {tab === "locate" && <ByLocation deckId={id} toast={toast} onChanged={reload} />}
 
-        {tab === "stats" && (stats ? <StatsPanel stats={stats} active={filter} onFilter={pick} /> : <p className="text-mute">Loading…</p>)}
+        {tab === "stats" && <>{stats ? <StatsPanel stats={stats} active={filter} onFilter={pick} /> : <p className="text-mute">Loading…</p>}<h3 className="mb-2 mt-6 text-sm font-semibold">Tokens</h3><DeckTokens deckId={id} /></>}
 
         <div hidden={tab !== "playtest"}><Playtest cards={deck.cards} commander={deck.format === "commander"} /></div>  {/* stays mounted: switching tabs keeps the game */}
 
