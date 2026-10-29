@@ -4,6 +4,8 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+## [0.8.11] — 2026-10-29
+
 ### Added
 - Decks: under the cards, a collapsed *Tokens* line lists the tokens the cards of the deck make, with the cards that make each one, and a *Considering* line holds the maybeboard (as on Moxfield; the board is now called Considering). Tokens need the card database to be updated once (Settings) or the cached bulk file, which is read at start-up.
 - Pauper decks: a *Metagame* tab (off until you turn it on) with the archetypes of MTGGoldfish or MTGTop8, their share of the metagame, a sample list each and how much of it you own, *Create deck* from a list, and *Popular cards*: the cards those lists play, most played first, with what you own and *Add*. The popular cards can be ranked for the main deck or the sideboard and limited to the colours of your deck, archetypes show how much of each list your deck already has (and can be ordered by it), and *Create deck* opens the new deck. *Matchups* analyses your deck against each archetype (what they play, what they bring against you, what of your deck that hits, what to bring in and what could come out) and suggests a sideboard that covers the metagame.
