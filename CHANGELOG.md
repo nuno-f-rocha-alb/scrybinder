@@ -4,6 +4,8 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+## [0.8.12] — 2026-10-29
+
 ### Added
 - Playtest: *Scry / surveil* lets you drag the cards (or use arrows) to reorder the cards you keep on top of the library.
 
