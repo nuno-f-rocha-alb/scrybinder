@@ -20,6 +20,7 @@ import ByLocation from "../components/bylocation";
 import Snapshots from "../components/snapshots";
 import DeckTokens, { Fold } from "../components/decktokens";
 import Suggestions from "../components/suggestions";
+import PauperMeta from "../components/pauper";
 import AddMissingDialog from "../components/addmissing";
 import AddCards from "../components/addcards";
 import ShareDialog from "../components/sharedialog";
@@ -63,7 +64,7 @@ function PreviewPanel({ p }: { p: Preview | null }) {
   );
 }
 
-export default function Deck({ id, onBack, focusOracle }: { id: number; onBack: () => void; focusOracle?: string }) {
+export default function Deck({ id, onBack, focusOracle, onOpenDeck }: { id: number; onBack: () => void; focusOracle?: string; onOpenDeck?: (id: number) => void }) {
   const [deck, setDeck] = useState<DeckT | null>(null);
   const [legality, setLegality] = useState<Legality | null>(null);
   const [stats, setStats] = useState<DeckStats | null>(null);
@@ -84,7 +85,7 @@ export default function Deck({ id, onBack, focusOracle }: { id: number; onBack: 
   const [confirmRemove, setConfirmRemove] = useState(false);
   const focused = useRef(false);
   const [foldedC, setFoldedC] = useState<Set<string>>(new Set());
-  const [tab, setTab] = useState<"cards" | "visual" | "locate" | "stats" | "suggestions" | "playtest" | "snapshots">("cards");
+  const [tab, setTab] = useState<"cards" | "visual" | "locate" | "stats" | "suggestions" | "playtest" | "snapshots" | "metagame">("cards");
   const [filter, setFilter] = useState<CardFilter | null>(null);
   const [showProblems, setShowProblems] = useState(false);
   const [assignId, setAssignId] = useState<number | null>(null);
@@ -247,7 +248,7 @@ export default function Deck({ id, onBack, focusOracle }: { id: number; onBack: 
         </div>
 
         <div role="tablist" aria-label="Deck sections" className="mb-4 flex gap-1 border-b border-line">
-          {([["cards", "Cards"], ["visual", "Visual"], ["locate", "Find copies"], ["stats", "Statistics"], ["playtest", "Playtest"], ["snapshots", "Snapshots"], ...(deck.format === "commander" ? [["suggestions", "Suggestions"] as const] : [])] as const).map(([k, l]) => (
+          {([["cards", "Cards"], ["visual", "Visual"], ["locate", "Find copies"], ["stats", "Statistics"], ["playtest", "Playtest"], ["snapshots", "Snapshots"], ...(deck.format === "commander" ? [["suggestions", "Suggestions"] as const] : []), ...(deck.format === "pauper" ? [["metagame", "Metagame"] as const] : [])] as const).map(([k, l]) => (
             <button key={k} role="tab" aria-selected={tab === k} onClick={() => setTab(k)}
               className={`-mb-px cursor-pointer border-b-2 px-4 py-2 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-accent ${tab === k ? "border-accent text-ink" : "border-transparent text-mute hover:text-ink"}`}>{l}</button>
           ))}
@@ -267,6 +268,8 @@ export default function Deck({ id, onBack, focusOracle }: { id: number; onBack: 
         {tab === "snapshots" && <Snapshots deckId={id} toast={toast} onRestored={reload} />}
 
         {tab === "suggestions" && deck.format === "commander" && <Suggestions deckId={id} toast={toast} onAdded={reload} />}
+
+        {tab === "metagame" && deck.format === "pauper" && <PauperMeta deckId={id} toast={toast} onAdded={reload} onOpenDeck={(d) => onOpenDeck?.(d)} />}
 
         {tab === "cards" && <>
         {selecting && (() => {
