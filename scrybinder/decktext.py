@@ -209,12 +209,26 @@ def replace_board(db, deck_id: int, board: str, text: str, dry_run: bool = False
             decks.add_card(db, deck_id, oid, w["quantity"], board, sid, sorted(w["tags"]), fin)
             continue
         lines, *rest = a
-        for c in lines[1:] if act != "drop" else lines:  # extra lines of one card merge into the first
-            decks.remove_card(db, deck_id, c["id"])
-        if act == "set":
-            decks.update_card(db, deck_id, lines[0]["id"], quantity=rest[0]["quantity"], tags=sorted(rest[0]["tags"]))
-        elif act == "swap":
+        if act == "drop":
+            for c in lines:
+                decks.remove_card(db, deck_id, c["id"])
+        elif act == "set":  # lines of one card kept as they are (they may hold different copies): the first gets the extra, the last ones give up the rest
+            w = rest[0]
+            retag = w["tags"] != set(t for c in lines for t in c["tags"])
+            left = w["quantity"] - sum(c["quantity"] for c in lines)
+            for i, c in enumerate(lines if left >= 0 else reversed(lines)):
+                q = c["quantity"] + (left if left >= 0 and i == 0 else 0)
+                if left < 0:
+                    cut = min(q, -left)
+                    left, q = left + cut, q - cut
+                if q < 1:
+                    decks.remove_card(db, deck_id, c["id"])
+                elif q != c["quantity"] or retag:
+                    decks.update_card(db, deck_id, c["id"], quantity=q, **({"tags": sorted(w["tags"])} if retag else {}))
+        else:  # swap: the text no longer has these lines of the old printing, so only the first goes on as the new one
             w, (_, sid, fin) = rest
+            for c in lines[1:]:
+                decks.remove_card(db, deck_id, c["id"])
             decks.update_card(db, deck_id, lines[0]["id"], quantity=w["quantity"], scryfall_id=sid, finish=fin, tags=sorted(w["tags"]))
     report["applied"] = True
     return report

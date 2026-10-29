@@ -233,3 +233,22 @@ def test_bulk_edit_keeps_a_line_without_a_printing_as_it_is(db):
     assert res["changed"] == [{"name": a["name"], "from": 1, "to": 3}] and [x["name"] for x in res["added"]] == [b["name"]]
     line = _line(db, d, "main", a)
     assert (line["id"], line["quantity"], line["scryfall_id"]) == (cid, 3, None)  # still the same line, printing untouched
+
+
+def test_bulk_edit_keeps_duplicate_lines_and_their_copies(db):
+    from scrybinder import collection
+    a = _cards(db)[0]
+    d = decks.create(db, "T")
+    collection.add(db, scryfall_id=a["id"], quantity=2)
+    first = decks.add_card(db, d, a["oracle_id"], 1, "main", a["id"])
+    second = decks.add_card(db, d, a["oracle_id"], 1, "main", a["id"], new_line=True)
+    row = db.execute("SELECT id FROM collection WHERE scryfall_id=?", (a["id"],)).fetchone()["id"]
+    decks.assign(db, d, second, [{"collection_id": row, "quantity": 1}])
+    same = T.board_text(db, d, "main")
+    assert T.replace_board(db, d, "main", same)["changed"] == []  # untouched: nothing to do
+    T.replace_board(db, d, "main", same + f"\n1 {a['name']} ({a['set_code']}) {a['collector_number']}")  # one more: the first line takes it
+    lines = {c["id"]: c for c in decks.get(db, d)["cards"]}
+    assert (lines[first]["quantity"], lines[second]["quantity"], lines[second]["assigned"]) == (2, 1, 1)
+    T.replace_board(db, d, "main", f"2 {a['name']} ({a['set_code']}) {a['collector_number']}")  # two in total: the last line gives up its copy
+    lines = {c["id"]: c for c in decks.get(db, d)["cards"]}
+    assert set(lines) == {first} and lines[first]["quantity"] == 2
