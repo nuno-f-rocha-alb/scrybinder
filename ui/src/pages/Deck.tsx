@@ -63,7 +63,7 @@ function PreviewPanel({ p }: { p: Preview | null }) {
   );
 }
 
-export default function Deck({ id, onBack, focusOracle }: { id: number; onBack: () => void; focusOracle?: string }) {
+export default function Deck({ id, onBack, focusOracle, onOpenDeck }: { id: number; onBack: () => void; focusOracle?: string; onOpenDeck?: (id: number) => void }) {
   const [deck, setDeck] = useState<DeckT | null>(null);
   const [legality, setLegality] = useState<Legality | null>(null);
   const [stats, setStats] = useState<DeckStats | null>(null);
@@ -259,7 +259,7 @@ export default function Deck({ id, onBack, focusOracle }: { id: number; onBack: 
 
         {tab === "suggestions" && deck.format === "commander" && <Suggestions deckId={id} toast={toast} onAdded={reload} />}
 
-        {tab === "metagame" && deck.format === "pauper" && <PauperMeta deckId={id} toast={toast} onAdded={reload} />}
+        {tab === "metagame" && deck.format === "pauper" && <PauperMeta deckId={id} toast={toast} onAdded={reload} onOpenDeck={(d) => onOpenDeck?.(d)} />}
 
         {tab === "cards" && <>
         {selecting && (() => {

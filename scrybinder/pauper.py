@@ -21,7 +21,6 @@ MIN_AGE = 24 * 3600  # a saved copy is used for this long
 MAX_BYTES = 3_000_000
 PAUSE = 1.2  # seconds between pages: be gentle with the sites
 MAX_ARCHETYPES = 30  # the biggest ones by share: bounds the number of requests (and the time) of a refresh
-SPLASH = 0.12  # ponytail: a colour counts for a deck when this share of its spells has it (one off-colour 4-of in a Mono Red list is not a colour)
 _CAT = {"AGGRO": "Aggro", "CONTROL": "Control", "COMBO": "Combo"}
 
 
@@ -186,13 +185,34 @@ def _rows(db, oids) -> dict:
     for k in range(0, len(oids), 400):
         mark = ",".join("?" * len(oids[k:k + 400]))
         rows.update({r["oracle_id"]: r for r in db.execute(
-            f"SELECT o.oracle_id, o.name, o.mana_cost, o.cmc, o.type_line, o.colors, o.color_identity, o.legalities FROM oracle_cards o WHERE o.oracle_id IN ({mark})", oids[k:k + 400])})
+            f"SELECT o.oracle_id, o.name, o.mana_cost, o.cmc, o.type_line, o.colors, o.color_identity, o.produced_mana, o.legalities FROM oracle_cards o WHERE o.oracle_id IN ({mark})", oids[k:k + 400])})
     return rows
 
 
-def meta(db, source: str, data_dir) -> dict:
-    """The saved copy of a source: {fetched, stale, period, decks:[{... , colors, main:[{oracle_id, name, quantity, owned}], side:[...], owned_main, total_main}]}.
-    `colors` are those most of the spells have (lands left out, a light splash too); `owned_main` counts the copies of the main deck you own (up to what the list plays)."""
+def _deck_qty(db, deck_id) -> dict:
+    """{(oracle_id, board): copies} of a deck."""
+    return {(o, b): q for o, b, q in db.execute("SELECT oracle_id, board, SUM(quantity) FROM deck_cards WHERE deck_id=? GROUP BY oracle_id, board", (deck_id,))}
+
+
+def _colors(lines, rows) -> str:
+    """The colours of an archetype: those its lands can make, with at least 2 land copies each (one Bojuka Bog is not a colour). Lands
+    that make 4 or more colours (Hidden Grotto) are left out, they say nothing about the deck. A spell of another colour played without
+    the mana for it (a Mono Red list with an off-colour 4-of) does not count."""
+    count = {}
+    for it in lines:
+        r = rows[it["oracle_id"]]
+        if it["board"] == "main" and "Land" in (r["type_line"] or ""):
+            made = set(json.loads(r["produced_mana"] or "[]")) & set("WUBRG")
+            if len(made) < 4:
+                for c in made:
+                    count[c] = count.get(c, 0) + it["quantity"]
+    return "".join(c for c in "WUBRG" if count.get(c, 0) >= 2)
+
+
+def meta(db, source: str, data_dir, deck_id: int | None = None) -> dict:
+    """The saved copy of a source: {fetched, stale, period, decks:[{... , colors, main:[{oracle_id, name, quantity, owned, in_deck}], side:[...],
+    owned_main, total_main, match}]}. `owned_main` counts the copies of the main deck you own (up to what the list plays). With `deck_id`, `in_deck`
+    is what that deck holds of each line and `match` the share of the main deck (0-100) it already has."""
     if source not in SOURCES:
         raise ValueError("source: goldfish or top8")
     saved = load(source, data_dir)
@@ -201,28 +221,28 @@ def meta(db, source: str, data_dir) -> dict:
     lists = _resolved(db, saved)
     oids = {it["oracle_id"] for ls in lists for it in ls}
     rows, have = _rows(db, oids), suggest._have(db, list(oids))
+    mine = _deck_qty(db, deck_id) if deck_id is not None else {}
     out = []
     for d, ls in zip(saved["decks"], lists):
         side = {"main": [], "side": []}
-        weight, spells = {}, 0
         for it in ls:
-            r = rows[it["oracle_id"]]
-            side[it["board"]].append({"oracle_id": it["oracle_id"], "name": r["name"], "quantity": it["quantity"], "owned": have[it["oracle_id"]]["owned"]})
-            if it["board"] == "main" and "Land" not in (r["type_line"] or ""):
-                spells += it["quantity"]
-                for c in json.loads(r["color_identity"] or "[]"):
-                    weight[c] = weight.get(c, 0) + it["quantity"]
+            side[it["board"]].append({"oracle_id": it["oracle_id"], "name": rows[it["oracle_id"]]["name"], "quantity": it["quantity"],
+                                      "owned": have[it["oracle_id"]]["owned"], "in_deck": mine.get((it["oracle_id"], it["board"]), 0)})
+        total = sum(c["quantity"] for c in side["main"])
         out.append({k: d[k] for k in ("id", "name", "meta", "cat", "author", "event", "date", "url", "list")} | {
-            "colors": "".join(c for c in "WUBRG" if weight.get(c, 0) >= SPLASH * spells), "main": side["main"], "side": side["side"],
-            "owned_main": sum(min(c["quantity"], c["owned"]) for c in side["main"]), "total_main": sum(c["quantity"] for c in side["main"])})
+            "colors": _colors(ls, rows), "main": side["main"], "side": side["side"],
+            "owned_main": sum(min(c["quantity"], c["owned"]) for c in side["main"]), "total_main": total,
+            "match": round(100 * sum(min(c["quantity"], c["in_deck"]) for c in side["main"]) / total) if total else 0})
     return {"fetched": saved["fetched"], "stale": stale(saved), "period": saved["period"], "decks": out}
 
 
 def cards(db, deck_id: int, source: str, data_dir) -> dict:
-    """The cards the archetypes of a source play, for a Pauper deck: `share` is the sum of the metagame share of the archetypes that play the
-    card (main or side), `archetypes` how many do, `avg` its average copies in the main deck of those that play it in the main deck. Cards the
-    deck already has and basic lands are left out; most played first."""
-    if decks._deck(db, deck_id)["format"] != "pauper":
+    """The cards the archetypes of a source play, for a Pauper deck. `main_share` / `side_share` are the sum of the metagame share of the
+    archetypes that play the card in the main deck / the sideboard, `archetypes` how many play it, `avg` its average copies in the main deck of
+    those that play it there. `fits` says whether the card is inside the colours of the deck's spells (true for every card while the deck has
+    none). Cards the deck already has and basic lands are left out; most played first."""
+    deck = decks._deck(db, deck_id)
+    if deck["format"] != "pauper":
         raise ValueError("the metagame is for Pauper decks")
     saved = load(source, data_dir)
     if not saved:
@@ -233,19 +253,27 @@ def cards(db, deck_id: int, source: str, data_dir) -> dict:
         for it in ls:
             s = seen.setdefault(it["oracle_id"], [0, 0])
             s[it["board"] == "side"] += it["quantity"]
-        for oid, (m, _) in seen.items():
-            st = stats.setdefault(oid, {"share": 0.0, "archetypes": 0, "main": 0, "in_main": 0})
-            st["share"] += d["meta"]
+        for oid, (m, sb) in seen.items():
+            st = stats.setdefault(oid, {"main_share": 0.0, "side_share": 0.0, "archetypes": 0, "main": 0, "in_main": 0})
             st["archetypes"] += 1
             if m:
+                st["main_share"] += d["meta"]
                 st["main"] += m
                 st["in_main"] += 1
+            if sb:
+                st["side_share"] += d["meta"]
+    identity = set()
+    for r in db.execute("SELECT o.oracle_id, o.type_line, o.color_identity FROM deck_cards d JOIN oracle_cards o ON o.oracle_id = d.oracle_id WHERE d.deck_id=? AND d.board='main'", (deck_id,)):
+        if "Land" not in (r[1] or ""):
+            identity |= set(json.loads(r[2] or "[]"))
     in_deck = {r[0] for r in db.execute("SELECT oracle_id FROM deck_cards WHERE deck_id=?", (deck_id,))}
     rows = {o: r for o, r in _rows(db, stats).items() if o not in in_deck and "Basic Land" not in (r["type_line"] or "")}
     have = suggest._have(db, list(rows))
-    return {"fetched": saved["fetched"], "cards": sorted((
-        suggest._card(r, have, image_id=suggest.newest_print(db, o), share=round(stats[o]["share"], 1), archetypes=stats[o]["archetypes"],
-                      avg=round(stats[o]["main"] / stats[o]["in_main"], 1) if stats[o]["in_main"] else 0) for o, r in rows.items()),
+    return {"fetched": saved["fetched"], "colors": "".join(c for c in "WUBRG" if c in identity), "cards": sorted((
+        suggest._card(r, have, image_id=suggest.newest_print(db, o), main_share=round(stats[o]["main_share"], 1), side_share=round(stats[o]["side_share"], 1),
+                      share=round(stats[o]["main_share"] + stats[o]["side_share"], 1), archetypes=stats[o]["archetypes"],
+                      avg=round(stats[o]["main"] / stats[o]["in_main"], 1) if stats[o]["in_main"] else 0,
+                      fits=not identity or set(json.loads(r["color_identity"] or "[]")) <= identity) for o, r in rows.items()),
         key=lambda c: (-c["share"], c["name"]))}
 
 

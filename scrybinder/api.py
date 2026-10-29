@@ -813,8 +813,8 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
         return {"enabled": _pauper_on()}
 
     @app.get("/api/pauper-meta/{source}")
-    def pauper_data(source: str):
-        return {**_wrap(pauper.meta, db, _pauper_source(source), dbmod.DATA_DIR), "job": dict(pjobs[source])}
+    def pauper_data(source: str, deck_id: int | None = None):
+        return {**_wrap(pauper.meta, db, _pauper_source(source), dbmod.DATA_DIR, deck_id), "job": dict(pjobs[source])}
 
     @app.post("/api/pauper-meta/{source}/refresh")
     def pauper_refresh(source: str):

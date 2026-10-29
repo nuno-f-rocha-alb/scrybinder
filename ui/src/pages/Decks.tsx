@@ -102,7 +102,7 @@ export default function Decks({ target }: { target?: { deckId: number; oracleId?
   }, []);
 
   if (shopping) return <ShoppingList onBack={() => setShopping(false)} />;
-  if (open !== null) return <Deck id={open} focusOracle={focus} onBack={() => { setOpen(null); setFocus(undefined); }} />;
+  if (open !== null) return <Deck id={open} focusOracle={focus} onOpenDeck={(d) => { setOpen(d); setFocus(undefined); }} onBack={() => { setOpen(null); setFocus(undefined); }} />;
 
   const run = (p: Promise<unknown>) => p.then(() => load()).catch((e) => toast(e.message, true));
   const create = async () => {

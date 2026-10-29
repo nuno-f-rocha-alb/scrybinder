@@ -134,7 +134,7 @@ def _setup(db, tmp_path, monkeypatch):
 def test_meta_says_what_you_own_and_the_colours(db, tmp_path, monkeypatch):
     names, ids = _setup(db, tmp_path, monkeypatch)
     db.execute("UPDATE oracle_cards SET color_identity='[\"R\"]', type_line='Creature' WHERE oracle_id=?", (ids[0],))
-    db.execute("UPDATE oracle_cards SET color_identity='[\"G\"]', type_line='Basic Land — Forest' WHERE oracle_id=?", (ids[1],))  # a land: no colour
+    db.execute("UPDATE oracle_cards SET produced_mana='[\"R\"]', type_line='Basic Land — Mountain' WHERE oracle_id=?", (ids[1],))
     sid = db.execute("SELECT id FROM cards WHERE oracle_id=?", (ids[0],)).fetchone()[0]
     collection.add(db, scryfall_id=sid, quantity=3)
     m = pauper.meta(db, "goldfish", tmp_path)
@@ -207,13 +207,26 @@ def test_refresh_runs_in_the_background_and_reports_an_error(db, tmp_path, monke
     assert job["state"] == "error" and "could not reach MTGGoldfish" in job["error"]
 
 
-def test_a_colour_needs_a_real_share_of_the_spells(db, tmp_path, monkeypatch):
+def test_colours_are_the_ones_the_lands_make(db, tmp_path, monkeypatch):
     names, ids = _setup(db, tmp_path, monkeypatch)
-    db.execute("UPDATE oracle_cards SET color_identity='[\"R\"]', type_line='Creature' WHERE oracle_id=?", (ids[0],))  # 4 copies
-    db.execute("UPDATE oracle_cards SET color_identity='[\"U\",\"B\"]', type_line='Creature' WHERE oracle_id=?", (ids[1],))  # 2 copies of 6 = 33%
-    assert pauper.meta(db, "goldfish", tmp_path)["decks"][0]["colors"] == "UBR"
-    pauper.SPLASH, old = 0.5, pauper.SPLASH
-    try:
-        assert pauper.meta(db, "goldfish", tmp_path)["decks"][0]["colors"] == "R"  # 2 of 6 is under half
-    finally:
-        pauper.SPLASH = old
+    db.execute("UPDATE oracle_cards SET color_identity='[\"U\",\"B\"]', type_line='Creature' WHERE oracle_id=?", (ids[0],))  # 4 off-colour spells
+    db.execute("UPDATE oracle_cards SET color_identity='[\"R\"]', produced_mana='[\"R\"]', type_line='Basic Land — Mountain' WHERE oracle_id=?", (ids[1],))
+    assert pauper.meta(db, "goldfish", tmp_path)["decks"][0]["colors"] == "R"  # no mana for the UB spells: not their colours
+    db.execute("UPDATE oracle_cards SET produced_mana='[\"U\"]', type_line='Land' WHERE oracle_id=?", (ids[0],))
+    assert pauper.meta(db, "goldfish", tmp_path)["decks"][0]["colors"] == "UR"  # a land of another colour is a splash
+
+
+def test_the_deck_is_compared_with_the_archetypes_and_sideboard_cards_are_ranked(db, tmp_path, monkeypatch):
+    names, ids = _setup(db, tmp_path, monkeypatch)
+    for o, ci in zip(ids, ('["R"]', '["R"]', '["U"]')):
+        db.execute("UPDATE oracle_cards SET color_identity=?, type_line='Creature' WHERE oracle_id=?", (ci, o))
+    d = decks.create(db, "Mine", "pauper")
+    decks.add_card(db, d, ids[0], 2)
+    a = pauper.meta(db, "goldfish", tmp_path, d)["decks"][0]
+    assert (a["match"], a["main"][0]["in_deck"], a["main"][1]["in_deck"]) == (33, 2, 0)  # 2 of its 6 main copies
+    assert pauper.meta(db, "goldfish", tmp_path)["decks"][0]["match"] == 0  # no deck: nothing to compare
+    r = pauper.cards(db, d, "goldfish", tmp_path)
+    assert r["colors"] == "R"
+    by = {c["name"]: c for c in r["cards"]}
+    assert (by[names[1]]["main_share"], by[names[1]]["side_share"], by[names[1]]["fits"]) == (13.2, 0, True)
+    assert (by[names[2]]["main_share"], by[names[2]]["side_share"], by[names[2]]["fits"]) == (0, 13.2, False)  # a sideboard card, but blue
