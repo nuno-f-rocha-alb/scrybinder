@@ -5,6 +5,7 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 ## [Unreleased]
 
 ### Added
+- Decks: under the cards, a collapsed *Tokens* line lists the tokens the cards of the deck make, with the cards that make each one, and a *Considering* line holds the maybeboard (as on Moxfield; the board is now called Considering). Tokens need the card database to be updated once (Settings) or the cached bulk file, which is read at start-up.
 - Pauper decks: a *Metagame* tab (off until you turn it on) with the archetypes of MTGGoldfish or MTGTop8, their share of the metagame, a sample list each and how much of it you own, *Create deck* from a list, and *Popular cards*: the cards those lists play, most played first, with what you own and *Add*. The popular cards can be ranked for the main deck or the sideboard and limited to the colours of your deck, archetypes show how much of each list your deck already has (and can be ordered by it), and *Create deck* opens the new deck. *Matchups* analyses your deck against each archetype (what they play, what they bring against you, what of your deck that hits, what to bring in and what could come out) and suggests a sideboard that covers the metagame.
 - Decks: **Bulk edit** opens a board (main deck, sideboard, commander, maybeboard) as text, one card per line like Moxfield: change a quantity, delete a line, paste a list or change a printing, then Save makes the deck match. Copies assigned to a card stay with it, and nothing is saved while a line cannot be read, so a misspelt name never removes a card.
 
@@ -15,9 +16,6 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ### Fixed
 - Updating the card database (Scryfall and Cardmarket) no longer freezes the app: anything you saved while it ran used to wait until the whole import finished (about half a minute or more); it now waits a second at most.
-
-### Added
-- Decks: under the cards, a collapsed *Tokens* line lists the tokens the cards of the deck make, with the cards that make each one, and a *Considering* line holds the maybeboard (as on Moxfield; the board is now called Considering). Tokens need the card database to be updated once (Settings) or the cached bulk file, which is read at start-up.
 
 ### Changed
 - Shared trades: the link page now looks like the Trades page, with what goes out on one side, what comes in on the other (picture, edition, finish, condition, price each and per line), the total of each side and the balance. Cards that are not in near-mint condition say so. A link already made shows the new page too; its cards just have no condition.
