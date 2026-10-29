@@ -4,6 +4,9 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Changed
+- Importing a Moxfield link that Moxfield refuses (it blocks apps) now says so and tells you to paste the deck's Export text instead, rather than blaming a private deck.
+
 ## [0.8.10] — 2026-10-28
 
 ### Fixed

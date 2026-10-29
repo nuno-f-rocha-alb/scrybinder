@@ -1,6 +1,7 @@
 import html
 import json
 
+import httpx
 import pytest
 
 from scrybinder import deckurl, decktext
@@ -15,7 +16,7 @@ ARCH = {"cards": [{"quantity": 1, "categories": ["Commander"], "modifier": "Norm
 
 def test_moxfield_and_archidekt_become_text_lists(monkeypatch):
     asked = []
-    monkeypatch.setattr(deckurl, "_get", lambda u: asked.append(u) or (MOX if "moxfield" in u else ARCH))
+    monkeypatch.setattr(deckurl, "_get", lambda u, *_: asked.append(u) or (MOX if "moxfield" in u else ARCH))
     p = decktext.parse(deckurl.fetch_text("https://www.moxfield.com/decks/AbCd_12-x"))
     assert [(x["board"], x["quantity"], x["name"], x["set"], x["finish"]) for x in p] == [
         ("commander", 1, "Sol Ring", "c21", None), ("main", 2, "Island", "thb", "foil"), ("maybe", 1, "Opt", None, None)]
@@ -42,12 +43,20 @@ def test_manabox_reads_the_deck_from_the_page(monkeypatch):
 @pytest.mark.parametrize("url", ["", None, "http://moxfield.com/decks/abcd", "https://evil.com/decks/1", "https://moxfield.com.evil.com/decks/abcd",
                                  "https://archidekt.com/decks/abc", "https://manabox.app/decks/short", "https://moxfield.com/users/x"])
 def test_other_links_are_refused(url, monkeypatch):
-    monkeypatch.setattr(deckurl, "_get", lambda u: pytest.fail("must not fetch"))
+    monkeypatch.setattr(deckurl, "_get", lambda u, *_: pytest.fail("must not fetch"))
     with pytest.raises(ValueError):
         deckurl.fetch_text(url)
 
 
 def test_a_deck_in_an_unexpected_shape_is_a_clear_error_not_a_404(monkeypatch):
-    monkeypatch.setattr(deckurl, "_get", lambda u: {"boards": {"mainboard": {"cards": {"a": {"quantity": 1}}}}})
+    monkeypatch.setattr(deckurl, "_get", lambda u, *_: {"boards": {"mainboard": {"cards": {"a": {"quantity": 1}}}}})
     with pytest.raises(ValueError):
         deckurl.fetch_text("https://moxfield.com/decks/abcd1234")
+
+
+def test_moxfield_403_tells_the_user_to_paste_the_export(monkeypatch):
+    monkeypatch.setattr(deckurl.httpx, "get", lambda *a, **k: httpx.Response(403, request=httpx.Request("GET", a[0])))
+    with pytest.raises(ValueError, match="paste it below"):
+        deckurl.fetch_text("https://moxfield.com/decks/abcd1234")
+    with pytest.raises(ValueError, match="private"):  # other sites keep the generic message
+        deckurl.fetch_text("https://archidekt.com/decks/42")

@@ -16,7 +16,7 @@ _ARCHIDEKT = {"archidekt.com", "www.archidekt.com"}
 _MANABOX = {"manabox.app", "www.manabox.app"}
 
 
-def _get(url: str) -> dict:
+def _get(url: str, refused: str = "the deck is private, or the site is blocking Scrybinder right now; try again later") -> dict:
     try:
         r = httpx.get(url, headers=HEADERS, timeout=30, follow_redirects=False)
     except httpx.HTTPError as e:
@@ -24,7 +24,7 @@ def _get(url: str) -> dict:
     if r.status_code == 404:
         raise ValueError("the site did not give the deck: is the link right and the deck public?")
     if r.status_code in (401, 403):
-        raise ValueError(f"the site refused the request ({r.status_code}): the deck is private, or the site is blocking Scrybinder right now; try again later")
+        raise ValueError(f"the site refused the request ({r.status_code}): {refused}")
     if r.status_code != 200 or len(r.content) > MAX_BYTES:
         raise ValueError(f"the site answered {r.status_code}: try again later")
     try:
@@ -58,7 +58,9 @@ def _line(qty, name, setc, number, finish) -> str:
 
 
 def moxfield(deck_id: str) -> str:
-    boards = _get(f"https://api2.moxfield.com/v3/decks/all/{deck_id}").get("boards") or {}
+    # Moxfield blocks apps it has not whitelisted; we do not disguise ourselves, so the text list is the way in
+    blocked = "Moxfield blocks apps like Scrybinder (or the deck is private). Try again later, or on Moxfield use Export, copy the text and paste it below"
+    boards = _get(f"https://api2.moxfield.com/v3/decks/all/{deck_id}", blocked).get("boards") or {}
     out = []
     for key, title in (("commanders", "Commander"), ("mainboard", "Deck"), ("sideboard", "Sideboard"), ("companions", "Sideboard"), ("maybeboard", "Maybeboard")):
         cards = (boards.get(key) or {}).get("cards") or {}
