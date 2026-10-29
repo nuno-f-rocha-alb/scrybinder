@@ -162,3 +162,74 @@ def test_finish_and_edition_survive_export_and_import(db):
     assert [i["finish"] for i in etched] == ["etched", "foil"]
     ok, _ = T.resolve(db, T.parse(f"1 {a['name']} ({a['set_code'].upper()}) {a['collector_number']} *E*"))
     assert ok[0]["finish"] is None  # that printing has no etched version: the finish is dropped, the line is kept
+
+
+def _line(db, d, board, card):
+    return next((c for c in decks.get(db, d)["cards"] if c["board"] == board and c["oracle_id"] == card["oracle_id"]), None)
+
+
+def test_bulk_edit_changes_removes_and_adds(db):
+    a, b, c = _cards(db)
+    d = decks.create(db, "T")
+    decks.add_card(db, d, a["oracle_id"], 2, "main", a["id"], ["ramp"])
+    decks.add_card(db, d, b["oracle_id"], 1, "main", b["id"])
+    decks.add_card(db, d, b["oracle_id"], 1, "side", b["id"])
+    text = T.board_text(db, d, "main")
+    assert text == f"2 {a['name']} ({a['set_code'].upper()}) {a['collector_number']} #ramp\n1 {b['name']} ({b['set_code'].upper()}) {b['collector_number']}"
+    edited = f"5 {a['name']} ({a['set_code']}) {a['collector_number']} #ramp #draw\n3 {c['name']}\n"  # a up, b gone, c new
+    dry = T.replace_board(db, d, "main", edited, dry_run=True)
+    assert (dry["applied"], dry["added"], dry["changed"], dry["removed"]) == (
+        False, [{"name": c["name"], "quantity": 3}], [{"name": a["name"], "from": 2, "to": 5}], [{"name": b["name"], "quantity": 1}])
+    assert _line(db, d, "main", b) is not None  # a dry run writes nothing
+    assert T.replace_board(db, d, "main", edited)["applied"] is True
+    got = _line(db, d, "main", a)
+    assert (got["quantity"], got["tags"]) == (5, ["draw", "ramp"]) and _line(db, d, "main", b) is None
+    assert _line(db, d, "main", c)["quantity"] == 3 and _line(db, d, "side", b)["quantity"] == 1  # the other board is untouched
+    T.replace_board(db, d, "main", "")  # empty box: the board is emptied
+    assert [c for c in decks.get(db, d)["cards"] if c["board"] == "main"] == [] and _line(db, d, "side", b)
+
+
+def test_bulk_edit_applies_nothing_while_a_line_cannot_be_read(db):
+    a, b, _ = _cards(db)
+    d = decks.create(db, "T")
+    decks.add_card(db, d, a["oracle_id"], 1, "main", a["id"])
+    res = T.replace_board(db, d, "main", f"1 {a['name']}x\n2 {b['name']}")  # a misspelt name must not delete the card
+    assert res["applied"] is False and res["skipped"][0]["line"] == 1
+    assert [(c["name"], c["quantity"]) for c in decks.get(db, d)["cards"]] == [(a["name"], 1)]
+
+
+def test_bulk_edit_keeps_a_line_when_only_its_printing_changes(db):
+    a = _cards(db)[0]
+    cols = [r[1] for r in db.execute("PRAGMA table_info(cards)")]
+    row = dict(db.execute("SELECT * FROM cards WHERE id=?", (a["id"],)).fetchone())
+    row.update(id="alt-print", collector_number="9999")
+    db.execute(f"INSERT INTO cards ({','.join(cols)}) VALUES ({','.join('?' * len(cols))})", [row[c] for c in cols])
+    other = {"id": "alt-print", "set_code": row["set_code"], "collector_number": "9999"}
+    d = decks.create(db, "T")
+    cid = decks.add_card(db, d, a["oracle_id"], 1, "main", a["id"])
+    T.replace_board(db, d, "main", f"1 {a['name']} ({other['set_code']}) {other['collector_number']}")
+    got = decks.get(db, d)["cards"]
+    assert [(c["id"], c["scryfall_id"]) for c in got] == [(cid, other["id"])]
+
+
+def test_bulk_edit_api(db):
+    c = TestClient(create_app(db, token="t", allowed_hosts={"testserver"}))
+    c.get("/api/status?t=t")
+    a = _cards(db)[0]
+    d = c.post("/api/decks", json={"name": "A"}).json()["id"]
+    r = c.post(f"/api/decks/{d}/bulk-edit", json={"board": "side", "text": f"2 {a['name']}"}).json()
+    assert r["applied"] and r["added"] == [{"name": a["name"], "quantity": 2}]
+    assert c.get(f"/api/decks/{d}/bulk-edit?board=side").json()["text"].startswith(f"2 {a['name']}")
+    assert c.post(f"/api/decks/{d}/bulk-edit", json={"board": "nope", "text": ""}).status_code == 422
+    assert c.post(f"/api/decks/{d}/bulk-edit", json={"board": "main", "text": 5}).status_code == 422
+    assert c.get("/api/decks/999/bulk-edit").status_code == 404
+
+
+def test_bulk_edit_keeps_a_line_without_a_printing_as_it_is(db):
+    a, b, _ = _cards(db)
+    d = decks.create(db, "T")
+    cid = decks.add_card(db, d, a["oracle_id"], 1, "main")  # no printing chosen
+    res = T.replace_board(db, d, "main", f"3 {a['name']}\n1 {b['name']}")
+    assert res["changed"] == [{"name": a["name"], "from": 1, "to": 3}] and [x["name"] for x in res["added"]] == [b["name"]]
+    line = _line(db, d, "main", a)
+    assert (line["id"], line["quantity"], line["scryfall_id"]) == (cid, 3, None)  # still the same line, printing untouched

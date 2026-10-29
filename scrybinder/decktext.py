@@ -120,9 +120,7 @@ def import_text(db, deck_id: int, text: str, dry_run: bool = False) -> dict:
             "preview": [{"line": i["line"], "board": i["board"], "quantity": i["quantity"], "name": i["name"]} for i in ok]}
 
 
-def export_text(db, deck_id: int, maybe: bool = False, include=None) -> str:
-    """`N Name (SET) number [*F*|*E*] [#tag]` per card, in Commander / Deck / Sideboard (/ Maybeboard) sections.
-    `include` keeps only the cards in those states (see decks.include_only)."""
+def _sections(db, deck_id: int, include=None) -> dict[str, list[str]]:
     decks._deck(db, deck_id)
     printings = {r[0]: (r[1], r[2]) for r in db.execute(
         "SELECT c.id, c.set_code, c.collector_number FROM cards c WHERE c.id IN"
@@ -134,5 +132,89 @@ def export_text(db, deck_id: int, maybe: bool = False, include=None) -> str:
             line += " ({}) {}".format(printings[c["scryfall_id"]][0].upper(), printings[c["scryfall_id"]][1])
             line += {"foil": " *F*", "etched": " *E*"}.get(c["finish"], "")
         sections[c["board"]].append(line + "".join(f" ^{t}^" if " " in t else f" #{t}" for t in c["tags"]))
+    return sections
+
+
+def export_text(db, deck_id: int, maybe: bool = False, include=None) -> str:
+    """`N Name (SET) number [*F*|*E*] [#tag]` per card, in Commander / Deck / Sideboard (/ Maybeboard) sections.
+    `include` keeps only the cards in those states (see decks.include_only)."""
+    sections = _sections(db, deck_id, include)
     titles = (("commander", "Commander"), ("main", "Deck"), ("side", "Sideboard"), ("maybe", "Maybeboard"))
     return "\n\n".join(f"{t}\n" + "\n".join(sections[b]) for b, t in titles if sections[b] and (b != "maybe" or maybe)) + "\n"
+
+
+def board_text(db, deck_id: int, board: str) -> str:
+    """One board of the deck as editable lines (the text `replace_board` takes back)."""
+    decks._check(board=board)
+    return "\n".join(_sections(db, deck_id)[board])
+
+
+def replace_board(db, deck_id: int, board: str, text: str, dry_run: bool = False) -> dict:
+    """Make one board match the text: lines with the same card, printing and finish are kept (their copies stay assigned) and
+    get the new quantity and tags; a line that is gone is removed; a new line is added; a removed and an added line of the
+    same card (another printing) become one change. Nothing is applied while a line cannot be read: it would drop a card
+    that is only misspelt. Returns {applied, added, changed, removed, skipped}, each of the first three a list of {name, ...}."""
+    decks._check(board=board)
+    decks._deck(db, deck_id)
+    items = parse(text)
+    if len(items) > MAX_LINES:
+        raise ValueError(f"a deck list has at most {MAX_LINES} lines")
+    for it in items:
+        it["board"] = board  # one board per box: a heading or SB: in it does not move a card
+    ok, skipped = resolve(db, items)
+    have = {}  # (oracle_id, scryfall_id, finish) -> the lines of the deck (several on purpose)
+    for c in decks.get(db, deck_id)["cards"]:
+        if c["board"] == board:
+            have.setdefault((c["oracle_id"], c["scryfall_id"], c["finish"]), []).append(c)
+    want = {}  # the same key -> {quantity, tags, name}
+    for it in ok:
+        key = (it["oracle_id"], it["scryfall_id"], it["finish"])
+        if not it["scryfall_id"]:  # no printing in the text: it means the line the deck already has for this card
+            key = next((h for h in have if h[0] == it["oracle_id"]), key)
+        w = want.setdefault(key, {"quantity": 0, "tags": set(), "name": it["name"]})
+        w["quantity"] += it["quantity"]
+        w["tags"] |= set(it["tags"])
+    added, changed, removed = [], [], []
+    todo = []  # (action, ...) run after the report is made
+    gone = {k: v for k, v in have.items() if k not in want}
+    new = {k: v for k, v in want.items() if k not in have}
+    for k, w in want.items():
+        lines = have.get(k)
+        if not lines:
+            continue
+        qty, tags = sum(c["quantity"] for c in lines), set(t for c in lines for t in c["tags"])
+        if qty != w["quantity"] or tags != w["tags"]:
+            changed.append({"name": lines[0]["name"], "from": qty, "to": w["quantity"]})
+            todo.append(("set", lines, w))
+    for k in list(new):  # another printing of a card that went away: one change, so its copies stay with the line
+        old = next((g for g in gone if g[0] == k[0]), None)
+        if old:
+            lines, w = gone.pop(old), new.pop(k)
+            changed.append({"name": lines[0]["name"], "from": sum(c["quantity"] for c in lines), "to": w["quantity"]})
+            todo.append(("swap", lines, w, k))
+    for k, lines in gone.items():
+        removed.append({"name": lines[0]["name"], "quantity": sum(c["quantity"] for c in lines)})
+        todo.append(("drop", lines))
+    for k, w in new.items():
+        added.append({"name": w["name"], "quantity": w["quantity"]})
+        todo.append(("add", k, w))
+    report = {"applied": False, "added": added, "changed": changed, "removed": removed, "skipped": skipped}
+    if dry_run or skipped:
+        return report
+    for act, *a in todo:
+        if act == "add":
+            (oid, sid, fin), w = a
+            if not sid:  # a new line without a printing gets one
+                sid, fin = decks.default_printing(db, oid)
+            decks.add_card(db, deck_id, oid, w["quantity"], board, sid, sorted(w["tags"]), fin)
+            continue
+        lines, *rest = a
+        for c in lines[1:] if act != "drop" else lines:  # extra lines of one card merge into the first
+            decks.remove_card(db, deck_id, c["id"])
+        if act == "set":
+            decks.update_card(db, deck_id, lines[0]["id"], quantity=rest[0]["quantity"], tags=sorted(rest[0]["tags"]))
+        elif act == "swap":
+            w, (_, sid, fin) = rest
+            decks.update_card(db, deck_id, lines[0]["id"], quantity=w["quantity"], scryfall_id=sid, finish=fin, tags=sorted(w["tags"]))
+    report["applied"] = True
+    return report

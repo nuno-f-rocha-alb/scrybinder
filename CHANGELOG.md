@@ -4,6 +4,9 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Added
+- Decks: **Bulk edit** opens a board (main deck, sideboard, commander, maybeboard) as text, one card per line like Moxfield: change a quantity, delete a line, paste a list or change a printing, then Save makes the deck match. Copies assigned to a card stay with it, and nothing is saved while a line cannot be read, so a misspelt name never removes a card.
+
 ## [0.8.10] — 2026-10-28
 
 ### Fixed

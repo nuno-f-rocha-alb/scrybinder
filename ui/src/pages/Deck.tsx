@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Select } from "../components/select";
 import { createPortal } from "react-dom";
-import { IconAlertTriangle, IconArrowLeft, IconBox, IconCheck, IconChecklist, IconCopy, IconDownload, IconEdit, IconPlus, IconShare, IconStack2, IconTrash, IconUpload, IconX } from "@tabler/icons-react";
+import { IconAlertTriangle, IconArrowLeft, IconBox, IconCheck, IconChecklist, IconCopy, IconDownload, IconEdit, IconListDetails, IconPlus, IconShare, IconStack2, IconTrash, IconUpload, IconX } from "@tabler/icons-react";
 import { api, eur, qs } from "../api";
 import { BOARDS, BOARD_LABEL, Board, CardFilter, Deck as DeckT, DeckCard as DeckCardT, DeckStats, editionOf, FORMATS, Format, GROUPS, GroupBy, Legality, OracleRow, Preview, SORTS, SortBy, VIEWS, View, groupCards, matchesFilter, resultPreview, toPreview } from "../decks";
 import { CardImg, FinishTag, Modal, cardmarketUrl, openExternal, scryfallUrl, useToast } from "../components/ui";
@@ -26,6 +26,7 @@ import ShareDialog from "../components/sharedialog";
 import ExportDialog from "../components/deckinclude";
 import BatchEdit from "../components/batchedit";
 import AddToList, { ListPayload } from "../components/addtolist";
+import BulkEdit from "../components/bulkedit";
 import ImportDialog, { Skipped } from "../components/decklist";
 import type { ImportReport } from "../components/decklist";
 
@@ -87,6 +88,7 @@ export default function Deck({ id, onBack, focusOracle }: { id: number; onBack: 
   const [showProblems, setShowProblems] = useState(false);
   const [assignId, setAssignId] = useState<number | null>(null);
   const [importing, setImporting] = useState(false);
+  const [bulking, setBulking] = useState(false);
   const [sharing, setSharing] = useState(false);
   const [exporting, setExporting] = useState(false);
   const [batch, setBatch] = useState(false);
@@ -219,6 +221,9 @@ export default function Deck({ id, onBack, focusOracle }: { id: number; onBack: 
           </button>}
           <button className={selecting ? "btn-primary" : "btn-ghost"} aria-pressed={selecting} title="Pick several cards to act on them together"
             onClick={() => { setSelecting(!selecting); setSelected(new Set()); }}><IconChecklist className="size-4" />Select</button>
+          <button className="btn-ghost" title="Edit a whole board as text: change quantities, delete lines, paste a list" onClick={() => setBulking(true)}>
+            <IconListDetails className="size-4" />Bulk edit
+          </button>
           <button className="btn-ghost" title="Add the cards of a list (Moxfield, Archidekt, MTGO style) to this deck" onClick={() => setImporting(true)}>
             <IconUpload className="size-4" />Import list
           </button>
@@ -361,6 +366,7 @@ export default function Deck({ id, onBack, focusOracle }: { id: number; onBack: 
       {toList && <AddToList payload={toList.payload} what={toList.what} onClose={() => setToList(null)} onDone={(m) => { setToList(null); toast(m); }} />}
       {exporting && deck && <ExportDialog id={id} name={deck.name} onClose={() => setExporting(false)} />}
       {sharing && deck &&<ShareDialog title={deck.name} spec={{ kind: "deck", deck_id: id }} onClose={() => setSharing(false)} />}
+      {bulking && <BulkEdit deckId={id} onClose={() => setBulking(false)} onDone={(m) => { setBulking(false); toast(m || "No changes"); reload(); }} />}
       {importing && <ImportDialog deckId={id} onClose={() => setImporting(false)} onDone={(r) => { setImporting(false); setImported(r); reload(); }} />}
       {imported && (
         <Modal title="Deck list imported" onClose={() => setImported(null)}>
