@@ -257,6 +257,30 @@ def test_a_deck_card_has_a_finish_of_its_printing(db):
     assert decks.duplicate(db, d1) != d1
 
 
+def test_switching_printing_releases_the_assigned_copies_that_are_not_it(db):
+    oid, sid, row, d1, _ = _setup(db, qty=2)
+    other = "other-print"  # a second printing of the same card
+    db.execute("CREATE TEMP TABLE one AS SELECT * FROM cards WHERE id=?", (sid,))
+    db.execute("UPDATE one SET id=?, collector_number='999'", (other,))
+    db.execute("INSERT INTO cards SELECT * FROM one")
+    c = decks.add_card(db, d1, oid, 2, scryfall_id=sid)
+    decks.assign(db, d1, c, [{"collection_id": row, "quantity": 2}])
+    assert db.execute("SELECT location FROM collection WHERE id=?", (row,)).fetchone()[0] == "Deck: D1"
+    c = decks.update_card(db, d1, c, scryfall_id=other)
+    got = _card(db, d1, c)
+    assert (got["assigned"], got["owned_prints"], got["scryfall_id"]) == (0, [], other)  # the card shows what was picked, not the old copy
+    assert db.execute("SELECT location FROM collection WHERE id=?", (row,)).fetchone()[0] == ""  # released copies leave the deck for "(no location)"
+    assert decks.update_card(db, d1, c, scryfall_id=sid) == c
+    decks.assign(db, d1, c, [{"collection_id": row, "quantity": 2}])
+    foil = collection.add(db, scryfall_id=sid, quantity=1, finish="foil")
+    n = decks.add_card(db, d1, oid, 1)  # no printing yet: filling the editions keeps whatever is assigned
+    decks.assign(db, d1, n, [{"collection_id": foil, "quantity": 1}])
+    decks.update_card(db, d1, n, scryfall_id=other, finish="nonfoil", release=False)
+    assert _card(db, d1, n)["assigned"] == 1
+    decks.update_card(db, d1, c, quantity=1)  # other changes keep the copies
+    assert _card(db, d1, c)["assigned"] == 1
+
+
 def test_add_copy_of_the_chosen_printing_even_when_another_is_owned(db):
     oid, sid, row, d1, d2 = _setup(db, qty=1)  # you own one copy of printing `sid`
     cols = [r[1] for r in db.execute("PRAGMA table_info(cards)")]  # a second printing of the same card

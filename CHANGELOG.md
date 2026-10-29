@@ -11,6 +11,9 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 - Pauper decks: a *Metagame* tab (off until you turn it on) with the archetypes of MTGGoldfish or MTGTop8, their share of the metagame, a sample list each and how much of it you own, *Create deck* from a list, and *Popular cards*: the cards those lists play, most played first, with what you own and *Add*. The popular cards can be ranked for the main deck or the sideboard and limited to the colours of your deck, archetypes show how much of each list your deck already has (and can be ordered by it), and *Create deck* opens the new deck. *Matchups* analyses your deck against each archetype (what they play, what they bring against you, what of your deck that hits, what to bring in and what could come out) and suggests a sideboard that covers the metagame.
 - Decks: **Bulk edit** opens a board (main deck, sideboard, commander, maybeboard) as text, one card per line like Moxfield: change a quantity, delete a line, paste a list or change a printing, then Save makes the deck match. Copies assigned to a card stay with it, and nothing is saved while a line cannot be read, so a misspelt name never removes a card.
 
+### Fixed
+- Decks: *Switch printing* on a card with copies assigned now sticks: the assigned copies that are not the new printing and finish go back to the collection (the deck used to keep showing the assigned copy's edition and foil, so you had to unassign first).
+
 ### Changed
 - Importing a Moxfield link that Moxfield refuses (it blocks apps) now says so and tells you to paste the deck's Export text instead, rather than blaming a private deck.
 

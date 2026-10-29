@@ -387,7 +387,7 @@ def fill_printings(db, deck_id: int) -> int:
         else:
             sid, fin = default_printing(db, c["oracle_id"])
         if sid:
-            update_card(db, deck_id, c["id"], scryfall_id=sid, finish=fin)
+            update_card(db, deck_id, c["id"], scryfall_id=sid, finish=fin, release=False)  # only names the printing: assigned copies stay
             n += 1
     return n
 
@@ -455,6 +455,10 @@ def update_card(db, deck_id: int, card_id: int, **fields) -> int:
             db.execute("UPDATE deck_cards SET quantity=?, board=?, scryfall_id=?, finish=? WHERE id=?", (qty, board, sid, fin, card_id))
         if tags is not None:
             _set_tags(db, card_id, tags)
+        if fields.get("release", True) and sid and (sid, fin) != (cur["scryfall_id"], cur["finish"]):  # another printing or finish was picked: copies that are not it go back to the
+            # collection, otherwise the card keeps showing (and costing) the assigned copy
+            db.execute("DELETE FROM deck_assignments WHERE deck_card_id=? AND collection_id IN"
+                       " (SELECT id FROM collection WHERE scryfall_id IS NOT ? OR (? IS NOT NULL AND finish IS NOT ?))", (card_id, sid, fin, fin))
         if PROXY in _card_tags(db, card_id):  # a proxy is not a real copy: nothing to reserve
             db.execute("DELETE FROM deck_assignments WHERE deck_card_id=?", (card_id,))
         _trim(db, card_id)
