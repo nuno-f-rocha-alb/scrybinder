@@ -3,7 +3,7 @@ export const FORMATS = ["commander", "standard", "pioneer", "modern", "legacy", 
 export type Format = (typeof FORMATS)[number];
 export type Board = "main" | "side" | "commander" | "maybe";
 export const BOARDS: Board[] = ["main", "side", "commander", "maybe"];
-export const BOARD_LABEL: Record<Board, string> = { main: "Main deck", side: "Sideboard", commander: "Commander", maybe: "Maybeboard" };
+export const BOARD_LABEL: Record<Board, string> = { main: "Main deck", side: "Sideboard", commander: "Commander", maybe: "Considering" };
 export type CardStatus = "assigned" | "available" | "elsewhere" | "missing" | "proxy" | "basic";
 
 export type DeckCard = {
@@ -93,12 +93,12 @@ const cmcKey = (c: DeckCard) => (primaryType(c.type_line) === "land" ? "land" : 
 
 /** The groups of a deck. The commander is always first and the sideboard and maybeboard last; the main deck is grouped by `by`,
  * and the cards of every group are sorted by `sort` (price from the highest). */
-export function groupCards(cards: DeckCard[], by: GroupBy = "type", sort: SortBy = "name"): Group[] {
+export function groupCards(cards: DeckCard[], by: GroupBy = "type", sort: SortBy = "name", board: Board = "main"): Group[] {  // `board`: the one grouped by `by`
   const cmp = (a: DeckCard, b: DeckCard) => (sort === "cmc" ? a.cmc - b.cmc : sort === "price" ? (b.price ?? 0) - (a.price ?? 0) : 0) || a.name.localeCompare(b.name);
   const out: Group[] = [];
   const add = (key: string, label: string, cs: DeckCard[], pip?: string) => cs.length && out.push({ key, label, pip, cards: [...cs].sort(cmp), count: cs.reduce((n, c) => n + c.quantity, 0) });
   add("commander", "Commander", cards.filter((c) => c.board === "commander"));
-  const main = cards.filter((c) => c.board === "main");
+  const main = cards.filter((c) => c.board === board);
   if (by === "type") for (const t of TYPE_ORDER) add(t, TYPE_LABEL[t], main.filter((c) => primaryType(c.type_line) === t));
   else if (by === "color") for (const k of COLOR_ORDER) add(k, COLOR_LABEL[k], main.filter((c) => colorKey(c) === k), "WUBRG".includes(k) ? `{${k}}` : undefined);
   else if (by === "cmc") for (const k of ["0", "1", "2", "3", "4", "5", "6", "7", "land"]) add(k, k === "land" ? "Lands" : k === "7" ? "Mana value 7+" : `Mana value ${k}`, main.filter((c) => cmcKey(c) === k));
@@ -109,7 +109,7 @@ export function groupCards(cards: DeckCard[], by: GroupBy = "type", sort: SortBy
     add("untagged", "Untagged", main.filter((c) => !c.tags.length));
   }
   add("side", "Sideboard", cards.filter((c) => c.board === "side"));
-  add("maybe", "Maybeboard", cards.filter((c) => c.board === "maybe"));
+  if (board === "main") add("maybe", "Considering", cards.filter((c) => c.board === "maybe"));
   return out;
 }
 
