@@ -153,7 +153,7 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
   const [zoomAt, setZoomAt] = useState<DOMRect | null>(null);  // where that card is, for the preview beside it
   const hover = (c: GCard | null, at?: DOMRect) => { setZoom(c); setZoomAt(at ?? null); };
   const [tokenForm, setTokenForm] = useState<{ name: string; pt: string } | null>(null);
-  const [scry, setScry] = useState<{ n: number; fate: Record<number, "top" | "bottom" | "graveyard"> } | null>(null);  // what each looked-at card becomes (absent: stays on top)
+  const [scry, setScry] = useState<{ n: number; fate: Record<number, "top" | "bottom" | "graveyard">; order: number[] } | null>(null);  // what each looked-at card becomes (absent: stays on top)
   const gRef = useRef<Game | null>(null);
   const [counterForm, setCounterForm] = useState<{ uid: number; name: string; n: number } | null>(null);
   const [ending, setEnding] = useState(false);
@@ -372,7 +372,7 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
             <button className={act} onClick={() => set(untapAll)}>Untap all</button>
             <button className={act} onClick={() => setSearch("")}>Search library</button>
             <button className={act} onClick={() => set((x) => shuffleLibrary(x))}>Shuffle</button>
-            <button className={act} disabled={!g.library.length} onClick={() => setScry({ n: 1, fate: {} })}>Scry / surveil</button>
+            <button className={act} disabled={!g.library.length} onClick={() => setScry({ n: 1, fate: {}, order: [] })}>Scry / surveil</button>
             <button className={act} onClick={() => setTokenForm({ name: "", pt: "" })}>Token</button>
           </div>}
           <section aria-label="Hand" {...(playing ? zone("hand") : {})} className={`mt-2 rounded-xl p-1 ${playing ? zone("hand").className : ""} ${warns.some((w) => w.rule === "514.1") ? "ring-2 ring-amber-400" : ""}`}>
@@ -447,7 +447,10 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
         </Modal>
       )}
       {scry && (() => {
-        const top = peek(g, scry.n);
+        const natural = peek(g, scry.n);
+        const rank = (u: number) => { const i = scry.order.indexOf(u); return i < 0 ? 99 : i; };
+        const top = scry.order.length ? [...natural].sort((a, b) => rank(a.uid) - rank(b.uid)) : natural;  // the order the player chose
+        const shift = (i: number, d: number) => { const o = top.map((c) => c.uid); [o[i], o[i + d]] = [o[i + d], o[i]]; setScry({ ...scry, order: o }); };
         const ids = (f: string) => top.filter((c) => (scry.fate[c.uid] ?? "top") === f).map((c) => c.uid);
         // the cards kept on top stay in this order, the ones for the bottom go under the library, the surveilled ones go to the graveyard
         const apply = () => { set((x) => ids("graveyard").reduce((y, u) => move(y, u, "graveyard"), reorderTop(x, ids("top"), ids("bottom")))); setScry(null); };
@@ -455,15 +458,19 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
         return (
           <Modal title="Scry or surveil" onClose={() => setScry(null)} wide>
             <h2 className="mb-1 text-lg font-semibold">Top of the library</h2>
-            <p className="mb-3 text-xs text-mute">Scry: choose Top or Bottom for each card. Surveil: send cards to the Graveyard instead of the bottom.</p>
+            <p className="mb-3 text-xs text-mute">Scry: choose Top or Bottom for each card. Surveil: send cards to the Graveyard instead of the bottom. Use the arrows to reorder the cards you keep on top.</p>
             <label className="mb-3 flex items-center gap-2 text-sm">Look at
-              <input type="number" min={1} max={10} className="field w-20" value={scry.n} onChange={(e) => setScry({ n: Math.min(10, Math.max(1, Math.floor(Number(e.target.value)) || 1)), fate: {} })} aria-label="Cards to look at" /> cards</label>
+              <input type="number" min={1} max={10} className="field w-20" value={scry.n} onChange={(e) => setScry({ n: Math.min(10, Math.max(1, Math.floor(Number(e.target.value)) || 1)), fate: {}, order: [] })} aria-label="Cards to look at" /> cards</label>
             <div className="flex flex-wrap gap-4">
               {top.map((c, i) => {
                 const fate = scry.fate[c.uid] ?? "top";
                 return (
                   <div key={c.uid} className="flex w-40 flex-col items-center gap-1">
                     <Face c={c} w="w-36" />
+                    <span className="flex items-center gap-2 text-xs text-mute">
+                      <button className="cursor-pointer rounded border border-line px-1.5 hover:bg-raised disabled:cursor-default disabled:opacity-30" disabled={i === 0} onClick={() => shift(i, -1)} aria-label={`Move ${c.name} earlier`}>◀</button>
+                      <button className="cursor-pointer rounded border border-line px-1.5 hover:bg-raised disabled:cursor-default disabled:opacity-30" disabled={i === top.length - 1} onClick={() => shift(i, 1)} aria-label={`Move ${c.name} later`}>▶</button>
+                    </span>
                     <span className="text-xs text-mute">{i + 1}. {fate === "top" ? "stays on top" : fate === "bottom" ? "to the bottom" : "to the graveyard"}</span>
                     <div role="group" aria-label={`What happens to ${c.name}`} className="flex w-full overflow-hidden rounded-lg border border-line text-xs">
                       {fates.map(([f, label]) => (
