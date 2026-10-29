@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 
 import time
 
-from . import __version__, cardmarket, carddetails, collection, db as dbmod, decks, decktext, deckurl, formats, gpu as gpumod, lists, oracle, pauper, playmats, scryfall, share, suggest, trades, updater as updmod
+from . import __version__, cardmarket, carddetails, collection, db as dbmod, decks, decktext, deckurl, formats, gpu as gpumod, lists, matchup, oracle, pauper, playmats, scryfall, share, suggest, trades, updater as updmod
 from .scan.session import MAX_SIDE, MAX_SIDE_PAGE, Scanner, decode
 
 UI_DIST = Path(__file__).resolve().parent.parent / "ui" / "dist"
@@ -837,6 +837,10 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
     @app.get("/api/pauper-meta/{source}/cards")
     def pauper_cards(source: str, deck_id: int):
         return _wrap(pauper.cards, db, deck_id, _pauper_source(source), dbmod.DATA_DIR)
+
+    @app.get("/api/pauper-meta/{source}/matchups")
+    def pauper_matchups(source: str, deck_id: int):
+        return _wrap(matchup.analyse, db, deck_id, _pauper_source(source), dbmod.DATA_DIR)
 
     @app.post("/api/pauper-meta/{source}/create-deck")
     def pauper_create_deck(source: str, body: dict = Body(...)):

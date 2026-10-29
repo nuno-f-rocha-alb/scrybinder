@@ -5,6 +5,7 @@ import { CardImg, HoverZoom, openExternal } from "./ui";
 import { GridControls, sourceFor, useCardGrid } from "./cardgrid";
 import { Select } from "./select";
 import { ManaCost } from "./mana";
+import Matchups from "./matchups";
 
 type Line = { oracle_id: string; name: string; quantity: number; owned: number; in_deck: number };
 type Archetype = { id: string; name: string; meta: number; cat: string; author: string; event: string; date: string; url: string; colors: string; main: Line[]; side: Line[]; owned_main: number; total_main: number; match: number };
@@ -26,7 +27,7 @@ export default function PauperMeta({ deckId, onAdded, onOpenDeck, toast }: { dec
   const [source, setSource] = useState<Source>(() => { try { return localStorage.getItem("scrybinder.pauper-source") === "top8" ? "top8" : "goldfish"; } catch { return "goldfish"; } });
   const [meta, setMeta] = useState<Meta | null>(null);
   const [pop, setPop] = useState<Pop[] | null>(null);
-  const [view, setView] = useState<"archetypes" | "cards">("archetypes");
+  const [view, setView] = useState<"archetypes" | "cards" | "matchups">("archetypes");
   const [err, setErr] = useState("");
   const [open, setOpen] = useState<string | null>(null);
   const [mono, setMono] = useState(false);
@@ -105,7 +106,7 @@ export default function PauperMeta({ deckId, onAdded, onOpenDeck, toast }: { dec
           {SOURCES.map(([k, l]) => <button key={k} aria-pressed={source === k} onClick={() => pick(k)} className={`cursor-pointer rounded-lg border px-3 py-1 ${source === k ? "border-accent text-ink" : "border-line text-mute hover:text-ink"}`}>{l}</button>)}
         </div>
         <div role="group" aria-label="View" className="flex gap-1">
-          {([["archetypes", "Archetypes"], ["cards", "Popular cards"]] as const).map(([k, l]) => <button key={k} aria-pressed={view === k} onClick={() => setView(k)} className={`cursor-pointer rounded-lg border px-3 py-1 ${view === k ? "border-accent text-ink" : "border-line text-mute hover:text-ink"}`}>{l}</button>)}
+          {([["archetypes", "Archetypes"], ["cards", "Popular cards"], ["matchups", "Matchups"]] as const).map(([k, l]) => <button key={k} aria-pressed={view === k} onClick={() => setView(k)} className={`cursor-pointer rounded-lg border px-3 py-1 ${view === k ? "border-accent text-ink" : "border-line text-mute hover:text-ink"}`}>{l}</button>)}
         </div>
         <button className="inline-flex cursor-pointer items-center gap-1 text-accent hover:underline" onClick={() => openExternal(HOME[source])}>Data from {SOURCES.find(([k]) => k === source)![1]} <IconExternalLink className="size-3.5" aria-hidden /></button>
         {meta && !running && <span className="text-mute">{when ? `${meta.period}, saved ${when}` : "nothing saved yet"}</span>}
@@ -116,7 +117,7 @@ export default function PauperMeta({ deckId, onAdded, onOpenDeck, toast }: { dec
       {finished && meta!.job.error && meta!.job.source === source && <p className="mb-4 rounded-xl border border-danger/40 bg-danger/10 p-3 text-sm text-danger" role="alert">{meta!.job.error}{meta!.decks.length ? " Showing the copy saved before." : ""}</p>}
       {err && <p className="mb-4 rounded-xl border border-danger/40 bg-danger/10 p-3 text-sm text-danger" role="alert">{err}</p>}
 
-      <div className="mb-4 flex flex-wrap items-center gap-3">
+      {view !== "matchups" && <div className="mb-4 flex flex-wrap items-center gap-3">
         <input className="field w-56" placeholder={view === "cards" ? "Search the cards…" : "Search the archetypes…"} aria-label="Search" value={q} onChange={(e) => setQ(e.target.value)} />
         {view === "archetypes" && <>
           <label className="flex cursor-pointer items-center gap-2 text-sm text-mute"><input type="checkbox" checked={mono} onChange={(e) => setMono(e.target.checked)} className="accent-[var(--color-accent)]" />Mono-colour only</label>
@@ -133,7 +134,7 @@ export default function PauperMeta({ deckId, onAdded, onOpenDeck, toast }: { dec
           <GridControls g={grid} />
         </>}
         <span className="text-xs text-mute tabular-nums">{view === "cards" ? cards.length : decks.length} {view === "cards" ? "cards" : "archetypes"}</span>
-      </div>
+      </div>}
 
       {view === "archetypes" && <>
         {meta && !running && decks.length === 0 && <div className="rounded-2xl border border-dashed border-line p-10 text-center text-mute">{meta.decks.length ? "No archetype matches these filters." : "No metagame saved yet."}</div>}
@@ -167,6 +168,8 @@ export default function PauperMeta({ deckId, onAdded, onOpenDeck, toast }: { dec
           ))}
         </ul>
       </>}
+
+      {view === "matchups" && <Matchups key={source} deckId={deckId} source={source} ready={!!enabled && !running && !!meta?.fetched} onAdded={onAdded} toast={toast} />}
 
       {view === "cards" && <>
         {pop && !running && cards.length === 0 && <div className="rounded-2xl border border-dashed border-line p-10 text-center text-mute">{pop.length ? "No card matches these filters." : "Nothing to show: refresh the metagame first."}</div>}
