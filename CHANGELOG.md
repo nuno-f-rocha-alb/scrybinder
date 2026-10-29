@@ -7,13 +7,16 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 ### Added
 - Decks: **Bulk edit** opens a board (main deck, sideboard, commander, maybeboard) as text, one card per line like Moxfield: change a quantity, delete a line, paste a list or change a printing, then Save makes the deck match. Copies assigned to a card stay with it, and nothing is saved while a line cannot be read, so a misspelt name never removes a card.
 
+### Changed
+- Importing a Moxfield link that Moxfield refuses (it blocks apps) now says so and tells you to paste the deck's Export text instead, rather than blaming a private deck.
+
 ## [0.8.10] — 2026-10-28
 
 ### Fixed
 - Updating the card database (Scryfall and Cardmarket) no longer freezes the app: anything you saved while it ran used to wait until the whole import finished (about half a minute or more); it now waits a second at most.
 
 ### Added
-- Decks: the Statistics tab lists the tokens the cards of the deck make, with the cards that make each one. It needs the card database to be updated once (Settings) or the cached bulk file, which is read at start-up.
+- Decks: under the cards, a collapsed *Tokens* line lists the tokens the cards of the deck make, with the cards that make each one, and a *Considering* line holds the maybeboard (as on Moxfield; the board is now called Considering). Tokens need the card database to be updated once (Settings) or the cached bulk file, which is read at start-up.
 
 ### Changed
 - Shared trades: the link page now looks like the Trades page, with what goes out on one side, what comes in on the other (picture, edition, finish, condition, price each and per line), the total of each side and the balance. Cards that are not in near-mint condition say so. A link already made shows the new page too; its cards just have no condition.

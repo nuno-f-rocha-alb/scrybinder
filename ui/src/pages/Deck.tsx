@@ -18,7 +18,7 @@ import Playtest from "../components/playtest";
 import DeckVisual from "../components/deckvisual";
 import ByLocation from "../components/bylocation";
 import Snapshots from "../components/snapshots";
-import DeckTokens from "../components/decktokens";
+import DeckTokens, { Fold } from "../components/decktokens";
 import Suggestions from "../components/suggestions";
 import AddMissingDialog from "../components/addmissing";
 import AddCards from "../components/addcards";
@@ -83,6 +83,7 @@ export default function Deck({ id, onBack, focusOracle }: { id: number; onBack: 
   const [missingIds, setMissingIds] = useState<number[] | null>(null);
   const [confirmRemove, setConfirmRemove] = useState(false);
   const focused = useRef(false);
+  const [foldedC, setFoldedC] = useState<Set<string>>(new Set());
   const [tab, setTab] = useState<"cards" | "visual" | "locate" | "stats" | "suggestions" | "playtest" | "snapshots">("cards");
   const [filter, setFilter] = useState<CardFilter | null>(null);
   const [showProblems, setShowProblems] = useState(false);
@@ -168,7 +169,7 @@ export default function Deck({ id, onBack, focusOracle }: { id: number; onBack: 
     "sep",
     ...(c.board !== "main" ? [{ label: "Move to main deck", onSelect: () => patchCard(c, { board: "main" }) }] : []),
     ...(c.board !== "side" ? [{ label: "Move to sideboard", hint: "Alt+3", onSelect: () => quickRef.current(c.id, 3) }] : []),
-    ...(c.board !== "maybe" ? [{ label: "Move to maybeboard", hint: "Alt+4", onSelect: () => quickRef.current(c.id, 4) }] : []),
+    ...(c.board !== "maybe" ? [{ label: "Move to considering", hint: "Alt+4", onSelect: () => quickRef.current(c.id, 4) }] : []),
     ...(deck.format === "commander" && c.board !== "commander" ? [{ label: "Set as commander", onSelect: () => patchCard(c, { board: "commander" }) }] : []),
     "sep",
     { label: "Add to another deck…", onSelect: () => setPickId(c.id) },
@@ -189,7 +190,11 @@ export default function Deck({ id, onBack, focusOracle }: { id: number; onBack: 
   const main = (stats?.totals.main ?? 0) + (stats?.totals.commander ?? 0);
   const cards = filter ? deck.cards.filter((c) => matchesFilter(c, filter)) : deck.cards;
   const groups = groupCards(cards, group, sort);
-  const allFolded = groups.length > 0 && groups.every((g) => folded.has(g.key));
+  const deckGroups = groups.filter((g) => g.key !== "maybe");  // the maybeboard sits in its own line under the deck and the tokens, grouped the same way
+  const consideringGroups = groupCards(cards.filter((c) => c.board === "maybe"), group, sort, "maybe");
+  const consideringCount = consideringGroups.reduce((n, g) => n + g.count, 0);
+  const allFolded = deckGroups.length > 0 && deckGroups.every((g) => folded.has(g.key));
+  const ctx = { deckId: id, act, setPreview, onZoom, selecting, selected, onAssign: (c: DeckCardT) => setAssignId(c.id), hover: (c: DeckCardT | null) => { hovered.current = c?.id ?? null; }, onMenu: (c: DeckCardT, e: React.MouseEvent) => menu.open(e, cardMenu(c)) };
   const pick = (f: CardFilter) => {  // a click on a chart: show those cards, or clear the filter when it is already the one
     if (filter?.kind === f.kind && filter.value === f.value) setFilter(null);
     else { setFilter(f); setTab("cards"); }
@@ -255,7 +260,7 @@ export default function Deck({ id, onBack, focusOracle }: { id: number; onBack: 
 
         {tab === "locate" && <ByLocation deckId={id} toast={toast} onChanged={reload} />}
 
-        {tab === "stats" && <>{stats ? <StatsPanel stats={stats} active={filter} onFilter={pick} /> : <p className="text-mute">Loading…</p>}<h3 className="mb-2 mt-6 text-sm font-semibold">Tokens</h3><DeckTokens deckId={id} /></>}
+        {tab === "stats" && <>{stats ? <StatsPanel stats={stats} active={filter} onFilter={pick} /> : <p className="text-mute">Loading…</p>}</>}
 
         <div hidden={tab !== "playtest"}><Playtest cards={deck.cards} commander={deck.format === "commander"} /></div>  {/* stays mounted: switching tabs keeps the game */}
 
@@ -311,7 +316,7 @@ export default function Deck({ id, onBack, focusOracle }: { id: number; onBack: 
             </label>
           )}
           {(view === "grid" || view === "stacks" || view === "spoiler") && <GridControls g={grid} />}
-          <button className="btn-ghost !py-1 text-xs" title="Fold or unfold every group" onClick={() => setFoldedKeys(allFolded ? new Set() : new Set(groups.map((g) => g.key)))}>{allFolded ? "Unfold all" : "Fold all"}</button>
+          <button className="btn-ghost !py-1 text-xs" title="Fold or unfold every group" onClick={() => setFoldedKeys(allFolded ? new Set() : new Set(deckGroups.map((g) => g.key)))}>{allFolded ? "Unfold all" : "Fold all"}</button>
         </div>
 
         {filter && (
@@ -321,7 +326,11 @@ export default function Deck({ id, onBack, focusOracle }: { id: number; onBack: 
           </div>
         )}
         {cards.length === 0 && <div className="rounded-2xl border border-dashed border-line p-12 text-center text-mute">{filter ? "No cards match this filter." : "This deck is empty. Search above to add cards."}</div>}
-        <DeckView groups={groups} folded={folded} onToggle={(k) => { const n = new Set(folded); n.has(k) ? n.delete(k) : n.add(k); setFoldedKeys(n); }} view={view} every={every === "1"} layout={grid} ctx={{ deckId: id, act, setPreview, onZoom, selecting, selected, onAssign: (c) => setAssignId(c.id), hover: (c) => { hovered.current = c?.id ?? null; }, onMenu: (c, e) => menu.open(e, cardMenu(c)) }} />
+        <DeckView groups={deckGroups} folded={folded} onToggle={(k) => { const n = new Set(folded); n.has(k) ? n.delete(k) : n.add(k); setFoldedKeys(n); }} view={view} every={every === "1"} layout={grid} ctx={ctx} />
+        <DeckTokens grid={grid} deckId={id} rev={deck.cards.filter((c) => c.board === "main" || c.board === "commander").map((c) => c.name).join("|")} />
+        {consideringGroups.length > 0 && <Fold title="Considering" count={consideringCount} force={selecting || !!filter}>
+          <DeckView groups={consideringGroups} folded={foldedC} onToggle={(k) => { const n = new Set(foldedC); n.has(k) ? n.delete(k) : n.add(k); setFoldedC(n); }} view={view} every={every === "1"} layout={{ ...grid, setGridEl: () => {} }} ctx={ctx} />
+        </Fold>}
         </>}
 
 {/* the summary lives in a slot under the scrolling area (App), so it is always at the bottom of the window whatever the cards */}
