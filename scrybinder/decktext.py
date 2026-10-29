@@ -1,7 +1,9 @@
 """Deck lists as plain text: `[N][x] Name [(SET) number] [*F*|*E*] [#tag] [^Tag^]` (*F* foil, *E* etched), compatible with Moxfield / Archidekt / MTGO.
 Sections are headers (Commander, Deck, Sideboard, Maybeboard) or, without any header, blank-line blocks (main, then side)."""
+import contextlib
 import json
 import re
+import sqlite3
 import unicodedata
 
 from . import decks
@@ -161,7 +163,55 @@ def replace_board(db, deck_id: int, board: str, text: str, dry_run: bool = False
         raise ValueError(f"a deck list has at most {MAX_LINES} lines")
     for it in items:
         it["board"] = board  # one board per box: a heading or SB: in it does not move a card
-    ok, skipped = resolve(db, items)
+    resolved = resolve(db, items)  # before the transaction: it does not depend on the deck and the write lock is not held meanwhile
+    if dry_run:
+        return _plan(db, deck_id, board, *resolved)[0]
+    with _atomic(db) as tx:  # all or nothing: the plan is made inside the transaction, so it is of the deck as it is when it is applied
+        report, todo = _plan(tx, deck_id, board, *resolved)
+        if report["skipped"]:
+            return report
+        _apply(tx, deck_id, board, todo)
+    report["applied"] = True
+    return report
+
+
+class _Tx:
+    """A connection whose `with` does nothing, so the commits of the deck functions wait for the end of the whole change."""
+    def __init__(self, conn):
+        self._conn = conn
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+@contextlib.contextmanager
+def _atomic(db):
+    """One transaction on a connection of its own (the app shares `db` between threads, so a rollback there would undo other requests)."""
+    path = db.execute("PRAGMA database_list").fetchone()["file"]
+    if not path:  # an in-memory database cannot be opened a second time
+        raise ValueError("bulk edit needs a database file")
+    conn = sqlite3.connect(path, timeout=60, isolation_level=None, cached_statements=0)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys=ON")
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        yield _Tx(conn)
+        conn.execute("COMMIT")
+    except BaseException:
+        if conn.in_transaction:
+            conn.execute("ROLLBACK")
+        raise
+    finally:
+        conn.close()
+
+
+def _plan(db, deck_id: int, board: str, ok: list[dict], skipped: list[dict]) -> tuple[dict, list]:
     have = {}  # (oracle_id, scryfall_id, finish) -> the lines of the deck (several on purpose)
     for c in decks.get(db, deck_id)["cards"]:
         if c["board"] == board:
@@ -198,9 +248,10 @@ def replace_board(db, deck_id: int, board: str, text: str, dry_run: bool = False
     for k, w in new.items():
         added.append({"name": w["name"], "quantity": w["quantity"]})
         todo.append(("add", k, w))
-    report = {"applied": False, "added": added, "changed": changed, "removed": removed, "skipped": skipped}
-    if dry_run or skipped:
-        return report
+    return {"applied": False, "added": added, "changed": changed, "removed": removed, "skipped": skipped}, todo
+
+
+def _apply(db, deck_id: int, board: str, todo: list) -> None:
     for act, *a in todo:
         if act == "add":
             (oid, sid, fin), w = a
@@ -230,5 +281,3 @@ def replace_board(db, deck_id: int, board: str, text: str, dry_run: bool = False
             for c in lines[1:]:
                 decks.remove_card(db, deck_id, c["id"])
             decks.update_card(db, deck_id, lines[0]["id"], quantity=w["quantity"], scryfall_id=sid, finish=fin, tags=sorted(w["tags"]))
-    report["applied"] = True
-    return report

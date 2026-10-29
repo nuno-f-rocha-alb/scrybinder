@@ -252,3 +252,23 @@ def test_bulk_edit_keeps_duplicate_lines_and_their_copies(db):
     T.replace_board(db, d, "main", f"2 {a['name']} ({a['set_code']}) {a['collector_number']}")  # two in total: the last line gives up its copy
     lines = {c["id"]: c for c in decks.get(db, d)["cards"]}
     assert set(lines) == {first} and lines[first]["quantity"] == 2
+
+
+def test_bulk_edit_is_all_or_nothing(db, monkeypatch):
+    a, b, c = _cards(db)
+    d = decks.create(db, "T")
+    decks.add_card(db, d, a["oracle_id"], 1, "main", a["id"])
+    decks.add_card(db, d, b["oracle_id"], 1, "main", b["id"])
+    before = _deck_cards(db, d)
+    real, calls = decks.add_card, []
+
+    def fail_on_the_second(*args, **kw):
+        calls.append(1)
+        if len(calls) == 2:
+            raise ValueError("boom")
+        return real(*args, **kw)
+    monkeypatch.setattr(decks, "add_card", fail_on_the_second)
+    text = f"5 {a['name']}\n2 {b['name']}\n1 {c['name']}\n3 Delver of Secrets"  # a and b change, then two lines are added: the second add fails
+    with pytest.raises(ValueError, match="boom"):
+        T.replace_board(db, d, "main", text)
+    assert _deck_cards(db, d) == before and len(calls) == 2  # the two changes and the first add were rolled back
