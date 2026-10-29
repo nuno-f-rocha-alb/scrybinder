@@ -16,7 +16,7 @@ from fastapi.staticfiles import StaticFiles
 
 import time
 
-from . import __version__, cardmarket, carddetails, collection, db as dbmod, decks, decktext, deckurl, formats, gpu as gpumod, lists, oracle, playmats, scryfall, share, suggest, trades, updater as updmod
+from . import __version__, cardmarket, carddetails, collection, db as dbmod, decks, decktext, deckurl, formats, gpu as gpumod, lists, oracle, pauper, playmats, scryfall, share, suggest, trades, updater as updmod
 from .scan.session import MAX_SIDE, MAX_SIDE_PAGE, Scanner, decode
 
 UI_DIST = Path(__file__).resolve().parent.parent / "ui" / "dist"
@@ -398,9 +398,9 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
 
     @app.post("/api/open-url")
     def open_url(body: dict = Body(...)):
-        """Open a link in the system browser (the app window must not navigate away). Scryfall, Cardmarket and EDHREC (its credit link) only."""
+        """Open a link in the system browser (the app window must not navigate away). Scryfall, Cardmarket, EDHREC and the Pauper metagame sites (their credit links) only."""
         u = urlparse(str(body.get("url", "")))
-        if u.scheme != "https" or u.hostname not in ("scryfall.com", "www.cardmarket.com", "edhrec.com") + _viewer_hosts():
+        if u.scheme != "https" or u.hostname not in ("scryfall.com", "www.cardmarket.com", "edhrec.com", "www.mtggoldfish.com", "www.mtgtop8.com") + _viewer_hosts():
             raise HTTPException(422, "link not allowed")
         webbrowser.open(u.geturl())
         return {"ok": True}
@@ -787,6 +787,60 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
     @app.get("/api/edhrec")
     def edhrec_status():
         return {"enabled": _edhrec_on()}
+
+    def _pauper_on() -> bool:
+        r = db.execute("SELECT value FROM meta WHERE key='pauper_meta_enabled'").fetchone()
+        return bool(r and r[0] == "1")
+
+    def _pauper_source(source: str) -> str:
+        if source not in pauper.SOURCES:
+            raise HTTPException(422, "source: goldfish or top8")
+        if not _pauper_on():
+            raise HTTPException(403, "the Pauper metagame is off: turn it on first")
+        return source
+
+    pjobs = {s: {"state": "idle", "source": s, "done": 0, "total": 0, "error": None} for s in pauper.SOURCES}  # one refresh per source
+    plock = threading.Lock()
+
+    @app.get("/api/pauper-meta")
+    def pauper_status():
+        return {"enabled": _pauper_on()}
+
+    @app.post("/api/pauper-meta")
+    def pauper_settings(body: dict = Body(...)):
+        with db:
+            db.execute("INSERT OR REPLACE INTO meta VALUES ('pauper_meta_enabled', ?)", ("1" if body.get("enabled") else "0",))
+        return {"enabled": _pauper_on()}
+
+    @app.get("/api/pauper-meta/{source}")
+    def pauper_data(source: str):
+        return {**_wrap(pauper.meta, db, _pauper_source(source), dbmod.DATA_DIR), "job": dict(pjobs[source])}
+
+    @app.post("/api/pauper-meta/{source}/refresh")
+    def pauper_refresh(source: str):
+        _pauper_source(source)
+        pjob = pjobs[source]
+        with plock:
+            if pjob["state"] == "running":
+                return dict(pjob)
+            pjob.update(state="running", source=source, done=0, total=0, error=None)  # before the thread starts, so the page sees it at once
+
+        def run():
+            try:
+                pauper.fetch(source, dbmod.DATA_DIR, progress=lambda d, t: pjob.update(done=d, total=t))
+                pjob["state"] = "done"
+            except Exception as e:
+                pjob.update(state="error", error=str(e) if isinstance(e, ValueError) else f"{pauper.SOURCES[source]}: {e}")
+        threading.Thread(target=run, daemon=True).start()
+        return dict(pjob)
+
+    @app.get("/api/pauper-meta/{source}/cards")
+    def pauper_cards(source: str, deck_id: int):
+        return _wrap(pauper.cards, db, deck_id, _pauper_source(source), dbmod.DATA_DIR)
+
+    @app.post("/api/pauper-meta/{source}/create-deck")
+    def pauper_create_deck(source: str, body: dict = Body(...)):
+        return {"id": _wrap(pauper.create_deck, db, _pauper_source(source), str(body.get("id") or ""), dbmod.DATA_DIR)}
 
     @app.get("/api/cardmarket")
     def cardmarket_status():

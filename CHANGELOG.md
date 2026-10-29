@@ -8,6 +8,7 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 - Updating the card database (Scryfall and Cardmarket) no longer freezes the app: anything you saved while it ran used to wait until the whole import finished (about half a minute or more); it now waits a second at most.
 
 ### Added
+- Pauper decks: a *Metagame* tab (off until you turn it on) with the archetypes of MTGGoldfish or MTGTop8, their share of the metagame, a sample list each and how much of it you own, *Create deck* from a list, and *Popular cards*: the cards those lists play, most played first, with what you own and *Add*.
 - Decks: the Statistics tab lists the tokens the cards of the deck make, with the cards that make each one. It needs the card database to be updated once (Settings) or the cached bulk file, which is read at start-up.
 
 ### Changed

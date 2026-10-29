@@ -43,6 +43,11 @@ def _have(db, oracle_ids: list[str]) -> dict:
     return out
 
 
+def newest_print(db, oracle_id: str):
+    """The id of the newest paper printing with an image, for a card you do not own."""
+    return (db.execute("SELECT id FROM cards WHERE oracle_id=? AND digital=0 AND image_small IS NOT NULL ORDER BY released_at DESC LIMIT 1", (oracle_id,)).fetchone() or [None])[0]
+
+
 def _fits(row, identity: set, in_deck: set) -> bool:
     """Not in the deck yet, legal in Commander, inside the commander's colors, and not a basic land."""
     legal = json.loads(row["legalities"] or "{}").get("commander") in ("legal", "restricted")
@@ -98,6 +103,6 @@ def suggestions(db, deck_id: int, data_dir, use_edhrec: bool) -> dict:
     owned.sort(key=lambda r: (r["edhrec_rank"] is None, r["edhrec_rank"] or 0, r["name"]))
     fit = [r for r in owned if _fits(r, identity, in_deck)][:COLLECTION_LIMIT]
     have = _have(db, [r["oracle_id"] for r in fit])
-    best = {r["oracle_id"]: (db.execute("SELECT id FROM cards WHERE oracle_id=? AND digital=0 AND image_small IS NOT NULL ORDER BY released_at DESC LIMIT 1", (r["oracle_id"],)).fetchone() or [None])[0] for r in fit}
+    best = {r["oracle_id"]: newest_print(db, r["oracle_id"]) for r in fit}
     return {"source": "collection", "stale": False, "commander": {"names": [r["name"] for r in cmd]},
             "cards": [_card(r, have, image_id=best.get(r["oracle_id"]), category="Your collection", category_key="collection", inclusion=None, synergy=None, lift=None) for r in fit]}
