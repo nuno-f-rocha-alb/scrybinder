@@ -16,7 +16,7 @@ type Arch = {
   id: string; name: string; meta: number; colors: string; style: string; style_estimated: boolean; avg_cmc: number; shares: Record<string, number>;
   expect: Expect[]; threats: Threat[]; board_in: BoardIn[]; board_out: BoardOut[]; cover: number;
 };
-type Plan = Card & { quantity: number; in_side: number; helps: string[] };
+type Plan = Card & { quantity: number; in_side: number; helps: string[]; replaces: string[] };
 type Result = { fetched: number | null; colors: string; deck: { shares: Record<string, number>; avg_cmc: number; spells: number }; labels: Record<string, string>; field: Arch[]; plan: Plan[]; cuts: (Card & { quantity: number })[] };
 
 const pips = (colors: string) => colors.split("").map((c) => `{${c}}`).join("");
@@ -106,19 +106,19 @@ export default function Matchups({ deckId, source, ready, onAdded, toast }: { de
       <section aria-label="Suggested sideboard">
         <div className="mb-2 flex flex-wrap items-center gap-3">
           <h3 className="text-sm font-semibold">Suggested sideboard</h3>
-          <span className="text-xs text-mute">chosen to cover the metagame by share; the best card for the field again and again, each archetype needing less the better it is covered</span>
+          <span className="text-xs text-mute">chosen to cover the metagame by share, keeping what is already in your sideboard unless something is clearly better. It reads card text, so it can miss what a card does: judge the swaps</span>
           {missing.length > 0 && <button className="btn-primary !py-1 text-xs" onClick={() => addSide(missing)}>Add the {missing.reduce((n, p) => n + p.quantity, 0)} missing</button>}
         </div>
         {res.plan.length === 0 ? <p className="text-sm text-mute">Nothing in the pool answers this metagame in your colours.</p> : (
           <ul className="grid gap-x-8 gap-y-1 lg:grid-cols-2">
             {res.plan.map((p) => (
               <CardRow key={p.oracle_id} c={p}
-                right={<span className="w-56 shrink-0 truncate text-xs text-mute" title={`Helps against: ${p.helps.join(", ")}`}><b className="mr-1 text-ink">{p.quantity}×</b>{p.in_side >= p.quantity ? "in your sideboard" : p.helps.join(", ")}</span>}
+                right={<span className="w-56 shrink-0 truncate text-xs text-mute" title={`Helps against: ${p.helps.join(", ") || "no archetype in particular"}`}><b className="mr-1 text-ink">{p.quantity}×</b>{p.in_side >= p.quantity ? "yours: kept" : p.replaces.length ? `instead of ${p.replaces.join(", ")}` : p.helps.join(", ")}</span>}
                 onAdd={p.in_side < p.quantity ? () => addSide([{ ...p, quantity: p.quantity - p.in_side }]) : undefined} addLabel={`Add ${p.quantity - p.in_side}`} />
             ))}
           </ul>
         )}
-        {res.cuts.length > 0 && <p className="mt-2 text-xs text-mute">In your sideboard but not in the plan: {res.cuts.map((c) => `${c.quantity} ${c.name}`).join(", ")}. They answer little of this metagame.</p>}
+        {res.cuts.length > 0 && <p className="mt-2 text-xs text-mute">Swapped out of your sideboard: {res.cuts.map((c) => `${c.quantity} ${c.name}`).join(", ")}. They score lower against this metagame by these estimates.</p>}
       </section>
 
       <section aria-label="The field">

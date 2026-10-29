@@ -23,7 +23,7 @@ def _row(text="", typ="Sorcery", kw=(), cmc=2, colors=(), oid="x"):
     (_row("Prevent all combat damage that would be dealt this turn."), {"burn": 1.0, "creature": 0.5}),
     (_row("Armored: prevent all combat damage that would be dealt to it.", "Artifact Vehicle"), {}),  # a card shielding itself is no fog
     (_row("", "Creature — Spider", kw=["Reach"]), {"flying": 0.6}),
-    (_row("Counter target spell."), {"combo": 0.7}),
+    (_row("Counter target spell."), {"combo": 0.7, "noncreature": 0.7}),
     (_row("Exile a creature card from your graveyard: draw.", "Creature — Ghoul"), {}),  # its own graveyard is no hate
     (_row("Flying", "Creature — Bird", kw=["Flying"]), {}),
 ])
@@ -33,7 +33,7 @@ def test_what_a_card_answers(row, want):
 
 
 def test_what_a_card_is():
-    assert matchup.traits(_row("Flashback {2}", "Instant")) == {"graveyard"}
+    assert matchup.traits(_row("Flashback {2}", "Instant")) == {"graveyard", "noncreature"}
     assert matchup.traits(_row("Flying", "Artifact Creature — Thopter", kw=["Flying"], cmc=1, colors=["U"])) == {"creature", "small", "flying", "artifact", "color:U"}
     assert "burn" in matchup.traits(_row("Lightning Bolt deals 3 damage to any target.", "Instant", colors=["R"]))
     assert "graveyard" not in matchup.traits(_row("Exile all graveyards."))  # hate is not dependence
@@ -104,9 +104,9 @@ def test_a_matchup_reads_both_decks(db, tmp_path):
     assert best["oracle_id"] == c[3] and best["rel"] == 1.0 and best["copies"] == 4 and best["reasons"][0]["tag"] == "artifact"
     # what could come out: the green hoser, nothing for it to hit
     assert [(x["name"], x["quantity"]) for x in a["board_out"]] == [(n[6], 2)]
-    # the graveyard hate in your sideboard does nothing here, so the field is uncovered and the plan cuts it
+    # the graveyard hate in your sideboard does nothing here, so the field is uncovered; the plan fills the empty slots with what does
     assert a["cover"] == 0
-    assert any(p["oracle_id"] == c[3] for p in r["plan"]) and [x["oracle_id"] for x in r["cuts"]] == [c[4]]
+    assert any(p["oracle_id"] == c[3] for p in r["plan"]) and r["cuts"] == []
     assert all(p["quantity"] <= 4 for p in r["plan"]) and sum(p["quantity"] for p in r["plan"]) <= matchup.SIDE
 
 
@@ -137,3 +137,35 @@ def test_the_api(db, tmp_path, monkeypatch):
     r = cl.get(f"/api/pauper-meta/goldfish/matchups?deck_id={d}").json()
     assert r["field"][0]["name"] == "Red Constructs" and r["labels"]["artifact"] == "Artifacts"
     assert cl.get("/api/pauper-meta/goldfish/matchups?deck_id=9999").status_code == 404
+
+
+def test_your_sideboard_is_kept_unless_something_is_clearly_better(db, tmp_path):
+    matchup._ANS.clear()
+    d, c, n = _world(db, tmp_path)
+    db.execute("DELETE FROM deck_cards WHERE deck_id=? AND board='side'", (d,))
+    decks.add_card(db, d, c[3], 2, board="side")  # artifact hate: already the best card against the only archetype
+    decks.add_card(db, d, c[2], 1, board="side")  # a card whose text says nothing the analysis knows
+    _set(db, c[2], "Draw a card.", "Instant")
+    matchup._ANS.clear()
+    r = matchup.analyse(db, d, "goldfish", tmp_path)
+    by = {p["oracle_id"]: p for p in r["plan"]}
+    assert by[c[3]]["quantity"] >= 2 and by[c[3]]["replaces"] == [] and by[c[2]]["quantity"] == 1  # neither is swapped
+    assert r["cuts"] == []
+
+
+def test_a_card_of_yours_that_answers_nothing_here_is_swapped_for_one_that_does(db, tmp_path):
+    matchup._ANS.clear()
+    d, c, n = _world(db, tmp_path)
+    extra = _cards(db, 9)[7:]
+    for oid, _ in extra:
+        _set(db, oid, "Draw a card.", "Instant")
+    decks.add_card(db, d, c[4], 3, board="side")  # graveyard hate: 4 of it, against an archetype with no graveyard cards
+    decks.add_card(db, d, extra[0][0], 4, board="side")  # text the analysis knows nothing about: stays
+    decks.add_card(db, d, extra[1][0], 4, board="side")
+    decks.add_card(db, d, c[2], 2, board="side")  # a hoser for blue against a red deck, 2 of it: 15 cards in all
+    matchup._ANS.clear()
+    r = matchup.analyse(db, d, "goldfish", tmp_path)
+    new = next(p for p in r["plan"] if p["oracle_id"] == c[3])
+    assert new["replaces"] and sum(p["quantity"] for p in r["plan"]) == matchup.SIDE
+    assert {x["oracle_id"] for x in r["cuts"]} <= {c[4], c[2]}  # only cards that were understood and useless leave
+    assert all(by["quantity"] == 4 for by in r["plan"] if by["oracle_id"] in (extra[0][0], extra[1][0]))

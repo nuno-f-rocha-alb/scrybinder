@@ -10,21 +10,23 @@ from . import deckrules, decks, pauper, suggest
 SIDE = 15  # a Pauper sideboard
 NEED = 4.0  # copies of fully relevant cards that cover an archetype in the sideboard plan; more adds nothing
 FLOOR = 0.15  # a covered archetype still counts a little, so the plan fills its slots instead of stopping
+MARGIN = 1.5  # a card of yours is swapped only for one adding this many times as much
+MAX_SWAPS = 6
 REPEAT = 0.8
 CAP = 1.5  # one copy counts for at most this much against an archetype, however many things it answers there
 WEAK = 0.35  # a situational main-deck card under this against an archetype is a board-out candidate
 LABEL = {"graveyard": "Graveyard", "artifact": "Artifacts", "enchantment": "Enchantments", "flying": "Fliers", "small": "Small creatures",
          "tokens": "Tokens", "burn": "Burn", "creature": "Creatures", "combo": "Combo", "counter": "Counterspells", "removal": "Removal",
-         "lifegain": "Life gain", "discard": "Discard"}
+         "lifegain": "Life gain", "discard": "Discard", "noncreature": "Non-creature spells"}
 COLOR_NAME = {"W": "white", "U": "blue", "B": "black", "R": "red", "G": "green"}
 for _k, _v in COLOR_NAME.items():
     LABEL[f"color:{_k}"] = _v.capitalize() + " cards"
 # a share of the spells that counts as fully exposed to the thing that answers it
-SAT = {"graveyard": 0.12, "artifact": 0.20, "enchantment": 0.15, "flying": 0.20, "small": 0.35, "tokens": 0.12, "burn": 0.20, "creature": 0.45, "combo": 1.0}
+SAT = {"graveyard": 0.12, "artifact": 0.20, "enchantment": 0.15, "flying": 0.20, "small": 0.35, "tokens": 0.12, "burn": 0.20, "creature": 0.45, "combo": 1.0, "noncreature": 0.5}
 SAT.update({f"color:{c}": 0.45 for c in COLOR_NAME})
 ANSWERS_TO = {"combo": "Counters and discard", "creature": "Creature removal"}
 ANSWERS_TO.update({f"color:{c}": f"Hosers for {n} cards" for c, n in COLOR_NAME.items()})
-TRAITS = ("creature", "small", "flying", "artifact", "enchantment", "graveyard", "tokens", "burn", "counter", "removal", "lifegain", "discard")
+TRAITS = ("creature", "small", "flying", "artifact", "enchantment", "graveyard", "tokens", "burn", "counter", "removal", "lifegain", "discard", "noncreature")
 
 
 def _r(p):
@@ -33,7 +35,7 @@ def _r(p):
 
 GRAVE = _r(r"flashback|escape|unearth|dredge|retrace|jump-start|\b(?:from|in) (?:your|a|any|target player's) graveyards?\b")
 GRAVE_HATE = _r(r"exile (?:all |each )?graveyards|exile (?:all cards from |target card from |cards? from )?(?:target player's|each player's|all|a|that player's|an opponent's|opponent's) graveyards?"
-                r"|from all graveyards|exile target card from a graveyard")
+                r"|from all graveyards|exile target card from a graveyard|exile (?:up to \w+ )?target cards? from (?!your )(?:a |target player's |their |an opponent's )?graveyards?")
 BURN = _r(r"deals? (?:\d+|x) damage to (?:any target|target player|each opponent|target opponent|that player|target creature or player|any other target)|damage to any target")
 COUNTER = _r(r"counter target")
 REMOVAL = _r(r"(?:destroy|exile) target (?:\w+ ){0,3}(?:creature|permanent)|deals? (?:\d+|x) damage to target creature|damage to any target|target creature gets -|gets? -x/-x"
@@ -76,7 +78,7 @@ def answers(row) -> dict:
         out["enchantment"] = 1.0
     if FLY_HATE.search(text) and ("damage" in text or "destroy" in text or "exile" in text):
         out["flying"] = 1.0
-    elif "reach" in kw and "Creature" in typ:
+    elif ("reach" in kw and "Creature" in typ) or re.search(r"gains? reach|and reach", text, re.I):
         out["flying"] = 0.6
     if SWEEP.search(text) or ("overload" in kw and "damage" in text):
         out["small"] = out["tokens"] = 1.0
@@ -84,14 +86,17 @@ def answers(row) -> dict:
         out["burn"], out["creature"] = 1.0, 0.5
     elif LIFE.search(text) and "Creature" not in typ:
         out["burn"] = 0.4
-    if REMOVAL.search(text) and "Creature" not in typ:
+    if re.search(r"deals? 1 damage to any target", text, re.I):  # a ping: no answer to a real creature, good against the small ones
+        out["creature"], out["small"] = 0.4, 0.7
+    elif REMOVAL.search(text) and "Creature" not in typ:
         out["creature"] = max(out.get("creature", 0), 1.0)
     if (COUNTER.search(text) and "Creature" not in typ) or (DISCARD.search(text) and "Creature" not in typ):
-        out["combo"] = 0.7
+        out["combo"] = out["noncreature"] = 0.7
     colors = {c for m in COLOR_HATE.finditer(text) for g in m.groups() if g for c in [_BY_NAME[g.lower()]]}
     if colors:  # a hoser's "destroy target permanent / counter target spell" only works on its colour
         out.pop("creature", None)
         out.pop("combo", None)
+        out.pop("noncreature", None)
     for c in colors:
         out[f"color:{c}"] = 1.0
     _ANS[key] = out
@@ -108,6 +113,8 @@ def traits(row) -> set:
             t.add("small")
     if "flying" in kw:
         t.add("flying")
+    if "Creature" not in typ:
+        t.add("noncreature")
     if "Artifact" in typ:
         t.add("artifact")
     if "Enchantment" in typ:
@@ -252,6 +259,9 @@ def analyse(db, deck_id: int, source: str, data_dir) -> dict:
                           "image_id": h["print"] or suggest.newest_print(db, oid)}
         return {**shown[oid], **extra}
 
+    def shown_name(oid):
+        return (pool.get(oid) or rows[oid])["name"]
+
     relmat = {}  # (archetype index, oracle_id) -> (rel, why)
     for i, a in enumerate(field):
         for oid, r in pool.items():
@@ -286,30 +296,72 @@ def analyse(db, deck_id: int, source: str, data_dir) -> dict:
         a["board_out"] = sorted(out, key=lambda x: (x["rel"], x["name"]))
         a["cover"] = round(sum(q * min(relmat.get((i, oid), (0, 0))[0], CAP) for oid, q in in_side.items()), 2)
 
-    # the sideboard plan: the best card for the field again and again, each archetype needing less the better it is covered
+    # the sideboard plan. Your sideboard is where it starts: empty slots get the best card for the field, and a card of yours is swapped only for
+    # one that adds MARGIN times as much, each archetype needing less the better it is covered. A card whose text was not understood stays.
+    sparse: dict = {}
+    for (i, oid), (v, _) in relmat.items():
+        sparse.setdefault(oid, []).append((i, min(v, CAP)))
+    metas = [a["meta"] for a in field]
+    plan_q = dict(in_side)
     got = [0.0] * len(field)
-    taken: dict = {}
-    for _ in range(SIDE):
+
+    def move(oid, step):
+        plan_q[oid] = plan_q.get(oid, 0) + step
+        for i, v in sparse.get(oid, ()):
+            got[i] += step * v
+
+    def worth(oid, n):  # what the n-th copy of `oid` adds on top of what is covered
+        g = sum(metas[i] * v * max(FLOOR, 1 - got[i] / NEED) for i, v in sparse.get(oid, ()))
+        return g * (1.1 if have[oid]["owned"] else 1.0) * REPEAT ** n if oid in have else 0.0
+
+    def best_new(skip=None):
         best, best_gain = None, 0.0
         for oid in pool:
-            if taken.get(oid, 0) >= room[oid]:
+            if oid == skip or plan_q.get(oid, 0) >= max(room[oid], in_side.get(oid, 0)):
                 continue
-            gain = sum(a["meta"] * min(relmat[i, oid][0], CAP) * max(FLOOR, 1 - got[i] / NEED) for i, a in enumerate(field) if (i, oid) in relmat)
-            gain *= 1.1 if have[oid]["owned"] else 1.0
-            gain *= REPEAT ** taken.get(oid, 0)  # a second copy of the same card is worth less than a different card of the same kind
-            if gain > best_gain or (gain == best_gain and best is not None and gain > 0 and oid < best):
-                best, best_gain = oid, gain
-        if best is None or best_gain < 1e-6:
+            g = worth(oid, plan_q.get(oid, 0))
+            if g > best_gain or (g == best_gain and best is not None and g > 0 and oid < best):
+                best, best_gain = oid, g
+        return best, best_gain
+
+    for oid, q in in_side.items():
+        for i, v in sparse.get(oid, ()):
+            got[i] += q * v
+    while sum(plan_q.values()) < SIDE:
+        b, g = best_new()
+        if b is None or g < 1e-6:
             break
-        taken[best] = taken.get(best, 0) + 1
-        for i in range(len(field)):
-            got[i] += min(relmat.get((i, best), (0, 0))[0], CAP)
+        move(b, 1)
+    swaps, removed = [], {}
+    for _ in range(MAX_SWAPS):
+        pair = None
+        for o in in_side:
+            if removed.get(o, 0) >= in_side[o] or plan_q.get(o, 0) <= 0 or o not in pool:
+                continue  # not a card of yours still in the plan, or one whose text was not understood
+            move(o, -1)
+            loss = worth(o, plan_q.get(o, 0))
+            b, g = best_new(skip=o)
+            move(o, 1)
+            if b is not None and g >= MARGIN * loss and g > 0 and (pair is None or g - loss > pair[0]):
+                pair = (g - loss, o, b)
+        if pair is None:
+            break
+        _, o, b = pair
+        move(o, -1)
+        move(b, 1)
+        removed[o] = removed.get(o, 0) + 1
+        swaps.append((o, b))
+    replaces: dict = {}
+    for o, b in swaps:
+        replaces.setdefault(b, []).append(shown_name(o))
     plan = []
-    for oid, q in taken.items():
-        helps = sorted(((a["meta"] * relmat[i, oid][0], a["name"]) for i, a in enumerate(field) if (i, oid) in relmat), reverse=True)[:3]
-        plan.append(card(oid, quantity=q, in_side=in_side.get(oid, 0), helps=[n for _, n in helps]))
-    plan.sort(key=lambda c: (-c["quantity"], c["name"]))
-    cuts = [card(oid, quantity=q) for oid, q in in_side.items() if oid not in taken]
+    for oid, q in plan_q.items():
+        if q <= 0:
+            continue
+        helps = sorted(((metas[i] * v, field[i]["name"]) for i, v in sparse.get(oid, ())), reverse=True)[:3]
+        plan.append(card(oid, quantity=q, in_side=in_side.get(oid, 0), helps=[n for _, n in helps], replaces=replaces.get(oid, [])))
+    plan.sort(key=lambda c: (c["in_side"] >= c["quantity"], -c["quantity"], c["name"]))  # the new cards first
+    cuts = [card(oid, quantity=q - plan_q.get(oid, 0)) for oid, q in in_side.items() if plan_q.get(oid, 0) < q]
     for a in field:
         del a["_prof"], a["_lines"]
     return {"fetched": saved["fetched"], "colors": "".join(c for c in "WUBRG" if c in identity),
