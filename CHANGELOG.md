@@ -4,6 +4,15 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Added
+- Playtest: *Scry / surveil* lets you drag the cards (or use arrows) to reorder the cards you keep on top of the library.
+
+### Fixed
+- Playtest: tapping a card at the bottom edge of the table no longer flashes a scroll bar, and dragging the cards in *Scry / surveil* works in the app window.
+
+### Changed
+- Playtest: the play area has the shape of a real playmat (24 × 14 in), so a mat fills it without being cropped. The hand sits over the bottom of it, partly hidden, and a card grows to the preview size when you hover it. The Mulligan button stops once a keep would put the whole hand on the bottom.
+
 ## [0.8.11] — 2026-10-29
 
 ### Added

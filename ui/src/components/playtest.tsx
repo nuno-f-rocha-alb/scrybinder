@@ -35,11 +35,11 @@ function Card({ c, onClick, onMenu, at, lifted, ring, warn, badge, onHover, onPr
   const d = fan ? (fan.i - (fan.n - 1) / 2) * Math.min(1, 7 / Math.max(fan.n - 1, 1)) : 0;  // the fan: each card turns and sinks a little more the further it is from the middle (a big hand spreads less, so it stays on the screen)
   return (
     <button onClick={onClick} onContextMenu={onMenu} data-uid={at ? c.uid : undefined} aria-label={`${c.name}${c.tapped ? " (tapped)" : ""}${counters.length ? `, ${counters.join(", ")}` : ""}`} title={`${c.name} — drag to move, right-click for more`}
-      onMouseEnter={(e) => onHover?.(c, e.currentTarget.getBoundingClientRect())} onMouseLeave={() => onHover?.(null)} onFocus={(e) => onHover?.(c, e.currentTarget.getBoundingClientRect())} onBlur={() => onHover?.(null)} onPointerDown={onPress}
-      style={fan ? { "--r": `${d * 4}deg`, "--y": `${d * d * 2}px`, marginLeft: fan.i ? `calc(var(--hw) * ${-(1 - Math.min(0.8, 5.8 / Math.max(fan.n - 1, 1)))})` : 0, zIndex: fan.i } as React.CSSProperties
+      onMouseEnter={(e) => { if (fan) e.currentTarget.style.setProperty("--zs", String(288 / e.currentTarget.offsetWidth)); onHover?.(c, e.currentTarget.getBoundingClientRect()); }} onMouseLeave={() => onHover?.(null)} onFocus={(e) => onHover?.(c, e.currentTarget.getBoundingClientRect())} onBlur={() => onHover?.(null)} onPointerDown={onPress}
+      style={fan ? { "--r": `${d * 4}deg`, "--y": `${d * d * 2}px`, marginLeft: fan.i ? `calc(var(--hw) * ${-(1 - Math.min(0.8, 5.8 / Math.max(fan.n - 1, 1)))})` : 0, "--z": fan.i } as React.CSSProperties
         : at ? { position: "absolute", left: `${Math.min(at.x, 1 - at.box.w) * 100}%`, top: `${Math.min(at.y, 1 - at.box.h) * 100}%`, zIndex: at.z, width: "var(--cw)", opacity: lifted ? 0 : undefined, pointerEvents: lifted ? "none" : undefined } : undefined}  // on the free table, kept inside it
-      className={`group relative flex shrink-0 cursor-pointer touch-none select-none items-center justify-center rounded-lg outline-none transition-transform focus-visible:ring-2 focus-visible:ring-accent ${fan ? "[transform:translateY(var(--y))_rotate(var(--r))] " : ""} ${ring ? "ring-2 ring-accent" : warn ? "ring-2 ring-amber-400" : ""}`}>
-      <span className={`pointer-events-none block transition-transform ${c.tapped ? "rotate-90" : ""} ${fan ? "group-hover:-translate-y-4 group-focus-visible:-translate-y-4" : ""}`}>  {/* a hand card only lifts: the big picture is the preview, which never catches the pointer, so the cards beside it stay reachable */}<Face c={c} w={fan ? "w-(--hw)" : undefined} /></span>
+      className={`group relative flex shrink-0 cursor-pointer touch-none select-none items-center justify-center rounded-lg outline-none transition-transform focus-visible:ring-2 focus-visible:ring-accent ${fan ? "pointer-events-auto z-(--z) [transform:translateY(calc(var(--y)_+_var(--sink,0%)))_rotate(var(--r))] hover:z-[100] hover:[transform:none] focus-visible:z-[100] focus-visible:[transform:none] " : ""} ${ring ? "ring-2 ring-accent" : warn ? "ring-2 ring-amber-400" : ""}`}>
+      <span className={`pointer-events-none block transition-transform ${c.tapped ? "rotate-90" : ""} ${fan ? "origin-bottom group-hover:scale-(--zs) group-focus-visible:scale-(--zs)" : ""}`}>  {/* a hand card grows in place to the size of the preview, straightened and above the others */}<Face c={c} w={fan ? "w-(--hw)" : undefined} /></span>
       {!!badge && <span className="absolute right-0 top-0 rounded bg-accent px-1 text-[11px] font-semibold text-white" title="Cards attached to this one">+{badge}</span>}
       {counters.length > 0 && <span className="absolute bottom-1 left-1/2 flex -translate-x-1/2 flex-col items-center gap-0.5 text-[11px] font-semibold">
         {counters.map((t) => <span key={t} className="rounded bg-black/80 px-1.5 text-white">{t}</span>)}</span>}
@@ -133,7 +133,7 @@ function OpeningHand({ g, set }: { g: Game; set: (f: (x: Game) => Game) => void 
       <div className="flex justify-center gap-3">
         {bottom ? <button className={`${act} !px-8 !py-2.5 !text-base`} disabled={pick.length !== g.toBottom} onClick={() => set((x) => bottomMany(x, pick))}>Confirm</button> : <>
           <button className={`${act} !px-8 !py-2.5 !text-base`} onClick={() => set(keep)}>Keep {g.hand.length}</button>
-          <button className={`${btn} !px-8 !py-2.5 !text-base`} onClick={() => set((x) => mulligan(x))}>Mulligan{g.mulligans ? ` (${g.mulligans})` : ""}</button>
+          <button className={`${btn} !px-8 !py-2.5 !text-base`} disabled={g.mulligans - (g.freeMulligan ? 1 : 0) >= 7} title="Mulligan down to no cards at most" onClick={() => set((x) => mulligan(x))}>Mulligan{g.mulligans ? ` (${g.mulligans})` : ""}</button>
         </>}
       </div>
     </div>
@@ -153,7 +153,8 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
   const [zoomAt, setZoomAt] = useState<DOMRect | null>(null);  // where that card is, for the preview beside it
   const hover = (c: GCard | null, at?: DOMRect) => { setZoom(c); setZoomAt(at ?? null); };
   const [tokenForm, setTokenForm] = useState<{ name: string; pt: string } | null>(null);
-  const [scry, setScry] = useState<{ n: number; fate: Record<number, "top" | "bottom" | "graveyard"> } | null>(null);  // what each looked-at card becomes (absent: stays on top)
+  const [scryDrag, setScryDrag] = useState<number | null>(null);  // the index of the scry card being dragged
+  const [scry, setScry] = useState<{ n: number; fate: Record<number, "top" | "bottom" | "graveyard">; order: number[] } | null>(null);  // what each looked-at card becomes (absent: stays on top)
   const gRef = useRef<Game | null>(null);
   const [counterForm, setCounterForm] = useState<{ uid: number; name: string; n: number } | null>(null);
   const [ending, setEnding] = useState(false);
@@ -312,7 +313,7 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
   const lands = g.battlefield.filter(isLand).length;
 
   return (
-    <div className="flex min-h-[calc(100vh-13rem)] flex-col" style={CARD_W}>
+    <div className="flex min-h-[calc(100vh-10rem)] flex-col" style={CARD_W}>
       <div className="mb-2 flex flex-wrap items-center gap-2" role="toolbar" aria-label="Playtest controls">
         <span className="mr-2 text-sm">Turn <b>{g.turn}</b> · Library <b>{g.library.length}</b> · Lands <b>{lands}</b></span>
         <span className="mr-2 flex items-center gap-1 text-sm">Life
@@ -340,7 +341,7 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
       <div className="flex flex-1 items-stretch gap-4">
         {/* the table: nonlands nearest the opponent (top), lands nearest the player (bottom) */}
         <div className="flex min-w-0 flex-1 flex-col">
-        <section aria-label="Battlefield" {...(playing ? zone("battlefield") : {})} className={`relative isolate flex min-h-0 flex-1 flex-col rounded-xl border border-line ${playing ? zone("battlefield").className : ""}`}>
+        <section aria-label="Battlefield" {...(playing ? zone("battlefield") : {})} style={{ aspectRatio: "24 / 14", width: "min(100%, calc((100vh - 14rem) * 24 / 14))" }} className={`relative isolate mx-auto flex min-h-0 shrink-0 flex-col rounded-xl border border-line ${playing ? zone("battlefield").className : ""}`}>
           <div className="flex items-start justify-between gap-2 px-2 pt-2">
           <h3 className="text-xs uppercase tracking-wide text-mute">Battlefield ({g.battlefield.length}) · place cards anywhere; the last one you move stays on top; drop one on another to attach it</h3>
             <div role="group" aria-label="Zoom the table" className="flex shrink-0 items-center gap-1 text-xs">
@@ -353,7 +354,7 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
           {/* a free table: each card sits at its own x, y; the dashed line is only a guide between the permanents and the lands */}
           {/* the window keeps its size; the table inside it grows with the zoom (cards, mat and all) and scrolls */}
           <div className="relative min-h-[calc(var(--cw)*3.6)] flex-1">
-          <div ref={scroller} className="absolute inset-0 overflow-auto">
+          <div ref={scroller} className={`absolute inset-0 ${zoomT === 1 ? "overflow-hidden" : "overflow-auto"}`}>  {/* at 100% nothing needs scrolling: a tapped card at the edge would flash a scroll bar */}
           <div ref={surface} role="group" aria-label="Table" className="relative isolate" style={{ "--cw": `calc(${CW} * ${zoomT})`, width: `${zoomT * 100}%`, height: `${zoomT * 100}%` } as React.CSSProperties}>
             <MatLayer mat={mat} />
             <span ref={probe} aria-hidden className="invisible absolute w-(--cw)" />
@@ -362,6 +363,13 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
               : <Card key={c.uid} c={c} at={{ ...placeOf(g, c, box), box }} lifted={drag?.uid === c.uid || (!!drag && c.attachedTo === drag.uid)} ring={drag ? drag.target === c.uid && drag.uid !== c.uid : attaching !== null && attaching !== c.uid} warn={warns.some((w) => w.uids.includes(c.uid))} badge={g.battlefield.filter((k) => k.attachedTo === c.uid).length} onHover={hover} onPress={playing ? press(c.uid) : undefined} onClick={() => (attaching !== null ? (set((x) => attach(x, attaching, c.uid)), setAttaching(null)) : set((x) => toggleTap(x, c.uid)))} onMenu={cardMenu(c, "battlefield")} />)}
           </div>
           </div>
+          </div>
+          <div className="pointer-events-none absolute inset-0 z-20 flex items-end justify-center overflow-hidden rounded-xl">  {/* clips the lower part of the hand at the table edge */}
+          <section aria-label="Hand" style={{ "--sink": "25%" } as React.CSSProperties} {...(playing ? zone("hand") : {})} className={`pointer-events-auto relative rounded-xl p-1 ${g.hand.length ? "" : "border border-dashed border-line"} ${playing ? zone("hand").className : ""} ${warns.some((w) => w.rule === "514.1") ? "ring-2 ring-amber-400" : ""}`}>
+            <div className="flex h-[calc(var(--hw)*88/63*0.45)] min-w-[calc(var(--hw)*1.3)] items-end justify-center">  {/* an empty hand keeps a box to drop a card on */}
+              {g.hand.map((c, i) => <Card key={c.uid} c={c} fan={{ i, n: g.hand.length }} onHover={hover} onPress={playing ? press(c.uid) : undefined} onClick={() => handClick(c)} onMenu={cardMenu(c, "hand")} />)}
+            </div>
+          </section>
           </div>
         </section>
           {playing && <div role="toolbar" aria-label="Actions" className="mt-3 flex flex-wrap items-center gap-2 rounded-xl border border-accent/40 bg-accent/15 p-2">
@@ -372,15 +380,9 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
             <button className={act} onClick={() => set(untapAll)}>Untap all</button>
             <button className={act} onClick={() => setSearch("")}>Search library</button>
             <button className={act} onClick={() => set((x) => shuffleLibrary(x))}>Shuffle</button>
-            <button className={act} disabled={!g.library.length} onClick={() => setScry({ n: 1, fate: {} })}>Scry / surveil</button>
+            <button className={act} disabled={!g.library.length} onClick={() => setScry({ n: 1, fate: {}, order: [] })}>Scry / surveil</button>
             <button className={act} onClick={() => setTokenForm({ name: "", pt: "" })}>Token</button>
           </div>}
-          <section aria-label="Hand" {...(playing ? zone("hand") : {})} className={`mt-2 rounded-xl p-1 ${playing ? zone("hand").className : ""} ${warns.some((w) => w.rule === "514.1") ? "ring-2 ring-amber-400" : ""}`}>
-            <h3 className="mb-1 text-sm font-medium text-mute">Hand ({g.hand.length})</h3>
-            <div className="flex min-h-12 justify-center pb-3 pt-14">
-              {g.hand.map((c, i) => <Card key={c.uid} c={c} fan={{ i, n: g.hand.length }} onHover={hover} onPress={playing ? press(c.uid) : undefined} onClick={() => handClick(c)} onMenu={cardMenu(c, "hand")} />)}
-            </div>
-          </section>
         </div>
         {/* library, graveyard, exile and the command zone: beside the table: the command zone on the left, library, graveyard and exile in a column on the right (one column without a commander) */}
         <aside aria-label="Zones" className={`grid shrink-0 content-start gap-2 ${commander ? "grid-cols-2" : "grid-cols-1"}`}>
@@ -415,6 +417,7 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
       {zoom && zoomAt && !drag && (() => {  // beside a table card: to its right, or to its left when there is no room; above a hand card; kept inside the window
         const w = 288, h = w * 88 / 63, gap = 12;
         const inHand = g.hand.some((c) => c.uid === zoom.uid);
+        if (inHand) return null;  // a hand card grows by itself
         const left = inHand ? Math.min(Math.max(8, zoomAt.left + zoomAt.width / 2 - w / 2), window.innerWidth - w - 8) : zoomAt.right + gap + w <= window.innerWidth - 8 ? zoomAt.right + gap : Math.max(8, zoomAt.left - gap - w);
         const top = inHand ? Math.max(8, zoomAt.top - h - gap) : Math.min(Math.max(8, zoomAt.top + zoomAt.height / 2 - h / 2), window.innerHeight - h - 8);
         return <div className="pointer-events-none fixed z-40 overflow-hidden rounded-[4.5%] shadow-2xl shadow-black/70 ring-1 ring-white/10" style={{ left, top, width: w }} aria-hidden>
@@ -447,7 +450,11 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
         </Modal>
       )}
       {scry && (() => {
-        const top = peek(g, scry.n);
+        const natural = peek(g, scry.n);
+        const rank = (u: number) => { const i = scry.order.indexOf(u); return i < 0 ? 99 : i; };
+        const top = scry.order.length ? [...natural].sort((a, b) => rank(a.uid) - rank(b.uid)) : natural;  // the order the player chose
+        const shift = (i: number, d: number) => { const o = top.map((c) => c.uid); [o[i], o[i + d]] = [o[i + d], o[i]]; setScry({ ...scry, order: o }); };
+        const dragTo = (from: number, to: number) => { if (from === to || from < 0) return; const o = top.map((c) => c.uid); o.splice(to, 0, o.splice(from, 1)[0]); setScry({ ...scry, order: o }); };
         const ids = (f: string) => top.filter((c) => (scry.fate[c.uid] ?? "top") === f).map((c) => c.uid);
         // the cards kept on top stay in this order, the ones for the bottom go under the library, the surveilled ones go to the graveyard
         const apply = () => { set((x) => ids("graveyard").reduce((y, u) => move(y, u, "graveyard"), reorderTop(x, ids("top"), ids("bottom")))); setScry(null); };
@@ -455,15 +462,24 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
         return (
           <Modal title="Scry or surveil" onClose={() => setScry(null)} wide>
             <h2 className="mb-1 text-lg font-semibold">Top of the library</h2>
-            <p className="mb-3 text-xs text-mute">Scry: choose Top or Bottom for each card. Surveil: send cards to the Graveyard instead of the bottom.</p>
+            <p className="mb-3 text-xs text-mute">Scry: choose Top or Bottom for each card. Surveil: send cards to the Graveyard instead of the bottom. Drag the cards (or use the arrows) to reorder the ones you keep on top.</p>
             <label className="mb-3 flex items-center gap-2 text-sm">Look at
-              <input type="number" min={1} max={10} className="field w-20" value={scry.n} onChange={(e) => setScry({ n: Math.min(10, Math.max(1, Math.floor(Number(e.target.value)) || 1)), fate: {} })} aria-label="Cards to look at" /> cards</label>
+              <input type="number" min={1} max={10} className="field w-20" value={scry.n} onChange={(e) => setScry({ n: Math.min(10, Math.max(1, Math.floor(Number(e.target.value)) || 1)), fate: {}, order: [] })} aria-label="Cards to look at" /> cards</label>
             <div className="flex flex-wrap gap-4">
               {top.map((c, i) => {
                 const fate = scry.fate[c.uid] ?? "top";
                 return (
-                  <div key={c.uid} className="flex w-40 flex-col items-center gap-1">
-                    <Face c={c} w="w-36" />
+                  <div key={c.uid} data-scry={i} className="flex w-40 flex-col items-center gap-1">
+                    <div className={`touch-none select-none cursor-grab active:cursor-grabbing ${scryDrag === i ? "opacity-50" : ""}`}  /* pointer events, not HTML5 drag: that does not start in the app window */
+                      onPointerDown={(e) => { if (e.button !== 0) return; e.currentTarget.setPointerCapture(e.pointerId); setScryDrag(i); }}
+                      onPointerUp={(e) => { const to = Number((document.elementFromPoint(e.clientX, e.clientY)?.closest("[data-scry]") as HTMLElement | null)?.dataset.scry ?? -1); setScryDrag(null); if (to >= 0) dragTo(i, to); }}
+                      onPointerCancel={() => setScryDrag(null)} onDragStart={(e) => e.preventDefault()}>
+                      <Face c={c} w="w-36" />
+                    </div>
+                    <span className="flex items-center gap-2 text-xs text-mute">
+                      <button className="cursor-pointer rounded border border-line px-1.5 hover:bg-raised disabled:cursor-default disabled:opacity-30" disabled={i === 0} onClick={() => shift(i, -1)} aria-label={`Move ${c.name} earlier`}>◀</button>
+                      <button className="cursor-pointer rounded border border-line px-1.5 hover:bg-raised disabled:cursor-default disabled:opacity-30" disabled={i === top.length - 1} onClick={() => shift(i, 1)} aria-label={`Move ${c.name} later`}>▶</button>
+                    </span>
                     <span className="text-xs text-mute">{i + 1}. {fate === "top" ? "stays on top" : fate === "bottom" ? "to the bottom" : "to the graveyard"}</span>
                     <div role="group" aria-label={`What happens to ${c.name}`} className="flex w-full overflow-hidden rounded-lg border border-line text-xs">
                       {fates.map(([f, label]) => (
