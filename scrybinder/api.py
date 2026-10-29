@@ -742,6 +742,17 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
             raise HTTPException(422, "text: a deck list of up to 1 MB")
         return _wrap(decktext.import_text, db, deck_id, text, bool(body.get("dry_run")))
 
+    @app.get("/api/decks/{deck_id}/bulk-edit")
+    def decks_bulk_text(deck_id: int, board: str = "main"):
+        return {"text": _wrap(decktext.board_text, db, deck_id, board)}
+
+    @app.post("/api/decks/{deck_id}/bulk-edit")
+    def decks_bulk_edit(deck_id: int, body: dict = Body(...)):
+        text = body.get("text")
+        if not isinstance(text, str) or len(text) > 1_000_000:
+            raise HTTPException(422, "text: a deck list of up to 1 MB")
+        return _wrap(decktext.replace_board, db, deck_id, body.get("board"), text, bool(body.get("dry_run")))
+
     @app.post("/api/decks/{deck_id}/import-url")
     def decks_import_url(deck_id: int, body: dict = Body(...)):
         text = _wrap(deckurl.fetch_text, body.get("url"))

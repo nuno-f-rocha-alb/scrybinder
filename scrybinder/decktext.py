@@ -1,7 +1,9 @@
 """Deck lists as plain text: `[N][x] Name [(SET) number] [*F*|*E*] [#tag] [^Tag^]` (*F* foil, *E* etched), compatible with Moxfield / Archidekt / MTGO.
 Sections are headers (Commander, Deck, Sideboard, Maybeboard) or, without any header, blank-line blocks (main, then side)."""
+import contextlib
 import json
 import re
+import sqlite3
 import unicodedata
 
 from . import decks
@@ -120,9 +122,7 @@ def import_text(db, deck_id: int, text: str, dry_run: bool = False) -> dict:
             "preview": [{"line": i["line"], "board": i["board"], "quantity": i["quantity"], "name": i["name"]} for i in ok]}
 
 
-def export_text(db, deck_id: int, maybe: bool = False, include=None) -> str:
-    """`N Name (SET) number [*F*|*E*] [#tag]` per card, in Commander / Deck / Sideboard (/ Maybeboard) sections.
-    `include` keeps only the cards in those states (see decks.include_only)."""
+def _sections(db, deck_id: int, include=None) -> dict[str, list[str]]:
     decks._deck(db, deck_id)
     printings = {r[0]: (r[1], r[2]) for r in db.execute(
         "SELECT c.id, c.set_code, c.collector_number FROM cards c WHERE c.id IN"
@@ -134,5 +134,150 @@ def export_text(db, deck_id: int, maybe: bool = False, include=None) -> str:
             line += " ({}) {}".format(printings[c["scryfall_id"]][0].upper(), printings[c["scryfall_id"]][1])
             line += {"foil": " *F*", "etched": " *E*"}.get(c["finish"], "")
         sections[c["board"]].append(line + "".join(f" ^{t}^" if " " in t else f" #{t}" for t in c["tags"]))
+    return sections
+
+
+def export_text(db, deck_id: int, maybe: bool = False, include=None) -> str:
+    """`N Name (SET) number [*F*|*E*] [#tag]` per card, in Commander / Deck / Sideboard (/ Maybeboard) sections.
+    `include` keeps only the cards in those states (see decks.include_only)."""
+    sections = _sections(db, deck_id, include)
     titles = (("commander", "Commander"), ("main", "Deck"), ("side", "Sideboard"), ("maybe", "Maybeboard"))
     return "\n\n".join(f"{t}\n" + "\n".join(sections[b]) for b, t in titles if sections[b] and (b != "maybe" or maybe)) + "\n"
+
+
+def board_text(db, deck_id: int, board: str) -> str:
+    """One board of the deck as editable lines (the text `replace_board` takes back)."""
+    decks._check(board=board)
+    return "\n".join(_sections(db, deck_id)[board])
+
+
+def replace_board(db, deck_id: int, board: str, text: str, dry_run: bool = False) -> dict:
+    """Make one board match the text: lines with the same card, printing and finish are kept (their copies stay assigned) and
+    get the new quantity and tags; a line that is gone is removed; a new line is added; a removed and an added line of the
+    same card (another printing) become one change. Nothing is applied while a line cannot be read: it would drop a card
+    that is only misspelt. Returns {applied, added, changed, removed, skipped}, each of the first three a list of {name, ...}."""
+    decks._check(board=board)
+    decks._deck(db, deck_id)
+    items = parse(text)
+    if len(items) > MAX_LINES:
+        raise ValueError(f"a deck list has at most {MAX_LINES} lines")
+    for it in items:
+        it["board"] = board  # one board per box: a heading or SB: in it does not move a card
+    resolved = resolve(db, items)  # before the transaction: it does not depend on the deck and the write lock is not held meanwhile
+    if dry_run:
+        return _plan(db, deck_id, board, *resolved)[0]
+    with _atomic(db) as tx:  # all or nothing: the plan is made inside the transaction, so it is of the deck as it is when it is applied
+        report, todo = _plan(tx, deck_id, board, *resolved)
+        if report["skipped"]:
+            return report
+        _apply(tx, deck_id, board, todo)
+    report["applied"] = True
+    return report
+
+
+class _Tx:
+    """A connection whose `with` does nothing, so the commits of the deck functions wait for the end of the whole change."""
+    def __init__(self, conn):
+        self._conn = conn
+
+    def __getattr__(self, name):
+        return getattr(self._conn, name)
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+@contextlib.contextmanager
+def _atomic(db):
+    """One transaction on a connection of its own (the app shares `db` between threads, so a rollback there would undo other requests)."""
+    path = db.execute("PRAGMA database_list").fetchone()["file"]
+    if not path:  # an in-memory database cannot be opened a second time
+        raise ValueError("bulk edit needs a database file")
+    conn = sqlite3.connect(path, timeout=60, isolation_level=None, cached_statements=0)
+    conn.row_factory = sqlite3.Row
+    conn.execute("PRAGMA foreign_keys=ON")
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        yield _Tx(conn)
+        conn.execute("COMMIT")
+    except BaseException:
+        if conn.in_transaction:
+            conn.execute("ROLLBACK")
+        raise
+    finally:
+        conn.close()
+
+
+def _plan(db, deck_id: int, board: str, ok: list[dict], skipped: list[dict]) -> tuple[dict, list]:
+    have = {}  # (oracle_id, scryfall_id, finish) -> the lines of the deck (several on purpose)
+    for c in decks.get(db, deck_id)["cards"]:
+        if c["board"] == board:
+            have.setdefault((c["oracle_id"], c["scryfall_id"], c["finish"]), []).append(c)
+    want = {}  # the same key -> {quantity, tags, name}
+    for it in ok:
+        key = (it["oracle_id"], it["scryfall_id"], it["finish"])
+        if not it["scryfall_id"]:  # no printing in the text: it means the line the deck already has for this card
+            key = next((h for h in have if h[0] == it["oracle_id"]), key)
+        w = want.setdefault(key, {"quantity": 0, "tags": set(), "name": it["name"]})
+        w["quantity"] += it["quantity"]
+        w["tags"] |= set(it["tags"])
+    added, changed, removed = [], [], []
+    todo = []  # (action, ...) run after the report is made
+    gone = {k: v for k, v in have.items() if k not in want}
+    new = {k: v for k, v in want.items() if k not in have}
+    for k, w in want.items():
+        lines = have.get(k)
+        if not lines:
+            continue
+        qty, tags = sum(c["quantity"] for c in lines), set(t for c in lines for t in c["tags"])
+        if qty != w["quantity"] or tags != w["tags"]:
+            changed.append({"name": lines[0]["name"], "from": qty, "to": w["quantity"]})
+            todo.append(("set", lines, w))
+    for k in list(new):  # another printing of a card that went away: one change, so its copies stay with the line
+        old = next((g for g in gone if g[0] == k[0]), None)
+        if old:
+            lines, w = gone.pop(old), new.pop(k)
+            changed.append({"name": lines[0]["name"], "from": sum(c["quantity"] for c in lines), "to": w["quantity"]})
+            todo.append(("swap", lines, w, k))
+    for k, lines in gone.items():
+        removed.append({"name": lines[0]["name"], "quantity": sum(c["quantity"] for c in lines)})
+        todo.append(("drop", lines))
+    for k, w in new.items():
+        added.append({"name": w["name"], "quantity": w["quantity"]})
+        todo.append(("add", k, w))
+    return {"applied": False, "added": added, "changed": changed, "removed": removed, "skipped": skipped}, todo
+
+
+def _apply(db, deck_id: int, board: str, todo: list) -> None:
+    for act, *a in todo:
+        if act == "add":
+            (oid, sid, fin), w = a
+            if not sid:  # a new line without a printing gets one
+                sid, fin = decks.default_printing(db, oid)
+            decks.add_card(db, deck_id, oid, w["quantity"], board, sid, sorted(w["tags"]), fin)
+            continue
+        lines, *rest = a
+        if act == "drop":
+            for c in lines:
+                decks.remove_card(db, deck_id, c["id"])
+        elif act == "set":  # lines of one card kept as they are (they may hold different copies): the first gets the extra, the last ones give up the rest
+            w = rest[0]
+            retag = w["tags"] != set(t for c in lines for t in c["tags"])
+            left = w["quantity"] - sum(c["quantity"] for c in lines)
+            for i, c in enumerate(lines if left >= 0 else reversed(lines)):
+                q = c["quantity"] + (left if left >= 0 and i == 0 else 0)
+                if left < 0:
+                    cut = min(q, -left)
+                    left, q = left + cut, q - cut
+                if q < 1:
+                    decks.remove_card(db, deck_id, c["id"])
+                elif q != c["quantity"] or retag:
+                    decks.update_card(db, deck_id, c["id"], quantity=q, **({"tags": sorted(w["tags"])} if retag else {}))
+        else:  # swap: the text no longer has these lines of the old printing, so only the first goes on as the new one
+            w, (_, sid, fin) = rest
+            for c in lines[1:]:
+                decks.remove_card(db, deck_id, c["id"])
+            decks.update_card(db, deck_id, lines[0]["id"], quantity=w["quantity"], scryfall_id=sid, finish=fin, tags=sorted(w["tags"]))
