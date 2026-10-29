@@ -370,7 +370,8 @@ export default function Deck({ id, onBack, focusOracle, onOpenDeck }: { id: numb
       })()}
       {switchId !== null && deck.cards.find((c) => c.id === switchId) && (() => { const c = deck.cards.find((x) => x.id === switchId)!;
         return <PrintingDialog deckId={id} oracleId={c.oracle_id} name={c.name} current={c.scryfall_id} currentFinish={c.finish} onClose={() => setSwitchId(null)}
-          onPick={(sid, finish) => { setSwitchId(null); patchCard(c, { scryfall_id: sid, finish }); }} />; })()}
+          onPick={(sid, finish) => { setSwitchId(null); patchCard(c, { scryfall_id: sid, finish });
+            if (c.owned_prints.some((p) => p.scryfall_id !== sid || p.finish !== finish)) toast("Assigned copies of another printing were released"); }} />; })()}
       {pickId !== null && deck.cards.find((c) => c.id === pickId) && (() => { const c = deck.cards.find((x) => x.id === pickId)!;
         return <DeckPicker oracleId={c.oracle_id} scryfallId={c.scryfall_id} finish={c.finish} name={c.name} excludeId={id} onClose={() => setPickId(null)}
           onDone={(n) => { setPickId(null); toast(`${c.name} added to ${n}`); }} />; })()}
