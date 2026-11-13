@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { IconMaximize, IconMinimize } from "@tabler/icons-react";
 import { CardImg, Modal } from "./ui";
 import { MenuItem, useContextMenu } from "./contextmenu";
 import { usePointerDrag } from "./pointerdrag";
@@ -23,6 +24,14 @@ const ZONES: Zone[] = ["library", "hand", "battlefield", "graveyard", "exile", "
 const CW = "clamp(4.25rem, 12vh, 6rem)";  // a card on the table at zoom 1
 const ZOOMS = [1, 1.25, 1.5, 2, 2.5, 3];
 const CARD_W = { "--cw": CW, "--hw": "clamp(5.5rem, 16vh, 9.5rem)" } as React.CSSProperties;
+
+/** Ask the window itself to cover the screen: the app window through the bridge, a browser through the Fullscreen API. Best effort: the Playtest already fills the window without it. Call it inside the click or key handler (a browser refuses it otherwise). */
+function osFullscreen(on: boolean) {
+  const api = (window as { pywebview?: { api?: { fullscreen?: (on: boolean) => Promise<boolean> } } }).pywebview?.api;
+  if (api?.fullscreen) Promise.resolve(api.fullscreen(on)).catch(() => undefined);
+  else if (on) document.documentElement.requestFullscreen?.()?.catch(() => undefined);
+  else if (document.fullscreenElement) document.exitFullscreen().catch(() => undefined);
+}
 
 function Face({ c, w = "w-(--cw)" }: { c: GCard; w?: string }) {
   return c.image_id ? <div className={w}><CardImg id={c.image_id} size="normal" /></div>
@@ -158,6 +167,14 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
   const gRef = useRef<Game | null>(null);
   const [counterForm, setCounterForm] = useState<{ uid: number; name: string; n: number } | null>(null);
   const [ending, setEnding] = useState(false);
+  const [full, setFull] = useState(false);  // the game covers the whole screen (not remembered)
+  const goFull = (on: boolean) => { setFull(on); osFullscreen(on); };
+  useEffect(() => {  // a browser's own Esc or F11 leaves full screen without a key event for the page
+    const h = () => { if (!document.fullscreenElement) setFull(false); };
+    document.addEventListener("fullscreenchange", h);
+    return () => document.removeEventListener("fullscreenchange", h);
+  }, []);
+  useEffect(() => { osFullscreen(false); return () => osFullscreen(false); }, []);  // a reload or leaving the deck page never leaves the window stuck in full screen (the bridge outlives the page)
   const [ignored, setIgnored] = useState<string[]>([]);  // the warnings the player dismissed in this game
   const [attaching, setAttaching] = useState<number | null>(null);  // the card waiting for the one to attach to
   const [details, setDetails] = useState<string | null>(null);  // the printing whose details (rules, rulings, legality...) are open
@@ -260,7 +277,7 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
 
   const endGame = () => {
     if (!ending) { setEnding(true); setTimeout(() => setEnding(false), 4000); return; }
-    setG(null); setHist([]); setAttaching(null); setIgnored([]); setZoom(null); setScry(null); setTokenForm(null); setSearch(null); setPile(null); setEnding(false);
+    setG(null); setHist([]); setAttaching(null); setIgnored([]); setZoom(null); setScry(null); setTokenForm(null); setSearch(null); setPile(null); setEnding(false); goFull(false);
   };
   /** An element a card can be dropped on: outlined while a card is in flight, with a ring under the pointer. */
   const zone = (z: Zone): React.HTMLAttributes<HTMLElement> => ({
@@ -297,8 +314,11 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
     if (!cur || cur.phase !== "playing" || e.altKey || /^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName) || t.isContentEditable || document.querySelector("[aria-modal]")) return;
     const k = e.key.toLowerCase();
     if (k === "escape" && attaching !== null) { setAttaching(null); return; }
+    const shown = !!surface.current?.getClientRects().length;  // false while the Playtest tab is hidden: F and Esc must not go full screen over another tab
+    if (k === "escape" && full && !drag && shown) { goFull(false); return; }
     if ((e.ctrlKey || e.metaKey) && k === "z") { e.preventDefault(); undo(); return; }
     if (e.ctrlKey || e.metaKey) return;
+    if (k === "f" && !drag && shown) { goFull(!full); e.preventDefault(); return; }
     const where = zoom && ZONES.find((z) => cur[z].some((c) => c.uid === zoom.uid));
     const sendTo: Record<string, Zone> = { g: "graveyard", e: "exile", h: "hand", b: "battlefield" };
     if (k === "d") set((x) => draw(x));
@@ -313,7 +333,7 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
   const lands = g.battlefield.filter(isLand).length;
 
   return (
-    <div className="flex min-h-[calc(100vh-10rem)] flex-col" style={CARD_W}>
+    <div className={full ? "fixed inset-0 z-[35] flex flex-col overflow-y-auto overscroll-contain bg-bg p-4" : "flex min-h-[calc(100vh-10rem)] flex-col"} style={CARD_W}>
       <div className="mb-2 flex flex-wrap items-center gap-2" role="toolbar" aria-label="Playtest controls">
         <span className="mr-2 text-sm">Turn <b>{g.turn}</b> · Library <b>{g.library.length}</b> · Lands <b>{lands}</b></span>
         <span className="mr-2 flex items-center gap-1 text-sm">Life
@@ -325,6 +345,8 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
         {!commander && <label className="flex items-center gap-1 text-sm"><input type="checkbox" checked={onPlay} onChange={(e) => setOnPlay(e.target.checked)} />On the play</label>}
         <button className={btn} onClick={start}>New game</button>
         <button className={btn} onClick={endGame}>{ending ? "Click again to end" : "End playtest"}</button>
+        <button className={`${btn} ml-auto inline-flex items-center gap-1.5`} aria-pressed={full} onClick={() => goFull(!full)} title={full ? "Exit full screen (Esc)" : "Full screen (F)"}>
+          {full ? <IconMinimize className="size-4" aria-hidden /> : <IconMaximize className="size-4" aria-hidden />}{full ? "Exit full screen" : "Full screen"}</button>
       </div>
       {playing && <ol aria-label="Phases of the turn" className="mb-2 flex flex-wrap gap-1 text-xs">
         {TURN.map((t) => <li key={t.key} aria-current={t.step === g.step ? "step" : undefined} title={t.auto}
@@ -335,13 +357,13 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
           <span aria-hidden>⚠</span><b>{w.rule}</b><span>{w.text}</span>
           <button className="ml-auto cursor-pointer rounded border border-line px-2 py-0.5 outline-none hover:bg-raised focus-visible:ring-2 focus-visible:ring-accent" onClick={() => setIgnored((i) => [...i, w.key])}>Ignore</button></li>)}
       </ul>}
-      {playing && <p className="mb-2 text-xs text-mute">Click a battlefield card to tap it, a hand card to play it, or press and drag a card onto a zone. Right-click any card for more.
-        Keys: <kbd>D</kbd> draw · <kbd>N</kbd> next phase · <kbd>Shift+N</kbd> next turn · <kbd>U</kbd> untap all · <kbd>Ctrl+Z</kbd> undo · over a card: <kbd>T</kbd> tap · <kbd>G</kbd> graveyard · <kbd>E</kbd> exile · <kbd>H</kbd> hand · <kbd>B</kbd> battlefield.</p>}
+      {playing && !full && <p className="mb-2 text-xs text-mute">Click a battlefield card to tap it, a hand card to play it, or press and drag a card onto a zone. Right-click any card for more.
+        Keys: <kbd>D</kbd> draw · <kbd>N</kbd> next phase · <kbd>Shift+N</kbd> next turn · <kbd>U</kbd> untap all · <kbd>Ctrl+Z</kbd> undo · <kbd>F</kbd> full screen · over a card: <kbd>T</kbd> tap · <kbd>G</kbd> graveyard · <kbd>E</kbd> exile · <kbd>H</kbd> hand · <kbd>B</kbd> battlefield.</p>}
 
       <div className="flex flex-1 items-stretch gap-4">
         {/* the table: nonlands nearest the opponent (top), lands nearest the player (bottom) */}
         <div className="flex min-w-0 flex-1 flex-col">
-        <section aria-label="Battlefield" {...(playing ? zone("battlefield") : {})} style={{ aspectRatio: "24 / 14", width: "min(100%, calc((100vh - 14rem) * 24 / 14))" }} className={`relative isolate mx-auto flex min-h-0 shrink-0 flex-col rounded-xl border border-line ${playing ? zone("battlefield").className : ""}`}>
+        <section aria-label="Battlefield" {...(playing ? zone("battlefield") : {})} style={{ aspectRatio: "24 / 14", width: `min(100%, calc((100vh - ${full ? 11 : 14}rem) * 24 / 14))` }} className={`relative isolate mx-auto flex min-h-0 shrink-0 flex-col rounded-xl border border-line ${playing ? zone("battlefield").className : ""}`}>
           <div className="flex items-start justify-between gap-2 px-2 pt-2">
           <h3 className="text-xs uppercase tracking-wide text-mute">Battlefield ({g.battlefield.length}) · place cards anywhere; the last one you move stays on top; drop one on another to attach it</h3>
             <div role="group" aria-label="Zoom the table" className="flex shrink-0 items-center gap-1 text-xs">
@@ -517,7 +539,7 @@ export default function Playtest({ cards, commander }: { cards: DeckCard[]; comm
           </ul>
         </Modal>
       )}
-      <Simulate cards={cards} commander={commander} />
+      <div hidden={full}><Simulate cards={cards} commander={commander} /></div>
       {details && <CardDetails printId={details} onClose={() => setDetails(null)} />}
       {menu.node}
     </div>

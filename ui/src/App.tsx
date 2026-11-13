@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
-import { IconAlertTriangle, IconCards, IconPlus, IconScan, IconArrowsExchange, IconList, IconSettings, IconStack2, IconSwitchVertical } from "@tabler/icons-react";
+import { useEffect, useRef, useState } from "react";
+import { IconAlertTriangle, IconArrowUp, IconCards, IconPlus, IconScan, IconArrowsExchange, IconList, IconSettings, IconStack2, IconSwitchVertical } from "@tabler/icons-react";
 import { api, Status } from "./api";
 import { Sidebar, SidebarFooter, SidebarGroup, SidebarHeader, SidebarItem, SidebarSection } from "./components/sidebar";
 import Collection from "./pages/Collection";
@@ -25,6 +25,16 @@ export default function App() {
   const [status, setStatus] = useState<Status | null>(null);
   const refresh = () => api<Status>("/status").then(setStatus).catch(() => {});
   useEffect(() => { refresh(); }, [page]);
+  const main = useRef<HTMLElement>(null);
+  const [far, setFar] = useState(false);  // scrolled down more than one screen: "Back to top" shows
+  const measure = () => setFar(!!main.current && main.current.scrollTop > main.current.clientHeight);
+  useEffect(measure, [page]);  // a page change may not fire a scroll event
+  const toTop = () => {
+    const m = main.current;
+    if (!m) return;
+    m.scrollTo({ top: 0, behavior: window.matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    m.focus({ preventScroll: true });  // the button is about to go: keep the keyboard focus on the page
+  };
 
   const needBulk = status && status.cards_in_db === 0;
   return (
@@ -52,7 +62,8 @@ export default function App() {
         <SidebarFooter>Card data and images © Scryfall<br />Scrybinder is not affiliated with Wizards of the Coast.</SidebarFooter>
       </Sidebar>
       <div className="relative flex min-w-0 flex-1 flex-col">
-      <main className="min-h-0 flex-1 overflow-y-auto">
+      <div className="relative flex min-h-0 flex-1 flex-col">
+      <main ref={main} tabIndex={-1} onScroll={measure} className="min-h-0 flex-1 overflow-y-auto outline-none">
         {status && (needBulk || status.bulk_stale) && page !== "settings" && (
           <button onClick={() => setPage("settings")}
             className="flex w-full cursor-pointer items-center gap-2 border-b border-gold/30 bg-gold/10 px-6 py-2.5 text-left text-sm text-gold">
@@ -74,6 +85,10 @@ export default function App() {
           {page === "settings" && <Settings status={status} refresh={refresh} />}
         </div>
       </main>
+      {far && <button onClick={toTop} aria-label="Back to top" title="Back to top"
+        className="absolute bottom-4 right-6 z-30 cursor-pointer rounded-full border border-line bg-surface p-2.5 text-mute shadow-lg shadow-black/30 outline-none hover:bg-raised hover:text-ink focus-visible:ring-2 focus-visible:ring-accent">
+        <IconArrowUp className="size-5" aria-hidden /></button>}
+      </div>
       <div id="status-root" />  {/* a page can pin a bar here, under the scrolling area */}
       <div id="drawer-root" className="pointer-events-none absolute inset-0 z-40" />
       </div>

@@ -4,6 +4,10 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Added
+- Playtest: a *Full screen* button (or the F key) makes the game cover the whole screen; Esc leaves it.
+- A *Back to top* button appears at the bottom right of any long page once you have scrolled down.
+
 ## [0.8.12] — 2026-10-29
 
 ### Added

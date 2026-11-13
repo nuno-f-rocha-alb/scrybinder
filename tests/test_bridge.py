@@ -20,6 +20,17 @@ def _fake_webview(monkeypatch, answer):
     return seen
 
 
+def test_fullscreen_toggles_the_window_only_when_the_state_changes(monkeypatch):
+    calls = []
+    win = types.SimpleNamespace(toggle_fullscreen=lambda: calls.append(1))
+    monkeypatch.setitem(sys.modules, "webview", types.SimpleNamespace(windows=[win]))
+    bridge = Bridge()
+    assert bridge.fullscreen(True) is True and len(calls) == 1
+    assert bridge.fullscreen(True) is True and len(calls) == 1  # already there
+    assert bridge.fullscreen(False) is False and len(calls) == 2
+    assert bridge.fullscreen(False) is False and len(calls) == 2
+
+
 def test_save_csv_writes_exact_text(tmp_path, monkeypatch):
     target = tmp_path / "out.csv"
     seen = _fake_webview(monkeypatch, str(target))
