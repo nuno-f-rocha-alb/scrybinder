@@ -26,7 +26,17 @@ def _icon() -> str | None:
 
 
 class Bridge:
-    """Exposed to the page as `window.pywebview.api`: a native Save dialog for CSV and text exports."""
+    """Exposed to the page as `window.pywebview.api`: a native Save dialog for CSV and text exports, and full screen for the Playtest."""
+
+    _full = False
+
+    def fullscreen(self, on: bool) -> bool:
+        """Put the window in or out of full screen (nothing happens if it is already there); returns the state it is in."""
+        import webview
+        if bool(on) != self._full:
+            webview.windows[0].toggle_fullscreen()
+            self._full = bool(on)
+        return self._full
 
     @staticmethod
     def _save(name: str, text: str | bytes, file_types: tuple) -> str | None:
