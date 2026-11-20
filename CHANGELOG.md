@@ -4,10 +4,10 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
-### Added
-- Scan: the *Location for the scanned cards* field now lists the locations you already have as you type (you can still type a new one).
+## [0.8.14] — 2026-11-20
 
 ### Added
+- Scan: the *Location for the scanned cards* field now lists the locations you already have as you type (you can still type a new one).
 - Scan with the camera: every capture shows in the list the moment it is taken (with its picture and "Reading…" or "Waiting in the queue"), so you can carry on scanning while the cards are read and fix them later. The sound now plays when the capture is taken.
 - Scan with the camera: a *Scan the card now* button scans what the camera sees right away, for a card it did not pick up or a read that got stuck.
 
