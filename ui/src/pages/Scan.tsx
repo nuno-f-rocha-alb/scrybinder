@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Select } from "../components/select";
+import { Combo, Select } from "../components/select";
 import SetLock from "../components/setlock";
 import { IconCamera, IconFolder, IconLoader2, IconPhoto, IconSearch } from "@tabler/icons-react";
 import { api, CONDITIONS, eur, FINISH, LANGS, Print, qs } from "../api";
@@ -67,6 +67,9 @@ export default function Scan() {
   const [kind, setKind] = useState<Kind>(() => (store("scrybinder.photokind", "") || (store("scrybinder.overlap", "0") === "1" ? "overlap" : store("scrybinder.binder", "0") === "1" ? "page" : "auto")) as Kind);
   const overlap = kind === "overlap", binder = kind === "page";
   const [lockSets, setLockSets] = useState<string[]>(() => { try { const v = JSON.parse(store("scrybinder.scansets", "[]")); return Array.isArray(v) ? v.filter((x) => typeof x === "string") : []; } catch { return []; } });
+  const [locs, setLocs] = useState<string[]>([]);  // the places that exist, for the Location field (a deck's own location is not a place to scan into)
+  const loadLocs = useCallback(() => api<{ location: string; deck_id: number | null }[]>("/locations").then((l) => setLocs(l.filter((x) => x.location && x.deck_id == null).map((x) => x.location))).catch(() => {}), []);
+  useEffect(() => { loadLocs(); }, [loadLocs]);
   const { toast, node } = useToast();
   const beepSeen = useRef<number | null>(null);
   const audio = useRef<AudioContext | null>(null);
@@ -145,8 +148,8 @@ export default function Scan() {
             {reading.length > 0 && ` · ${reading.length} being read`}</p>
         </div>
         <label className="text-xs font-medium text-mute">Location for the scanned cards
-          <input className="field mt-1 w-56" value={loc} placeholder="e.g. Box 3" aria-label="Location"
-            onChange={(e) => { setLoc(e.target.value); try { localStorage.setItem("scrybinder.loc", e.target.value); } catch { /* no storage */ } }} />
+          <Combo className="field mt-1 w-56" suggestions={locs} value={loc} placeholder="e.g. Box 3" aria-label="Location"
+            onChange={(v) => { setLoc(v); try { localStorage.setItem("scrybinder.loc", v); } catch { /* no storage */ } }} />
         </label>
       </div>
 
@@ -240,8 +243,8 @@ export default function Scan() {
           )}
         </aside>
 
-        <section className="min-w-0">{listMode ? <ReadsList reads={st?.reads ?? []} reading={reading} location={loc} onChange={poll} toast={toast} />
-          : cur ? <Confirm key={cur.id} item={cur} location={loc} onDone={(m, err) => { toast(m, err); poll(); }} />
+        <section className="min-w-0">{listMode ? <ReadsList reads={st?.reads ?? []} reading={reading} location={loc} onChange={() => { poll(); loadLocs(); }} toast={toast} />
+          : cur ? <Confirm key={cur.id} item={cur} location={loc} onDone={(m, err) => { toast(m, err); poll(); loadLocs(); }} />
           : <div className="flex h-72 items-center justify-center rounded-2xl border border-dashed border-line text-sm text-mute">{reading.length ? `Reading ${reading.length} ${reading.length === 1 ? "card" : "cards"}…` : "Scanned cards appear here for you to confirm."}</div>}</section>
       </div>
       {node}
