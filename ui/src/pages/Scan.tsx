@@ -20,7 +20,7 @@ type Read = {
 };
 type Kind = "auto" | "photo" | "page" | "overlap";
 const KINDS: [Kind, string][] = [["auto", "Auto"], ["photo", "One card"], ["page", "Binder page"], ["overlap", "Overlapping"]];
-type Reading = { id: number; label: string };  // a camera capture that is still being read, oldest first
+type Reading = { id: number | string; label: string; src?: string };  // a capture or photo that is still being read, oldest first (`src`: a picture the page made itself)
 type State = { running: boolean; source: string | null; message: string; notice: string; beep: number; split_next: boolean; list_mode: boolean; page_mode: boolean; overlap_mode: boolean; auto_mode: boolean; pending: Pending[]; reading: Reading[]; reads: Read[] };
 
 const LANG_KEYS = Object.keys(LANGS);
@@ -104,16 +104,24 @@ export default function Scan() {
     beepSeen.current = st.beep;
   }, [st?.beep]);
 
+  const [uploads, setUploads] = useState<Reading[]>([]);  // the dropped photos, in the list from the moment they are dropped
   const upload = async (files: FileList | File[]) => {
     unlockAudio();  // the user gesture unlocks the sound of the following captures
-    for (const f of Array.from(files)) {
+    const list = Array.from(files);
+    const rows = list.map((f, i): Reading => ({ id: `up${Date.now()}-${i}`, label: f.name, src: URL.createObjectURL(f) }));
+    setUploads((u) => [...u, ...rows]);
+    for (const [i, f] of list.entries()) {
       setBusy((n) => n + 1);
       try {
         const r = await api<{ detected?: number; kind?: string }>(`/scan/${kind === "auto" ? "auto" : overlap ? "overlap" : binder ? "page" : "photo"}?` + qs({ name: f.name }), { method: "POST", headers: { "Content-Type": f.type || "image/jpeg" }, body: f });
         if (kind !== "photo") toast(r.detected ? `${f.name}: ${r.detected} ${r.kind === "overlap" ? "overlapping cards" : r.kind === "page" ? "cards on a binder page" : "card"} detected` : `${f.name}: no cards detected`, !r.detected);
       }
       catch (e) { toast(`${f.name}: ${(e as Error).message}`, true); }
-      finally { setBusy((n) => n - 1); poll(); }
+      finally {
+        setBusy((n) => n - 1); poll();
+        setUploads((u) => u.filter((x) => x.id !== rows[i].id));
+        URL.revokeObjectURL(rows[i].src!);
+      }
     }
   };
   const start = async () => {
@@ -138,7 +146,7 @@ export default function Scan() {
 
   const scanNow = () => api("/scan/force", { method: "POST" }).then(poll).catch((e) => toast((e as Error).message, true));
   const cur = st?.pending[0];
-  const reading = st?.reading ?? [];
+  const reading: Reading[] = [...(st?.reading ?? []), ...uploads];
   return (
     <div>
       <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
@@ -237,7 +245,7 @@ export default function Scan() {
                 <div key={p.id} className="relative"><img src={`/api/scan/capture/${p.id}`} alt="" className="h-20 rounded-md border border-line" />
                   {p.qty > 1 && <span className="absolute right-1 top-1 rounded bg-accent px-1.5 text-xs font-semibold text-white">×{p.qty}</span>}</div>))}
                 {reading.map((s, i) => (
-                  <div key={s.id} className="relative"><img src={`/api/scan/capture/${s.id}`} alt="" className="h-20 rounded-md border border-dashed border-accent" />
+                  <div key={s.id} className="relative"><img src={s.src ?? `/api/scan/capture/${s.id}`} alt="" title={s.label} className="h-20 rounded-md border border-dashed border-accent" />
                     <span className="absolute inset-x-1 bottom-1 flex items-center justify-center gap-1 rounded bg-black/70 px-1 text-[11px] text-ink">
                       <IconLoader2 className="size-3 animate-spin motion-reduce:animate-none" aria-hidden />{i === 0 ? "Reading" : "Waiting"}</span></div>))}</div></div>
           )}
@@ -366,9 +374,11 @@ const flag = (c: string) => c === "high" ? null : c === "medium" ? { t: "Check t
 function ReadingRow({ s, waiting }: { s: Reading; waiting: boolean }) {
   return (
     <li className="flex items-center gap-3 rounded-xl border border-dashed border-accent bg-surface p-3">
-      <img src={`/api/scan/capture/${s.id}`} alt="Capture" className="h-24 rounded-md border border-line" />
+      <img src={s.src ?? `/api/scan/capture/${s.id}`} alt="Capture" className="h-24 rounded-md border border-line" />
       <div className="flex items-center gap-2 text-sm text-mute">
-        <IconLoader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden />{waiting ? "Waiting in the queue" : "Reading this card…"}</div>
+        <IconLoader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden />
+        {waiting ? "Waiting in the queue" : s.label === "webcam" ? "Reading this card…" : `Reading ${s.label}…`}
+        {s.label !== "webcam" && waiting && <span className="truncate text-xs">{s.label}</span>}</div>
     </li>
   );
 }
