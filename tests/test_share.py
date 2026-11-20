@@ -28,7 +28,7 @@ class Worker:
         self.requests.append(request)
         if request.method == "POST":
             self.store[ID] = json.loads(request.content)
-            return httpx.Response(200, json={"id": ID, "delete_token": "secret", "expires": "2026-11-20T00:00:00Z"})
+            return httpx.Response(200, json={"id": ID, "delete_token": "secret", "expires": "2099-01-01T00:00:00Z"})
         if request.method == "GET":
             doc = self.store.get(request.url.path.rsplit("/", 1)[1])
             return httpx.Response(200, json=doc) if doc else httpx.Response(404, json={"error": "gone"})
@@ -36,7 +36,7 @@ class Worker:
             if request.headers.get("x-delete-token") != "secret":
                 return httpx.Response(403, json={"error": "wrong delete token"})
             self.store[request.url.path.rsplit("/", 1)[1]] = json.loads(request.content)
-            return httpx.Response(200, json={"id": ID, "expires": "2026-12-20T00:00:00Z"})
+            return httpx.Response(200, json={"id": ID, "expires": "2099-02-01T00:00:00Z"})
         if request.method == "DELETE":
             if request.headers.get("x-delete-token") != "secret":
                 return httpx.Response(403)
@@ -244,7 +244,7 @@ def test_update_a_link_keeps_the_address_and_sends_the_new_cards(db, worker):
     got = share.update_link(db, ID, {"prices": True, "kind": "trade", "deck_id": 999})  # a new option is used, another source is not
     assert got["url"] == first["url"] and got["cards"] == 7
     assert worker.store[ID]["prices"] is True and any(s["name"] == "Sideboard" for s in worker.store[ID]["sections"])
-    assert share.listing(db)[0]["expires_at"] == "2026-12-20T00:00:00Z"
+    assert share.listing(db)[0]["expires_at"] == "2099-02-01T00:00:00Z"
     assert [r.method for r in worker.requests][-1] == "PUT"
 
 

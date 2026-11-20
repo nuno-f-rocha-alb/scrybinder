@@ -506,6 +506,15 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
             raise HTTPException(409, "start the camera first: there is no frame yet")
         return {"path": str(path), "folder": str(path.parent)}
 
+    @app.post("/api/scan/force")
+    def scan_force():
+        """Scan the camera's current picture now, without waiting for the card to hold still."""
+        try:
+            scanner.force_capture()
+        except ValueError as e:
+            raise HTTPException(409, str(e))
+        return {"ok": True}
+
     @app.get("/api/scan/frame")
     def scan_frame():
         """The latest camera frame as one JPEG. The page asks for it a few times a second: a continuous multipart stream in an

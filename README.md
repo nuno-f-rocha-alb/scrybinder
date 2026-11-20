@@ -106,7 +106,7 @@ Your collection, images and index are never touched. The package only works on t
 - **Photos** tab: drop or choose image files. **Folder** tab: watch a folder that another program saves into — only files that appear *after* you press Start are processed (what is already in the folder is ignored). **Camera** tab: a webcam or an HDMI capture card.
 - One card per photo on a plain background; light from the side, not from beside the lens.
 - Live cameras: a fixed overhead stand and a stable light work best. Virtual cameras that only speak Media Foundation (for example Sony *Imaging Edge Webcam*) show a black picture to OpenCV — use a UVC webcam or an HDMI capture card instead.
-- The capture triggers when a card stays still for 0.3 s and re-arms when it leaves the frame. A card the camera reads again right after itself (it is still on the stand) is not counted twice: fix the quantity with − / +, or show another card.
+- The capture triggers when a card stays still for 0.3 s and re-arms when it leaves the frame. Every capture shows in the list at once, marked as being read, so you can carry on with the next card. If the camera does not pick a card up (or a read is stuck), press *Scan the card now*. A card the camera reads again right after itself (it is still on the stand) is not counted twice: fix the quantity with − / +, or show another card.
 - Photos and folders: identical cards in a row add up. `N` marks the next card as foil / a new entry (foil is not detected from the picture: press `N` before showing it). In the one-by-one confirmation mode (turn *List mode* off): `Enter` accept, `Esc` discard, `←`/`→` change printing, `F` foil, `C` condition, `L` language, `+`/`-` quantity.
 
 ### Scanning overlapping cards

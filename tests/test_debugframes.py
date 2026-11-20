@@ -152,7 +152,7 @@ def test_camera_captures_are_read_in_the_order_they_were_taken(db, tmp_path, mon
         def update(self, quad, now, signature=None):
             return True
 
-    def process(img, label, warped=False, live=False):
+    def process(img, label, warped=False, live=False, slot=None):
         n = next(i for i, x in enumerate(shots) if x is img)
         time.sleep(0.3 if n == 0 else 0)  # the first one is the slowest
         done.append(n)

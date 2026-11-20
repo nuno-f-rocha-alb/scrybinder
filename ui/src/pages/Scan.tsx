@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Select } from "../components/select";
 import SetLock from "../components/setlock";
-import { IconCamera, IconFolder, IconPhoto, IconSearch } from "@tabler/icons-react";
+import { IconCamera, IconFolder, IconLoader2, IconPhoto, IconSearch } from "@tabler/icons-react";
 import { api, CONDITIONS, eur, FINISH, LANGS, Print, qs } from "../api";
 import { Badge, CardImg, ExtLinks, HoverZoom, Modal, useToast } from "../components/ui";
 
@@ -20,7 +20,8 @@ type Read = {
 };
 type Kind = "auto" | "photo" | "page" | "overlap";
 const KINDS: [Kind, string][] = [["auto", "Auto"], ["photo", "One card"], ["page", "Binder page"], ["overlap", "Overlapping"]];
-type State = { running: boolean; source: string | null; message: string; notice: string; beep: number; split_next: boolean; list_mode: boolean; page_mode: boolean; overlap_mode: boolean; auto_mode: boolean; pending: Pending[]; reads: Read[] };
+type Reading = { id: number; label: string };  // a camera capture that is still being read, oldest first
+type State = { running: boolean; source: string | null; message: string; notice: string; beep: number; split_next: boolean; list_mode: boolean; page_mode: boolean; overlap_mode: boolean; auto_mode: boolean; pending: Pending[]; reading: Reading[]; reads: Read[] };
 
 const LANG_KEYS = Object.keys(LANGS);
 const CONF: Record<string, { t: string; c: string }> = {
@@ -132,13 +133,16 @@ export default function Scan() {
     return () => window.removeEventListener("keydown", h);
   }, [split]);
 
+  const scanNow = () => api("/scan/force", { method: "POST" }).then(poll).catch((e) => toast((e as Error).message, true));
   const cur = st?.pending[0];
+  const reading = st?.reading ?? [];
   return (
     <div>
       <div className="mb-5 flex flex-wrap items-end justify-between gap-4">
         <div>
           <h1 className="text-2xl font-semibold tracking-tight">Scan</h1>
-          <p className="mt-1 text-sm text-mute">{listMode ? `${st?.reads.reduce((n, r) => n + r.qty, 0) ?? 0} cards in the list` : st?.pending.length ? `${st.pending.length} to confirm` : "Nothing to confirm"}</p>
+          <p className="mt-1 text-sm text-mute">{listMode ? `${st?.reads.reduce((n, r) => n + r.qty, 0) ?? 0} cards in the list` : st?.pending.length ? `${st.pending.length} to confirm` : "Nothing to confirm"}
+            {reading.length > 0 && ` · ${reading.length} being read`}</p>
         </div>
         <label className="text-xs font-medium text-mute">Location for the scanned cards
           <input className="field mt-1 w-56" value={loc} placeholder="e.g. Box 3" aria-label="Location"
@@ -194,7 +198,13 @@ export default function Scan() {
                 : <button className="btn-primary w-full" onClick={start}>Start camera</button>}
               {st?.message && <p className="text-xs text-danger">{st.message}</p>}
               {st?.notice && <p className="text-xs text-gold">{st.notice}</p>}
-              <p className="text-xs text-mute">Capture is automatic when the card stays still for 0.3 s. Swap the card and repeat.</p>
+              <p className="text-xs text-mute">Capture is automatic when the card stays still for 0.3 s. Swap the card and repeat. Every capture shows in the list at once, while it is being read.</p>
+              {st?.running && st.source?.startsWith("webcam") && (
+                <div className="space-y-1">
+                  <button className="btn-primary w-full" onClick={scanNow}>Scan the card now</button>
+                  <p className="text-xs text-mute">For a card the camera did not pick up, or a read that got stuck. It scans what the camera sees now and counts as a new copy.</p>
+                </div>
+              )}
               {st?.running && st.source?.startsWith("webcam") && (
                 <button className="btn-ghost w-full !py-1 text-xs" title="Saves the whole camera frame and the outline the app found, in the debug folder of the data folder: attach it when a card is not detected"
                   onClick={() => api<{ path: string }>("/scan/debug-frame", { method: "POST" }).then((r) => toast(`Saved ${r.path}`)).catch((e) => toast((e as Error).message, true))}>
@@ -218,17 +228,21 @@ export default function Scan() {
             </div>
           )}
 
-          {st && st.pending.length > 1 && (
+          {st && !listMode && (st.pending.length > 1 || reading.length > 0) && (
             <div><h2 className="mb-2 text-xs font-medium uppercase tracking-wide text-mute">Queue</h2>
               <div className="flex flex-wrap gap-2">{st.pending.slice(1, 13).map((p) => (
                 <div key={p.id} className="relative"><img src={`/api/scan/capture/${p.id}`} alt="" className="h-20 rounded-md border border-line" />
-                  {p.qty > 1 && <span className="absolute right-1 top-1 rounded bg-accent px-1.5 text-xs font-semibold text-white">×{p.qty}</span>}</div>))}</div></div>
+                  {p.qty > 1 && <span className="absolute right-1 top-1 rounded bg-accent px-1.5 text-xs font-semibold text-white">×{p.qty}</span>}</div>))}
+                {reading.map((s, i) => (
+                  <div key={s.id} className="relative"><img src={`/api/scan/capture/${s.id}`} alt="" className="h-20 rounded-md border border-dashed border-accent" />
+                    <span className="absolute inset-x-1 bottom-1 flex items-center justify-center gap-1 rounded bg-black/70 px-1 text-[11px] text-ink">
+                      <IconLoader2 className="size-3 animate-spin motion-reduce:animate-none" aria-hidden />{i === 0 ? "Reading" : "Waiting"}</span></div>))}</div></div>
           )}
         </aside>
 
-        <section className="min-w-0">{listMode ? <ReadsList reads={st?.reads ?? []} location={loc} onChange={poll} toast={toast} />
+        <section className="min-w-0">{listMode ? <ReadsList reads={st?.reads ?? []} reading={reading} location={loc} onChange={poll} toast={toast} />
           : cur ? <Confirm key={cur.id} item={cur} location={loc} onDone={(m, err) => { toast(m, err); poll(); }} />
-          : <div className="flex h-72 items-center justify-center rounded-2xl border border-dashed border-line text-sm text-mute">Scanned cards appear here for you to confirm.</div>}</section>
+          : <div className="flex h-72 items-center justify-center rounded-2xl border border-dashed border-line text-sm text-mute">{reading.length ? `Reading ${reading.length} ${reading.length === 1 ? "card" : "cards"}…` : "Scanned cards appear here for you to confirm."}</div>}</section>
       </div>
       {node}
     </div>
@@ -345,7 +359,18 @@ const unit = (r: Read) => (r.card ? (r.finish === "foil" ? r.card.eur_foil : r.f
 
 const flag = (c: string) => c === "high" ? null : c === "medium" ? { t: "Check the printing", c: "text-gold border-gold" } : { t: "Please check", c: "text-danger border-danger" };
 
-function ReadsList({ reads, location, onChange, toast }: { reads: Read[]; location: string; onChange: () => void; toast: (m: string, err?: boolean) => void }) {
+/** A capture that has been taken and is waiting to be read (the oldest is the one being read now). */
+function ReadingRow({ s, waiting }: { s: Reading; waiting: boolean }) {
+  return (
+    <li className="flex items-center gap-3 rounded-xl border border-dashed border-accent bg-surface p-3">
+      <img src={`/api/scan/capture/${s.id}`} alt="Capture" className="h-24 rounded-md border border-line" />
+      <div className="flex items-center gap-2 text-sm text-mute">
+        <IconLoader2 className="size-4 animate-spin motion-reduce:animate-none" aria-hidden />{waiting ? "Waiting in the queue" : "Reading this card…"}</div>
+    </li>
+  );
+}
+
+function ReadsList({ reads, reading, location, onChange, toast }: { reads: Read[]; reading: Reading[]; location: string; onChange: () => void; toast: (m: string, err?: boolean) => void }) {
   const [open, setOpen] = useState<number | null>(null);
   const [committing, setCommitting] = useState(false);
   const patch = (id: number, body: object) => api(`/scan/reads/${id}`, { method: "PATCH", body: JSON.stringify(body) }).then(onChange).catch((e) => toast(e.message, true));
@@ -377,19 +402,22 @@ function ReadsList({ reads, location, onChange, toast }: { reads: Read[]; locati
   const [confirmClear, setConfirmClear] = useState(false);
   const clear = async () => { setConfirmClear(false); for (const r of reads) await del(r.id); };
 
-  if (!reads.length) return <div className="flex h-72 items-center justify-center rounded-2xl border border-dashed border-line text-sm text-mute">Scanned cards appear here. Edit whatever you need and press Add when you are done.</div>;
+  if (!reads.length && !reading.length) return <div className="flex h-72 items-center justify-center rounded-2xl border border-dashed border-line text-sm text-mute">Scanned cards appear here. Edit whatever you need and press Add when you are done.</div>;
   return (
     <div className="min-w-0 space-y-3">
-      <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-surface p-3">
-        <div className="text-sm"><b>{total}</b> cards · {reads.length} entries{todo > 0 && <span className="ml-2 text-gold">{todo} to check</span>}
-          <span className="ml-2 text-gold">≈ {eur(worth)}{noPrice > 0 && <span className="text-xs text-mute"> ({noPrice} without price)</span>}</span>
-          <span className="ml-2 text-xs text-mute">Location: {location || "— (no location)"}</span></div>
-        <div className="flex gap-2">
-          <button className="btn-ghost" onClick={() => setConfirmClear(true)}>Clear list</button>
-          <button className="btn-primary" disabled={committing} onClick={commit}>Add {total} to collection</button>
+      {reads.length > 0 && (
+        <div className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 rounded-2xl border border-line bg-surface p-3">
+          <div className="text-sm"><b>{total}</b> cards · {reads.length} entries{todo > 0 && <span className="ml-2 text-gold">{todo} to check</span>}
+            <span className="ml-2 text-gold">≈ {eur(worth)}{noPrice > 0 && <span className="text-xs text-mute"> ({noPrice} without price)</span>}</span>
+            <span className="ml-2 text-xs text-mute">Location: {location || "— (no location)"}</span></div>
+          <div className="flex gap-2">
+            <button className="btn-ghost" onClick={() => setConfirmClear(true)}>Clear list</button>
+            <button className="btn-primary" disabled={committing} onClick={commit}>Add {total} to collection</button>
+          </div>
         </div>
-      </div>
+      )}
       <ul className="space-y-2">
+        {reading.map((s, i) => <ReadingRow key={s.id} s={s} waiting={i > 0} />).reverse()}
         {[...reads].reverse().map((r) => {
           const f = flag(r.confidence), c = r.card;
           const fin = c ? (JSON.parse(c.finishes || "[]") as string[]) : [];

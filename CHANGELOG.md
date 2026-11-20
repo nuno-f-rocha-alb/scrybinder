@@ -4,6 +4,13 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Added
+- Scan with the camera: every capture shows in the list the moment it is taken (with its picture and "Reading…" or "Waiting in the queue"), so you can carry on scanning while the cards are read and fix them later. The sound now plays when the capture is taken.
+- Scan with the camera: a *Scan the card now* button scans what the camera sees right away, for a card it did not pick up or a read that got stuck.
+
+### Fixed
+- Scan with the camera: a capture that could not be read now says so instead of silently never appearing, and the captures already taken are still read when you stop the camera.
+
 ## [0.8.13] — 2026-11-14
 
 ### Added
