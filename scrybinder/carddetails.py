@@ -2,7 +2,7 @@
 import json
 from datetime import datetime, timedelta, timezone
 
-from . import scryfall
+from . import cardmarket, scryfall
 
 RULINGS_TTL = timedelta(days=30)
 
@@ -21,6 +21,8 @@ def details(db, card_id: str) -> dict:
     for k in ("finishes", "keywords", "colors", "legalities"):
         d[k] = json.loads(d[k]) if d[k] else ([] if k != "legalities" else {})
     d["game_changer"] = bool(d["game_changer"])
+    product = cardmarket.product_of(db, card_id)
+    d["cm_enabled"], d["cm_product"], d["cm_source"] = cardmarket.enabled(db), product["id"], product["source"]
     d["type_line"] = d["type_line"] or d["print_type"]
     d["name"] = d["card_name"] or d["name"]
     del d["card_name"], d["print_type"]

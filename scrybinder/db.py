@@ -168,6 +168,13 @@ CREATE TABLE IF NOT EXISTS cm_prices (  -- Cardmarket's price guide, by product 
     id_product INTEGER PRIMARY KEY, avg REAL, low REAL, trend REAL, avg_foil REAL, low_foil REAL, trend_foil REAL
 );
 CREATE TABLE IF NOT EXISTS cm_link (scryfall_id TEXT PRIMARY KEY, id_product INTEGER NOT NULL);  -- printings Scryfall has no product for, matched by cardmarket.py
+CREATE TABLE IF NOT EXISTS cm_pick (  -- printings Scryfall has no product for, where the product is not a guess: manual=1 chosen by the user (kept), 0 from MTGJSON
+    scryfall_id TEXT PRIMARY KEY, id_product INTEGER NOT NULL, manual INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS cards_cardmarket ON cards(cardmarket_id);  -- the picker asks which printings hold a product
+CREATE TABLE IF NOT EXISTS cm_products (  -- Cardmarket's product list (names only), to search by name; see cardmarket.py
+    id_product INTEGER PRIMARY KEY, name TEXT NOT NULL, id_expansion INTEGER, date_added TEXT
+);
 CREATE TABLE IF NOT EXISTS trade_in (
     id INTEGER PRIMARY KEY, trade_id INTEGER NOT NULL REFERENCES trades(id) ON DELETE CASCADE, scryfall_id TEXT NOT NULL REFERENCES cards(id),
     finish TEXT NOT NULL, condition TEXT NOT NULL, language TEXT NOT NULL, location TEXT NOT NULL DEFAULT '',

@@ -41,6 +41,8 @@ Rows are aggregated by (printing, finish, condition, language, location, altered
 | `*.scryfall.io` (cards, svgs) | card images and set icons, ≥ 100 ms apart |
 | `huggingface.co` | the DINOv2 weights, once, when the visual index is first used (source builds; the installed app ships them) |
 | `download.pytorch.org` | the CUDA build of PyTorch, only if you press *Enable GPU acceleration* (checksum verified) |
+| `downloads.s3.cardmarket.com` | only with *Use Cardmarket prices*: the price guide and product list, once a day (kept in `cardmarket/`; the product list is also searchable in a card's details, to pick its product by hand) |
+| `mtgjson.com` | only with *Also find Cardmarket products with MTGJSON*: `cardIdentifiers.csv.gz` (~15 MB) once a day, for the Cardmarket product (`mcmId`) of printings Scryfall has none for; a product you pick by hand always wins |
 
 Scrybinder sends `User-Agent: Scrybinder/<version>` as Scryfall's guidelines require. It updates the bulk data at most once a day.
 

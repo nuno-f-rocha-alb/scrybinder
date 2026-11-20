@@ -12,6 +12,7 @@ import DeckPicker from "../components/deckpicker";
 import ValueHistory from "../components/valuehistory";
 import SpareCards from "../components/sparecards";
 import CardDetails, { CardInfoLoader } from "../components/carddetails";
+import { CardmarketLink } from "../components/cardmarketpicker";
 import LocationPicker from "../components/locationpicker";
 import PrintingDialog from "../components/printings";
 
@@ -467,7 +468,8 @@ function EditModal({ row, locations, onClose, onDone, onError, onSwitch, onOpenD
           <h2 className="text-xl font-semibold">{row.name}</h2>
           <p className="text-sm text-mute">{row.set_name} ({row.set_code.toUpperCase()}) · #{row.collector_number} · {eur(row.price)}</p>
           <div className="mb-4 mt-1 flex flex-wrap items-center gap-x-4 gap-y-1"><ExtLinks id={row.scryfall_id} cardmarketId={row.cardmarket_id} />
-            {row.oracle_id && <button className="cursor-pointer text-xs text-accent hover:underline" onClick={() => setPicking(true)}>Change printing…</button>}</div>
+            {row.oracle_id && <button className="cursor-pointer text-xs text-accent hover:underline" onClick={() => setPicking(true)}>Change printing…</button>}
+            <CardmarketLink printId={row.scryfall_id} onChanged={() => onDone("Cardmarket product saved")} /></div>
           {row.places.length > 1 && <div className="mb-4 rounded-xl border border-line bg-bg p-3 text-sm">
             <div className="mb-1 font-medium">{total} copies in {row.places.length} locations</div>
             <ul>{row.places.map((p) => (

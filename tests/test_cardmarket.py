@@ -1,3 +1,5 @@
+import csv
+import gzip
 import json
 
 from fastapi.testclient import TestClient
@@ -183,7 +185,172 @@ def test_refresh_downloads_once_a_day_and_survives_a_new_bulk(db, tmp_path, monk
 def test_cardmarket_api(db):
     c = TestClient(create_app(db, token="t", allowed_hosts={"testserver"}))
     c.get("/api/status?t=t")
-    assert c.get("/api/cardmarket").json() == {"enabled": False, "collection": "trend", "deck": "trend", "updated_at": None, "metrics": ["trend", "avg", "low"]}
+    assert c.get("/api/cardmarket").json() == {"enabled": False, "collection": "trend", "deck": "trend", "updated_at": None, "metrics": ["trend", "avg", "low"], "mtgjson": False}
     assert c.post("/api/cardmarket", json={"collection": "cheap"}).status_code == 422
     r = c.post("/api/cardmarket", json={"collection": "low", "deck": "avg"}).json()
     assert (r["collection"], r["deck"], r["enabled"]) == ("low", "avg", False)  # no download until it is turned on
+
+
+def _catalog(tmp_path, products):
+    """products: (id, name, expansion, date added) -> a catalogue file loaded into cm_products."""
+    cat = tmp_path / "products.json"
+    cat.write_text(json.dumps({"products": [{"idProduct": i, "name": n, "idExpansion": e, "dateAdded": d} for i, n, e, d in products]}), encoding="utf-8")
+    return cat
+
+
+def _picker_data(db, tmp_path):
+    """'trek' (no product) and 'known' (Scryfall's product 7001); three products called Bones, the nearest to trek's release first."""
+    _card(db, "trek", 'Dr. "Bones"', "zzz", eur=None, num="421")
+    db.execute("UPDATE cards SET released_at='2026-11-13' WHERE id='trek'")
+    _card(db, "known", 'Dr. "Bones"', "zzz", cm=7001, num="197")
+    db.commit()
+    cat = _catalog(tmp_path, [(7001, 'Dr. ""Bones""', 1, "2026-11-13 10:00:00"), (7002, 'Dr. ""Bones""', 2, "2026-11-14 10:00:00"),
+                              (7003, 'Dr. ""Bones""', 3, "2026-01-02 00:00:00"), (7004, "Bonesaw", 3, None)])
+    cardmarket.load_catalog(db, cat)
+    _, guide = _files(tmp_path, [], [{"idProduct": 7002, "avg": 1.2, "low": 0.5, "trend": 0.99, "trend-foil": 2.5}])
+    cardmarket.load_guide(db, guide)
+    return cat
+
+
+def test_the_picker_searches_the_catalogue_by_name_nearest_release_first(db, tmp_path):
+    _picker_data(db, tmp_path)
+    found = cardmarket.search_products(db, '"Bones"', "trek")
+    assert [r["id_product"] for r in found] == [7001, 7002, 7003]  # 'Bonesaw' has no quote: not a match
+    assert found[1]["trend"] == 0.99 and found[1]["trend_foil"] == 2.5 and found[1]["date_added"] == "2026-11-14"
+    assert found[0]["used_by"] == ["ZZZ #197"] and found[1]["used_by"] == []  # Scryfall gave 7001 to the other printing
+    assert [r["id_product"] for r in cardmarket.search_products(db, "bones%")] == []  # % is a letter here, not a wildcard
+    assert cardmarket.search_products(db, "b") == []  # too short to search
+    assert [r["id_product"] for r in cardmarket.search_products(db, "7002")] == [7002]  # a pasted id
+    assert [r["id_product"] for r in cardmarket.search_products(db, "https://www.cardmarket.com/en/Magic/Products?idProduct=7003")] == [7003]
+
+
+def test_the_picker_asks_for_the_product_list_first(db):
+    try:
+        cardmarket.search_products(db, "anything")
+    except ValueError as e:
+        assert "not loaded" in str(e)
+    else:
+        raise AssertionError("expected a ValueError")
+
+
+def test_a_picked_product_prices_the_printing_and_survives_updates(db, tmp_path):
+    cat = _picker_data(db, tmp_path)
+    _on(db)
+    assert cardmarket.product_of(db, "trek") == {"id": None, "source": None}
+    cardmarket.set_pick(db, "trek", 7002)
+    assert cardmarket.product_of(db, "trek") == {"id": 7002, "source": "manual"}
+    assert db.execute("SELECT cm_trend, eur FROM cards WHERE id='trek'").fetchone()[:] == (0.99, 0.99)
+    cardmarket.link_list(db, cat)  # the updates that rebuild the guessed links leave the pick alone
+    cardmarket.link_printings(db, cat)
+    cardmarket.apply(db)
+    assert cardmarket.product_of(db, "trek")["source"] == "manual" and db.execute("SELECT eur FROM cards WHERE id='trek'").fetchone()[0] == 0.99
+    cardmarket.set_pick(db, "trek", None)
+    assert cardmarket.product_of(db, "trek")["id"] is None and db.execute("SELECT eur FROM cards WHERE id='trek'").fetchone()[0] is None
+
+
+def test_a_pick_is_refused_when_it_cannot_hold(db, tmp_path):
+    _picker_data(db, tmp_path)
+    for card, product, why in (("known", 7002, "already"), ("trek", 1234567, "no product")):
+        try:
+            cardmarket.set_pick(db, card, product)
+        except ValueError as e:
+            assert why in str(e)
+        else:
+            raise AssertionError("expected a ValueError")
+    try:
+        cardmarket.set_pick(db, "nobody", 7002)
+    except KeyError:
+        pass
+    else:
+        raise AssertionError("expected a KeyError")
+
+
+def test_a_product_a_pick_holds_is_not_given_to_another_printing_by_name(db, tmp_path):
+    products = _set_zzz(db, [("lost", "Lost Card", "zzz"), ("other", "Lost Card", "yyy")])
+    cat = _catalog(tmp_path, [(i, n, e, None) for i, n, e in products + [(9001, "Lost Card", MAIN)]])
+    cardmarket.load_catalog(db, cat)
+    cardmarket.set_pick(db, "other", 9001)
+    assert cardmarket.link_printings(db, cat) == 0 and _linked(db) == {}  # 9001 is taken: 'lost' stays unpriced rather than guess
+
+
+def test_mtgjson_gives_products_that_the_user_can_still_override(db, tmp_path):
+    _picker_data(db, tmp_path)
+    _card(db, "other", "Elsewhere", "zzz", eur=None)
+    db.commit()
+    ids = tmp_path / "cardIdentifiers.csv.gz"
+    with gzip.open(ids, "wt", encoding="utf-8", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["uuid", "scryfallId", "mcmId"])
+        w.writerows([("u1", "trek", "7003"), ("u2", "known", "7002"), ("u3", "other", "99999"), ("u4", "nobody", "7001"), ("u5", "other", "")])
+    assert cardmarket.load_mtgjson(db, ids) == 1  # not 'known' (Scryfall has its product), not an id the catalogue lacks, not a printing we lack
+    assert cardmarket.product_of(db, "trek") == {"id": 7003, "source": "mtgjson"}
+    cardmarket.set_pick(db, "trek", 7002)  # the user's word beats MTGJSON's, also after the next update
+    cardmarket.load_mtgjson(db, ids)
+    assert cardmarket.product_of(db, "trek") == {"id": 7002, "source": "manual"}
+    cardmarket.set_options(db, True, mtgjson=True)
+    assert cardmarket.settings(db)["mtgjson"] is True
+    cardmarket.set_options(db, mtgjson=False)
+    assert cardmarket.product_of(db, "trek")["source"] == "manual"  # turning MTGJSON off keeps only the user's picks
+    cardmarket.set_pick(db, "trek", None)
+    assert cardmarket.product_of(db, "trek")["id"] is None
+
+
+def test_refresh_fetches_mtgjson_only_when_asked_and_fills_an_empty_product_list(db, tmp_path, monkeypatch):
+    cat, guide = _files(tmp_path, [(7001, "Alpha", 1)], [{"idProduct": 7001, "trend": 3.0}])
+    calls = []
+
+    def fake(url, dest, progress=None):
+        calls.append(url)
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        if url == cardmarket.MTGJSON_URL:
+            with gzip.open(dest, "wt", encoding="utf-8", newline="") as f:
+                f.write("scryfallId,mcmId\nlost,7001\n")
+        else:
+            dest.write_bytes((cat if "products" in url else guide).read_bytes())
+    monkeypatch.setattr(cardmarket, "_download", fake)
+    _card(db, "lost", "Alpha", "zzz", eur=None)
+    db.commit()
+    _on(db)
+    assert cardmarket.refresh(db, tmp_path / "data") is True and cardmarket.MTGJSON_URL not in calls
+    assert db.execute("SELECT COUNT(*) FROM cm_products").fetchone()[0] == 1
+    db.execute("DELETE FROM cm_products")  # a database from before the picker: files kept, list empty
+    db.commit()
+    assert cardmarket.refresh(db, tmp_path / "data") is True and len(calls) == 2  # loaded again without downloading
+    cardmarket.set_options(db, mtgjson=True)
+    assert cardmarket.refresh(db, tmp_path / "data") is True and calls[-1] == cardmarket.MTGJSON_URL and len(calls) == 3
+    assert cardmarket.product_of(db, "lost") == {"id": 7001, "source": "mtgjson"}
+    assert db.execute("SELECT eur FROM cards WHERE id='lost'").fetchone()[0] == 3.0
+
+
+def test_picker_api(db, tmp_path):
+    _picker_data(db, tmp_path)
+    _on(db)
+    c = TestClient(create_app(db, token="t", allowed_hosts={"testserver"}))
+    c.get("/api/status?t=t")
+    r = c.get("/api/cardmarket/products", params={"q": '"Bones"', "card": "trek"}).json()
+    assert [x["id_product"] for x in r] == [7001, 7002, 7003]
+    d = c.put("/api/cards/trek/cardmarket", json={"id_product": 7002}).json()
+    assert (d["cm_product"], d["cm_source"], d["cm_enabled"], d["cm_trend"]) == (7002, "manual", True, 0.99)
+    assert c.put("/api/cards/trek/cardmarket", json={"id_product": 1}).status_code == 422
+    assert c.put("/api/cards/known/cardmarket", json={"id_product": 7002}).status_code == 422
+    assert c.put("/api/cards/nobody/cardmarket", json={"id_product": 7002}).status_code == 404
+    assert c.put("/api/cards/trek/cardmarket", json={"id_product": None}).json()["cm_product"] is None
+
+
+def test_a_bad_id_is_a_422_and_an_mtgjson_outage_does_not_stop_the_prices(db, tmp_path, monkeypatch):
+    _picker_data(db, tmp_path)
+    c = TestClient(create_app(db, token="t", allowed_hosts={"testserver"}))
+    c.get("/api/status?t=t")
+    assert c.put("/api/cards/trek/cardmarket", json={"id_product": "abc"}).status_code == 422
+    cat, guide = _files(tmp_path, [(7001, "Alpha", 1)], [{"idProduct": 7001, "trend": 3.0}])
+
+    def fake(url, dest, progress=None):
+        if url == cardmarket.MTGJSON_URL:
+            raise OSError("mtgjson.com is down")
+        dest.parent.mkdir(parents=True, exist_ok=True)
+        dest.write_bytes((cat if "products" in url else guide).read_bytes())
+    monkeypatch.setattr(cardmarket, "_download", fake)
+    _on(db)
+    cardmarket.set_options(db, mtgjson=True)
+    assert cardmarket.refresh(db, tmp_path / "data") is True
+    assert db.execute("SELECT COUNT(*) FROM cm_prices").fetchone()[0] == 1

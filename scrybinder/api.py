@@ -330,6 +330,19 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
     def card_details(card_id: str):
         return _wrap(carddetails.details, db, card_id)
 
+    @app.get("/api/cardmarket/products")
+    def cardmarket_products(q: str = "", card: str | None = None):
+        return _wrap(cardmarket.search_products, db, q, card)
+
+    @app.put("/api/cards/{card_id}/cardmarket")
+    def card_cardmarket(card_id: str, body: dict = Body(...)):
+        try:
+            product = None if body.get("id_product") is None else int(body["id_product"])
+        except (TypeError, ValueError):
+            raise HTTPException(422, "id_product must be a number")
+        _wrap(cardmarket.set_pick, db, card_id, product)
+        return _wrap(carddetails.details, db, card_id)
+
     @app.get("/api/cards/{card_id}/rulings")
     def card_rulings(card_id: str):
         try:
@@ -872,12 +885,12 @@ def create_app(db=None, token: str | None = None, allowed_hosts: set[str] | None
 
     @app.post("/api/cardmarket")
     def cardmarket_settings(body: dict = Body(...)):
-        was = cardmarket.enabled(db)
+        was = cardmarket.enabled(db), cardmarket.mtgjson_on(db)
         try:
-            cardmarket.set_options(db, body.get("enabled"), body.get("collection"), body.get("deck"))
+            cardmarket.set_options(db, body.get("enabled"), body.get("collection"), body.get("deck"), body.get("mtgjson"))
         except ValueError as e:
             raise HTTPException(422, str(e))
-        if cardmarket.enabled(db) and not was and job["state"] not in ("download", "import", "cardmarket"):
+        if cardmarket.enabled(db) and (not was[0] or (cardmarket.mtgjson_on(db) and not was[1])) and job["state"] not in ("download", "import", "cardmarket"):
             job.update(state="cardmarket", done=0, total=0, error=None)  # before the thread starts, so the page sees it at once
 
             def run():  # the first download (~45 MB) runs in the background: switching on must not wait for it
