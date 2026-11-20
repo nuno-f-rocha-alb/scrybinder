@@ -25,7 +25,7 @@ MAX_SIDE = 3000  # larger photos are downscaled: bounds memory and OCR time
 
 
 def decode(data: bytes, max_side: int = MAX_SIDE) -> np.ndarray | None:
-    img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+    img = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR) if data else None  # OpenCV raises on an empty buffer (a file just created)
     if img is None:
         return None
     s = max_side / max(img.shape[:2])
@@ -201,14 +201,35 @@ class Scanner:
         with self._lock:
             self.reading.append(slot)
             self.beep += 1
-        self._reader.submit(self._read, slot, card, live)
+        self._reader.submit(self._read, slot, lambda: self.process(card, label, True, live, slot=slot), "A capture")
 
-    def _read(self, slot: dict, card: np.ndarray, live: bool):
+    def queue_photo(self, path: Path, fn):
+        """A photo from the watched folder: it shows in the list at once (a small picture and its name) and is read in order by `fn`
+        (process, process_page…). Only the small picture is kept while it waits: a folder of big photos must not fill the memory."""
+        small = decode(path.read_bytes(), 600)
+        if small is None:
+            return
+        with self._lock:
+            sid, self._next_id = self._next_id, self._next_id + 1
+        self.dir.mkdir(parents=True, exist_ok=True)
+        cv2.imwrite(str(self.dir / f"{sid}.jpg"), small, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        slot = {"id": sid, "label": path.name, "temp": True}  # temp: the picture is only for the row, the entries keep their own
+        with self._lock:
+            self.reading.append(slot)
+
+        def run():
+            img = decode(path.read_bytes())
+            if img is not None:
+                fn(img, path.name)
+
+        self._reader.submit(self._read, slot, run, path.name)
+
+    def _read(self, slot: dict, run, what: str):
         try:
-            self.process(card, slot["label"], True, live, slot=slot)
+            run()
         except Exception:  # noqa: BLE001 — the row goes away, so say why instead of leaving a capture that never shows
-            log.exception("Reading a camera capture failed")
-            self.notice = "A capture could not be read: scan the card again."
+            log.exception("Reading %s failed", what)
+            self.notice = f"{what} could not be read" + (": scan the card again." if what == "A capture" else ".")
             with self._lock:
                 kept = any(x["id"] == slot["id"] for x in self.reads + self.pending)  # the failure came after the entry was made
             if not kept:
@@ -217,6 +238,8 @@ class Scanner:
             with self._lock:
                 if slot in self.reading:
                     self.reading.remove(slot)
+            if slot.get("temp"):
+                (self.dir / f"{slot['id']}.jpg").unlink(missing_ok=True)
 
     def force_capture(self):
         """Take the camera's current picture now, without waiting for the card to hold still (a card not picked up, or a read that got stuck).
@@ -386,9 +409,10 @@ class Scanner:
                 if time.time() - p.stat().st_mtime < 1.0:  # still being written
                     continue
                 self._seen.add(p.name)
-                img = decode(p.read_bytes())
-                if img is not None:
-                    (self.process_auto if self.auto_mode else self.process_overlap if self.overlap_mode else self.process_page if self.page_mode else self.process)(img, p.name)
+                try:
+                    self.queue_photo(p, self.process_auto if self.auto_mode else self.process_overlap if self.overlap_mode else self.process_page if self.page_mode else self.process)
+                except OSError:  # gone or locked between the listing and now
+                    log.warning("Could not open %s from the watched folder", p.name)
             self._stop.wait(1.0)
 
     def _run_webcam(self, index: int):

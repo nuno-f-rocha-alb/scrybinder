@@ -7,6 +7,7 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 ### Added
 - Cardmarket prices: for a printing with no Cardmarket product, the card's details and the edit panel of the collection now have *Find the Cardmarket product*: search Cardmarket's product list by name (or paste a product id), see each product's expansion, date, price and which cards already use it, and choose the right one. The choice prices the card and is kept when prices update; *Remove my choice* undoes it.
 - Cardmarket prices: an optional *Also find Cardmarket products with MTGJSON* setting (downloads MTGJSON's identifiers, ~15 MB, once a day) prices more printings that Scryfall has no Cardmarket product for, such as The List cards.
+- Scan from photos or a watched folder: every photo shows in the list as soon as it is dropped or found (with its picture and name, "Reading…" or "Waiting in the queue"), so you can see what is still being read, as with the camera.
 
 ## [0.8.14] — 2026-11-20
 
