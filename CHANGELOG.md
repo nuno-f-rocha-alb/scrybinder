@@ -4,6 +4,9 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 
 ## [Unreleased]
 
+### Added
+- Scan from photos or a watched folder: every photo shows in the list as soon as it is dropped or found (with its picture and name, "Reading…" or "Waiting in the queue"), so you can see what is still being read, as with the camera.
+
 ## [0.8.14] — 2026-11-20
 
 ### Added
