@@ -9,6 +9,7 @@ All notable changes are documented here. The format follows [Keep a Changelog](h
 - Scan with the camera: a *Scan the card now* button scans what the camera sees right away, for a card it did not pick up or a read that got stuck.
 
 ### Fixed
+- Cardmarket prices: with *Use Cardmarket prices* on, printings Scryfall gives no Cardmarket product (many extended, showcase and foil-only versions, and Star Trek or Warhammer extras) now get their price when the match is certain: the only product of that name in the set's own Cardmarket expansions, or a foil-only "★" twin of a card whose product is known. When it is not certain the card stays without a price.
 - Scan with the camera: a capture that could not be read now says so instead of silently never appearing, and the captures already taken are still read when you stop the camera.
 
 ## [0.8.13] — 2026-11-14
