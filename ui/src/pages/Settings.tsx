@@ -210,7 +210,7 @@ function UpdateSection({ refresh }: { refresh: () => void }) {
 
 const LABEL: Record<string, string> = { download: "Downloading bulk data…", import: "Importing cards…", cardmarket: "Updating Cardmarket prices…", done: "Done", error: "Error" };
 
-type CmSettings = { enabled: boolean; collection: string; deck: string; updated_at: string | null; metrics: string[] };
+type CmSettings = { enabled: boolean; collection: string; deck: string; updated_at: string | null; metrics: string[]; mtgjson: boolean };
 const METRIC_LABEL: Record<string, string> = { trend: "Trend", avg: "Average", low: "Low" };
 
 /** Cardmarket's own price guide instead of the one price Scryfall passes on; which of its three prices the collection and the decks use. */
@@ -218,7 +218,7 @@ function PricesSection({ refresh, jobState }: { refresh: () => void; jobState?: 
   const [s, setS] = useState<CmSettings | null>(null);
   const [err, setErr] = useState("");
   useEffect(() => { api<CmSettings>("/cardmarket").then(setS).catch((e) => setErr(e.message)); }, [jobState]);  // again when an update ends: the date it took
-  const save = (body: Partial<Pick<CmSettings, "enabled" | "collection" | "deck">>) =>
+  const save = (body: Partial<Pick<CmSettings, "enabled" | "collection" | "deck" | "mtgjson">>) =>
     api<CmSettings>("/cardmarket", { method: "POST", body: JSON.stringify(body) }).then((r) => { setS(r); setErr(""); refresh(); }).catch((e) => setErr(e.message));
   if (!s) return null;
   const choose = (label: string, key: "collection" | "deck") => (
@@ -239,6 +239,14 @@ function PricesSection({ refresh, jobState }: { refresh: () => void; jobState?: 
         <input type="checkbox" checked={s.enabled} onChange={(e) => save({ enabled: e.target.checked })} />Use Cardmarket prices
       </label>
       {s.enabled && s.updated_at && <p className="mt-1 text-xs text-mute">Updated {new Date(s.updated_at).toLocaleString()}</p>}
+      {s.enabled && (
+        <label className="mt-3 flex items-start gap-2 text-sm">
+          <input type="checkbox" className="mt-1" checked={s.mtgjson} onChange={(e) => save({ mtgjson: e.target.checked })} />
+          <span>Also find Cardmarket products with MTGJSON
+            <span className="block text-xs text-mute">Downloads MTGJSON's card identifiers (~15 MB, from <code>mtgjson.com</code>, MIT licence) once a day to price printings Scryfall has no
+              Cardmarket product for. Nothing from your collection is sent. You can also pick a product yourself in a card's details.</span></span>
+        </label>
+      )}
       <div className="mt-4 space-y-2">
         {choose("Price used for the collection", "collection")}
         {choose("Price used for decks", "deck")}

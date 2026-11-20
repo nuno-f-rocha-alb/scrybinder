@@ -6,6 +6,7 @@ Scrybinder's own source code is released under the [MIT License](LICENSE). It bu
 
 - *Magic: The Gathering* — card names, artwork, frames and symbols — is property of **Wizards of the Coast LLC**. Scrybinder is an unofficial fan project, free of charge, not produced, endorsed, supported or affiliated with Wizards of the Coast. It follows the spirit of the [Wizards of the Coast Fan Content Policy](https://company.wizards.com/en/legal/fancontentpolicy).
 - Card data, prices (EUR/Cardmarket), set icons and card images come from **[Scryfall](https://scryfall.com)** through its public API and CDN, used according to the [Scryfall API guidelines](https://scryfall.com/docs/api) (identifying `User-Agent`, rate-limited requests, bulk data instead of per-card calls, no re-selling of data). Scrybinder is not affiliated with Scryfall.
+- If you turn it on, Cardmarket product ids for some printings come from **[MTGJSON](https://mtgjson.com)** (MIT licence), downloaded to your computer; nothing from your collection is sent.
 - The test suite includes a handful of Scryfall card images (`tests/fixtures/cards`) used only to check recognition code.
 
 ## Software

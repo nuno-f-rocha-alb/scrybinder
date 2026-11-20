@@ -3,6 +3,7 @@ import { IconAlertTriangle, IconBan, IconCheck, IconChevronLeft, IconChevronRigh
 import { api, eur, FINISH } from "../api";
 import { CardImg, Modal, cardmarketUrl, openExternal, scryfallUrl } from "./ui";
 import { ManaCost } from "./mana";
+import CardmarketPicker from "./cardmarketpicker";
 
 type Details = {
   id: string; oracle_id: string | null; name: string; set_code: string; set_name: string; collector_number: string; released_at: string; rarity: string;
@@ -10,7 +11,9 @@ type Details = {
   cm_low: number | null; cm_avg: number | null; cm_trend: number | null; cm_low_foil: number | null; cm_avg_foil: number | null; cm_trend_foil: number | null;
   mana_cost: string | null; cmc: number | null; type_line: string | null; oracle_text: string | null; keywords: string[]; legalities: Record<string, string>;
   game_changer: boolean; edhrec_rank: number | null; owned: number;
+  cm_enabled: boolean; cm_product: number | null; cm_source: "scryfall" | "manual" | "mtgjson" | "guess" | null;
 };
+const CM_SOURCE = { manual: "chosen by you", mtgjson: "from MTGJSON", guess: "matched by name" } as const;
 type PrintRow = { id: string; set_code: string; set_name: string; collector_number: string; rarity: string; released_at: string; eur: number | null; eur_foil: number | null; owned: number };
 type Ruling = { published_at: string; comment: string; source: string };
 
@@ -147,8 +150,9 @@ export default function CardDetails({ printId, onClose, prev, next }: { printId:
   const [id, setId] = useState(printId);
   const [d, setD] = useState<Details | null>(null);
   const [err, setErr] = useState("");
+  const [picking, setPicking] = useState(false);  // the Cardmarket product picker replaces the card until it is done
 
-  useEffect(() => { setId(printId); }, [printId]);
+  useEffect(() => { setId(printId); setPicking(false); }, [printId]);
   useEffect(() => {
     let live = true;
     setD(null); setErr("");
@@ -166,7 +170,8 @@ export default function CardDetails({ printId, onClose, prev, next }: { printId:
   }, [prev, next]);
 
   return (
-    <Modal title={d ? `Details of ${d.name}` : "Card details"} onClose={onClose} wide>
+    <Modal title={d ? `Details of ${d.name}` : "Card details"} onClose={picking ? () => setPicking(false) : onClose} wide>
+      {d && picking ? <CardmarketPicker d={d} onPicked={(r) => { setD(r); setPicking(false); }} onBack={() => setPicking(false)} /> : <>
       <div className="mb-4 flex items-center justify-end gap-2">
         {prev && <button className="btn-ghost" onClick={prev} aria-label="Previous card"><IconChevronLeft className="size-4" />Prev</button>}
         {next && <button className="btn-ghost" onClick={next} aria-label="Next card">Next<IconChevronRight className="size-4" /></button>}
@@ -186,7 +191,13 @@ export default function CardDetails({ printId, onClose, prev, next }: { printId:
               {d.owned > 0 && <div className="pt-1 text-gold">You own {d.owned} of this printing</div>}
             </div>
             <div className="mt-3 flex flex-col gap-2">
-              {d.cardmarket_id && <button className="btn-ghost justify-center" onClick={() => openExternal(cardmarketUrl(d.cardmarket_id!))}>Buy on Cardmarket ↗</button>}
+              {d.cm_product && <button className="btn-ghost justify-center" onClick={() => openExternal(cardmarketUrl(d.cm_product!))}>Buy on Cardmarket ↗</button>}
+              {d.cm_enabled && d.cm_source !== "scryfall" && (
+                <div className="text-xs text-mute">
+                  {d.cm_product ? `Cardmarket product ${d.cm_product}, ${CM_SOURCE[d.cm_source as keyof typeof CM_SOURCE]}.` : "No Cardmarket product is linked, so there is no Cardmarket price."}
+                  <button className="btn-ghost mt-1 w-full justify-center" onClick={() => setPicking(true)}>{d.cm_product ? "Change the Cardmarket product" : "Find the Cardmarket product"}</button>
+                </div>
+              )}
               <button className="btn-ghost justify-center" onClick={() => openExternal(scryfallUrl(d.id))}>Open on Scryfall ↗</button>
             </div>
           </div>
@@ -194,6 +205,7 @@ export default function CardDetails({ printId, onClose, prev, next }: { printId:
           <CardInfo d={d} id={id} onPick={setId} />
         </div>
       )}
+      </>}
     </Modal>
   );
 }
