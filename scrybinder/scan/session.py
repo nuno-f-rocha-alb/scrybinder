@@ -60,7 +60,9 @@ class Scanner:
         self.debug_dir = debug_dir or self.dir.parent / "debug"  # whole camera frames with the detected outline (see save_debug)
         self.hold = hold
         self.pending: list[dict] = []
-        self.beep = 0                      # increments on every capture: the UI plays a sound
+        self.reading: list[dict] = []      # camera captures taken but not read yet: the UI shows them at once, so a slow read is not a doubt
+        self._reader = ThreadPoolExecutor(max_workers=1)  # one read at a time, in the order of the captures: parallel reads could finish out of order
+        self.beep = 0                     # increments on every capture: the UI plays a sound
         self.message = ""
         self.notice = ""                   # a passing remark for the UI (e.g. a read ignored as the card still on the stand); cleared by the next capture
         self.split_next = False            # the next capture opens a new entry (e.g. the foil among identical regular cards)
@@ -107,7 +109,7 @@ class Scanner:
         fs = json.loads(finishes or "[]") or ["nonfoil"]
         return want if want in fs else fs[0]
 
-    def _add_read(self, item: dict, live: bool = False) -> dict:
+    def _add_read(self, item: dict, live: bool = False, quiet: bool = False) -> dict:
         cands, pid = item["candidates"], item["predicted_id"]
         with self._lock:  # check and append in the same block: simultaneous captures (webcam) do not duplicate the entry
             foil = self.split_next
@@ -119,7 +121,8 @@ class Scanner:
                 self.notice = SAME_CARD_NOTICE
                 return same
             self.notice = ""
-            self.beep += 1
+            if not quiet:  # a camera capture already beeped when it was taken
+                self.beep += 1
             if same:
                 same["qty"] += 1
             else:
@@ -188,18 +191,58 @@ class Scanner:
         return {"added": added, "rows": rows}
 
     # --- processing one image (same for photos, folder and webcam) ---
-    def process(self, img: np.ndarray, label: str = "", warped: bool = False, live: bool = False, result: dict | None = None) -> dict:
-        """`live`: the capture comes from the camera, where a card read again right after itself is the same card still on the stand.
-        `result`: an identification made elsewhere (overlapping cards); `img` is then the picture kept with it."""
-        card, detected, res = (img, True, result) if result is not None else identify_image(self.ident, img, warped)
-        predicted = res["candidates"][0]["id"] if res["candidates"] else None
+    def capture(self, card: np.ndarray, label: str = "webcam", live: bool = True):
+        """A card was taken from the camera: it shows in the list at once as "being read" and is read in the order of the captures."""
         with self._lock:
             sid, self._next_id = self._next_id, self._next_id + 1
         self.dir.mkdir(parents=True, exist_ok=True)
         cv2.imwrite(str(self.dir / f"{sid}.jpg"), card, [cv2.IMWRITE_JPEG_QUALITY, 92])
+        slot = {"id": sid, "label": label}
+        with self._lock:
+            self.reading.append(slot)
+            self.beep += 1
+        self._reader.submit(self._read, slot, card, live)
+
+    def _read(self, slot: dict, card: np.ndarray, live: bool):
+        try:
+            self.process(card, slot["label"], True, live, slot=slot)
+        except Exception:  # noqa: BLE001 — the row goes away, so say why instead of leaving a capture that never shows
+            log.exception("Reading a camera capture failed")
+            self.notice = "A capture could not be read: scan the card again."
+            with self._lock:
+                kept = any(x["id"] == slot["id"] for x in self.reads + self.pending)  # the failure came after the entry was made
+            if not kept:
+                (self.dir / f"{slot['id']}.jpg").unlink(missing_ok=True)
+        finally:
+            with self._lock:
+                if slot in self.reading:
+                    self.reading.remove(slot)
+
+    def force_capture(self):
+        """Take the camera's current picture now, without waiting for the card to hold still (a card not picked up, or a read that got stuck).
+        It is a normal capture, not "the card still on the stand": it counts as a new copy."""
+        frame, quad = self._frame, self._quad
+        if frame is None:
+            raise ValueError("Start the camera first: there is no picture yet.")
+        self.capture(warp_card(frame, quad) if quad is not None else card_from_photo(frame)[0], "webcam", live=False)
+
+    def process(self, img: np.ndarray, label: str = "", warped: bool = False, live: bool = False, result: dict | None = None, slot: dict | None = None) -> dict:
+        """`live`: the capture comes from the camera, where a card read again right after itself is the same card still on the stand.
+        `result`: an identification made elsewhere (overlapping cards); `img` is then the picture kept with it.
+        `slot`: the capture was saved (and beeped) when it was taken; this read only fills it in."""
+        card, detected, res = (img, True, result) if result is not None else identify_image(self.ident, img, warped)
+        predicted = res["candidates"][0]["id"] if res["candidates"] else None
+        if slot:
+            sid = slot["id"]
+        else:
+            with self._lock:
+                sid, self._next_id = self._next_id, self._next_id + 1
+        if not slot or card is not img:  # a slot's picture is already saved, unless the card inside a toploader replaced it
+            self.dir.mkdir(parents=True, exist_ok=True)
+            cv2.imwrite(str(self.dir / f"{sid}.jpg"), card, [cv2.IMWRITE_JPEG_QUALITY, 92])
         item = {"id": sid, "label": label, "detected": detected, **res, "predicted_id": predicted, "qty": 1}
         if self.list_mode:
-            entry = self._add_read(item, live)
+            entry = self._add_read(item, live, quiet=bool(slot))
             if entry["id"] != sid:  # merged into an existing entry: the new capture is not needed
                 (self.dir / f"{sid}.jpg").unlink(missing_ok=True)
             return entry
@@ -212,7 +255,8 @@ class Scanner:
                 (self.dir / f"{sid}.jpg").unlink(missing_ok=True)
                 return same
             self.notice = ""
-            self.beep += 1
+            if not slot:
+                self.beep += 1
             if same:  # the same printing as the card right before: only the quantity goes up (a foil is opened with split_next)
                 same["qty"] += 1
             else:
@@ -275,6 +319,7 @@ class Scanner:
                     "message": self.message, "notice": self.notice, "beep": self.beep, "split_next": self.split_next, "list_mode": self.list_mode, "page_mode": self.page_mode, "overlap_mode": self.overlap_mode, "auto_mode": self.auto_mode,
                     "sets": sorted(self.ident.locked),
                     "pending": list(self.pending),
+                    "reading": [s for s in self.reading if not any(x["id"] == s["id"] for x in self.reads + self.pending)],  # the entry replaces its row in the same state
                     "reads": [{k: v for k, v in r.items() if k != "candidates"} | {"card": self.card_info(r["scryfall_id"])}
                               for r in self.reads]}
 
@@ -355,7 +400,6 @@ class Scanner:
         cap.set(cv2.CAP_PROP_FRAME_WIDTH, 1920)
         cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 1080)
         stab = Stability(hold=self.hold)
-        reader = ThreadPoolExecutor(max_workers=1)  # one read at a time, in the order of the captures: parallel reads could finish out of order
         frames = 0
         try:
             log.info("Camera %s opened: asked 1920x1080, got %sx%s, backend %s", index, cap.get(cv2.CAP_PROP_FRAME_WIDTH),
@@ -378,15 +422,12 @@ class Scanner:
                 self._preview = cv2.imencode(".jpg", cv2.resize(view, None, fx=0.5, fy=0.5), [cv2.IMWRITE_JPEG_QUALITY, 70])[1].tobytes()
                 if fire:
                     self.save_debug("fired", frame, quad)
-                    card = warp_card(frame, quad)  # OCR takes ~1 s: read it in the worker so the preview does not block
-                    reader.submit(self.process, card, "webcam", True, True).add_done_callback(
-                        lambda f: f.exception() and log.error("Reading a camera capture failed", exc_info=f.exception()))
+                    self.capture(warp_card(frame, quad), "webcam", True)  # OCR takes seconds: it is read in the worker so the preview does not block
         except Exception as e:  # a failure here used to end the thread without a word
             log.exception("Camera %s failed after %s frames", index, frames)
             self.message = f"The camera failed: {e}"
         finally:
-            reader.shutdown(wait=False, cancel_futures=True)
-            cap.release()
+            cap.release()  # the captures already taken are still read by the worker
             self._frame = self._quad = self._preview = None  # nothing to save or show once the camera is off (a restart must not show the last picture)
             log.info("Camera %s closed after %s frames", index, frames)
 
