@@ -167,7 +167,7 @@ CREATE TABLE IF NOT EXISTS shares (  -- links made with the share service; delet
 CREATE TABLE IF NOT EXISTS cm_prices (  -- Cardmarket's price guide, by product (cards.cardmarket_id); see cardmarket.py
     id_product INTEGER PRIMARY KEY, avg REAL, low REAL, trend REAL, avg_foil REAL, low_foil REAL, trend_foil REAL
 );
-CREATE TABLE IF NOT EXISTS cm_link (scryfall_id TEXT PRIMARY KEY, id_product INTEGER NOT NULL);  -- The List cards Scryfall has no product for
+CREATE TABLE IF NOT EXISTS cm_link (scryfall_id TEXT PRIMARY KEY, id_product INTEGER NOT NULL);  -- printings Scryfall has no product for, matched by cardmarket.py
 CREATE TABLE IF NOT EXISTS trade_in (
     id INTEGER PRIMARY KEY, trade_id INTEGER NOT NULL REFERENCES trades(id) ON DELETE CASCADE, scryfall_id TEXT NOT NULL REFERENCES cards(id),
     finish TEXT NOT NULL, condition TEXT NOT NULL, language TEXT NOT NULL, location TEXT NOT NULL DEFAULT '',

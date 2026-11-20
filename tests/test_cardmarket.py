@@ -6,11 +6,12 @@ from scrybinder import cardmarket, decks
 from scrybinder.api import create_app
 
 LIST_EXP, OTHER_EXP, SECOND_LIST_EXP = 5911, 5173, 3494
+MAIN, EXTRAS, ELSEWHERE = 900, 902, 950  # expansions of the set 'zzz': its main one, one with no linked card, and another set's
 
 
-def _card(db, cid, name, set_code="plst", cm=None, eur=1.0):
+def _card(db, cid, name, set_code="plst", cm=None, eur=1.0, num=None, finishes='["nonfoil"]'):
     db.execute("INSERT INTO cards (id, name, set_code, set_name, collector_number, digital, cardmarket_id, eur, sf_eur, finishes)"
-               " VALUES (?, ?, ?, 'x', ?, 0, ?, ?, ?, '[\"nonfoil\"]')", (cid, name, set_code, cid, cm, eur, eur))
+               " VALUES (?, ?, ?, 'x', ?, 0, ?, ?, ?, ?)", (cid, name, set_code, num or cid, cm, eur, eur, finishes))
 
 
 def _files(tmp_path, products, guides):
@@ -93,6 +94,71 @@ def test_a_product_another_list_card_already_has_is_not_this_ones(db, tmp_path):
     cat, _ = _files(tmp_path, products, [])
     assert cardmarket.link_list(db, cat) == 1
     assert dict(db.execute("SELECT scryfall_id, id_product FROM cm_link").fetchall()) == {"shift-b": 2}
+
+
+def _set_zzz(db, extra=()):
+    """12 printings Scryfall linked (products 200+i of MAIN) make MAIN the expansion of 'zzz'; `extra` printings come without a product."""
+    for i in range(12):
+        _card(db, f"k{i}", f"Known {i}", "zzz", cm=200 + i)
+    for args in extra:
+        _card(db, *args[:3], **(args[3] if len(args) > 3 else {}))
+    db.commit()
+    return [(200 + i, f"Known {i}", MAIN) for i in range(12)] + [(500 + i, f"Other {i}", ELSEWHERE) for i in range(12)]
+
+
+def _linked(db):
+    return dict(db.execute("SELECT scryfall_id, id_product FROM cm_link").fetchall())
+
+
+def test_printings_without_a_product_are_linked_inside_their_own_expansions(db, tmp_path):
+    products = _set_zzz(db, [("lost", "Lost Card", "zzz"), ("quote", 'Dr. "Bones"', "zzz"), ("both", "Front Face // Back Face", "zzz"),
+                             ("twice-a", "Printed Twice", "zzz"), ("twice-b", "Printed Twice", "zzz"), ("two", "Two Products", "zzz"),
+                             ("land", "Plains", "zzz"), ("none", "No Product", "zzz"), ("away", "Other Set Only", "zzz"),
+                             ("extra", "In The Extras", "zzz")])
+    for i in range(12):  # the other set's expansion: its linked printings say whose it is
+        _card(db, f"o{i}", f"Other {i}", "yyy", cm=500 + i)
+    products += [(9001, "Lost Card", MAIN), (9002, "Lost Card", ELSEWHERE),  # the second is another set's reprint
+                 (9003, 'Dr. ""Bones""', MAIN),  # the file doubles the quotes
+                 (9004, "Front Face", MAIN), (9005, "Printed Twice", MAIN), (9006, "Printed Twice", MAIN), (9007, "Two Products", MAIN), (9008, "Two Products", MAIN),
+                 (9009, "Plains", MAIN), (9010, "Plains", MAIN), (9011, "Plains", MAIN), (9012, "Other Set Only", ELSEWHERE)]
+    products += [(300 + i, f"Known {i}", EXTRAS) for i in range(10)] + [(9013, "In The Extras", EXTRAS)]  # no printing linked there: its names say 'zzz'
+    cat, _ = _files(tmp_path, products, [])
+    assert cardmarket.link_printings(db, cat) == 4
+    assert _linked(db) == {"lost": 9001, "quote": 9003, "both": 9004, "extra": 9013}
+
+
+def test_a_foil_only_twin_takes_its_cards_product_unless_the_set_splits_them(db, tmp_path):
+    products = _set_zzz(db, [("c1", "Twin One", "zzz", {"cm": 600, "num": "5"}), ("t1", "Twin One", "zzz", {"num": "5★", "finishes": '["foil"]'}),
+                             ("c2", "Twin Two", "zzz", {"cm": 601, "num": "6"}), ("t2", "Twin Two", "zzz", {"num": "6★", "finishes": '["foil"]'}),
+                             ("nf", "Twin Three", "zzz", {"cm": 602, "num": "7"}), ("t3", "Twin Three", "zzz", {"num": "7★"})])
+    cat, _ = _files(tmp_path, products + [(600, "Twin One", MAIN), (601, "Twin Two", MAIN), (602, "Twin Three", MAIN)], [])
+    assert _linked(db) == {} and cardmarket.link_printings(db, cat) == 2
+    assert _linked(db) == {"t1": 600, "t2": 601}  # not t3: it has a nonfoil finish, so it is not just the card's foil
+    _card(db, "c4", "Twin Four", "zzz", cm=603, num="8")  # a twin Scryfall linked to a product of its own: this set keeps them apart
+    _card(db, "t4", "Twin Four", "zzz", cm=604, num="8★", finishes='["foil"]')
+    _card(db, "c5", "Twin Five", "zzz", cm=605, num="9")
+    _card(db, "t5", "Twin Five", "zzz", num="9★", finishes='["foil"]')
+    db.commit()
+    db.execute("DELETE FROM cm_link")
+    assert cardmarket.link_printings(db, cat) == 0
+
+
+def test_linked_printings_get_the_cardmarket_price(db, tmp_path):
+    products = _set_zzz(db, [("lost", "Lost Card", "zzz", {"eur": None})])
+    cat, guide = _files(tmp_path, products + [(9001, "Lost Card", MAIN)], [{"idProduct": 9001, "avg": 0.9, "low": 0.5, "trend": 0.99}])
+    cardmarket.load_guide(db, guide)
+    cardmarket.link_printings(db, cat)
+    _on(db)
+    assert db.execute("SELECT eur, cm_low FROM cards WHERE id='lost'").fetchone()[:] == (0.99, 0.5)
+
+
+def test_a_foil_only_printing_gets_no_nonfoil_price(db, tmp_path):
+    _card(db, "f", "Foil Only", "zzz", cm=7002, eur=None, finishes='["foil"]')
+    db.commit()
+    _, g = _files(tmp_path, [], [{"idProduct": 7002, "avg": 2.0, "low": 1.0, "trend": 3.0, "avg-foil": 5.0, "low-foil": 4.0, "trend-foil": 6.0}])
+    cardmarket.load_guide(db, g)
+    _on(db)
+    assert tuple(db.execute("SELECT eur, eur_foil, cm_trend, cm_trend_foil FROM cards WHERE id='f'").fetchone()) == (None, 6.0, None, 6.0)
 
 
 def test_refresh_downloads_once_a_day_and_survives_a_new_bulk(db, tmp_path, monkeypatch):
